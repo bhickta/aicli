@@ -78,8 +78,7 @@ class LMStudioProvider(ImageVisionProvider):
         response = self.client.chat.completions.create(
             model=config.model_name,
             messages=messages,
-            temperature=0.2, # Lower temperature for better accuracy/formatting
-            max_tokens=150
+            temperature=0.2 # Lower temperature for better accuracy/formatting
         )
         
         content = response.choices[0].message.content
