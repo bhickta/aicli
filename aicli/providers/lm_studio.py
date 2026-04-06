@@ -38,22 +38,25 @@ class LMStudioProvider(ImageVisionProvider):
         base64_image = self._encode_image_to_base64(image_path)
         mime_type = self._get_mime_type(image_path)
         
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
+        # Many local Vision models crash or return empty strings if a "system" role is passed 
+        # alongside an image. The safest approach is to collapse the system instructions 
+        # directly into the standard "user" payload.
+        combined_text = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
             
-        messages.append({
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:{mime_type};base64,{base64_image}"
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": combined_text},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{base64_image}"
+                        }
                     }
-                }
-            ]
-        })
+                ]
+            }
+        ]
         
         response = self.client.chat.completions.create(
             model=config.model_name,
