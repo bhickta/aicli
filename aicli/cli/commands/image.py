@@ -20,12 +20,13 @@ def _fetch_suggestion(img_path: Path, service: ImageRenamerService) -> tuple[Pat
     except Exception as e:
         return img_path, None, e
 
-def _apply_rename_safe(img_path: Path, suggested_name: str, service: ImageRenamerService):
-    """Renames file silently and prints error if fails."""
+def _apply_rename_safe(img_path: Path, suggested_name: str, service: ImageRenamerService) -> str:
+    """Renames file silently and prints error if fails. Returns the new path if successful."""
     try:
-        service.apply_rename(str(img_path), suggested_name)
+        return service.apply_rename(str(img_path), suggested_name)
     except Exception as e:
         console.print(f"[red]Failed to rename {img_path.name}: {str(e)}[/red]")
+        return ""
 
 
 def _process_single_image(image_path: Path, service: ImageRenamerService, auto_rename: bool):
@@ -125,9 +126,16 @@ def rename_image(
             for future in as_completed(futures):
                 img_path, suggested_name, err = future.result()
                 
-                # If auto rename is checked, we rename it immediately right now
-                if auto_rename and not err and suggested_name:
-                    _apply_rename_safe(img_path, suggested_name, service)
+                if err:
+                    progress.console.print(f"[{img_path.name}] [red]API Error: {str(err)}[/red]")
+                elif suggested_name:
+                    # If auto rename is checked, we rename it immediately right now
+                    if auto_rename:
+                        new_path = _apply_rename_safe(img_path, suggested_name, service)
+                        if new_path:
+                            progress.console.print(f"[green]✔ Renamed: {img_path.name} → {Path(new_path).name}[/green]")
+                    else:
+                        progress.console.print(f"[blue]✨ Evaluated: {img_path.name} → {suggested_name}{img_path.suffix}[/blue]")
                 
                 results.append((img_path, suggested_name, err))
                 progress.advance(task_id)
