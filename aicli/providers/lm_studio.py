@@ -23,10 +23,11 @@ class LMStudioProvider(ImageVisionProvider):
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
                 
-            # Scale down large images (e.g. 4K pages) to max 1024x1024
-            # This is critical to prevent LM Studio from silently crashing due to 
-            # exceeding the context window or running out of VRAM, which causes empty string responses.
-            max_size = 1024
+            # Scale down large images (e.g. 4K pages) to max 512x512
+            # Even 1024x1024 parses into ~4000 tokens in some VLMs, which exceeds LM Studio's 
+            # default 2048 context window and instantly triggers a 'length' rejection.
+            # 512px guarantees it fits in context while keeping prominent text perfectly legible.
+            max_size = 512
             if max(img.size) > max_size:
                 img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
                 
@@ -78,7 +79,7 @@ class LMStudioProvider(ImageVisionProvider):
             model=config.model_name,
             messages=messages,
             temperature=0.2, # Lower temperature for better accuracy/formatting
-            max_tokens=60
+            max_tokens=150
         )
         
         content = response.choices[0].message.content
