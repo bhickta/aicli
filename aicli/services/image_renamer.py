@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 from aicli.core.interfaces import ImageVisionProvider
 
@@ -17,15 +18,31 @@ class ImageRenamerService:
         Uses the vision provider to look at the image and suggest a new concise filename (without extension).
         """
         prompt = (
-            "Look at this image and suggest a very short, descriptive file name in kebab-case "
-            "for it. Just return the file name with no extension, no markdown, no quotes, "
-            "and nothing else."
+            "You are a specialized file-renaming AI. Based on the image content, generate a very short, "
+            "highly descriptive file name in kebab-case.\n"
+            "CRITICAL RULES:\n"
+            "- Output ONLY the raw kebab-case string.\n"
+            "- NO introductory text, NO markdown, NO quotes, NO file extensions.\n"
+            "Example valid output: vintage-red-sports-car"
         )
         
         suggested_name = self.provider.describe_image(image_path, prompt)
         
-        # Clean up any potential markdown or quotes the AI might still add
+        # Aggressive post-processing for local LLMs that are "chatty"
         cleaned = suggested_name.replace("`", "").replace('"', "").replace("'", "").strip()
+        
+        if " " in cleaned or "\n" in cleaned:
+            # If the model outputs a sentence (e.g. "Here is the name: red-car"), 
+            # find the longest kebab-case word or fallback to the last word.
+            words = cleaned.split()
+            kebab_words = [w for w in words if "-" in w]
+            if kebab_words:
+                cleaned = sorted(kebab_words, key=len)[-1]
+            else:
+                cleaned = "-".join(words[-3:]).lower() # smash last 3 words into kebab-case
+                
+        # Strip trailing punctuation like a period if the LLM wrote a sentence
+        cleaned = re.sub(r'[^a-zA-Z0-9-]', '', cleaned)
         return cleaned
 
     def apply_rename(self, image_path: str, new_name_without_ext: str) -> str:
