@@ -31,31 +31,35 @@ class LMStudioProvider(ImageVisionProvider):
             return "image/gif"
         return "image/jpeg"
 
-    def describe_image(self, image_path: str, prompt: str) -> str:
+    def describe_image(self, image_path: str, prompt: str, system_prompt: str = None) -> str:
         """
         Sends the base64 encoded image and the prompt to LM Studio.
         """
         base64_image = self._encode_image_to_base64(image_path)
         mime_type = self._get_mime_type(image_path)
         
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+            
+        messages.append({
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{mime_type};base64,{base64_image}"
+                    }
+                }
+            ]
+        })
+        
         response = self.client.chat.completions.create(
             model=config.model_name,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{mime_type};base64,{base64_image}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            temperature=0.3,
-            max_tokens=50
+            messages=messages,
+            temperature=0.2, # Lower temperature for better accuracy/formatting
+            max_tokens=60
         )
         
         return response.choices[0].message.content.strip()

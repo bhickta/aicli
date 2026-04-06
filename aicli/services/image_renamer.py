@@ -17,16 +17,22 @@ class ImageRenamerService:
         """
         Uses the vision provider to look at the image and suggest a new concise filename (without extension).
         """
-        prompt = (
-            "You are a specialized file-renaming AI. Based on the image content, generate a very short, "
-            "highly descriptive file name in kebab-case.\n"
+        system_prompt = (
+            "You are an expert file archiver processing image parsing tasks. Your goal is to accurately "
+            "generate concise kebab-case filenames based on the most prominent text, labels, and visual context "
+            "in the image. Accuracy is paramount. \n"
             "CRITICAL RULES:\n"
             "- Output ONLY the raw kebab-case string.\n"
             "- NO introductory text, NO markdown, NO quotes, NO file extensions.\n"
-            "Example valid output: vintage-red-sports-car"
+            "Example output: vintage-red-sports-car"
         )
         
-        suggested_name = self.provider.describe_image(image_path, prompt)
+        prompt = (
+            "Analyze the image and extract the most prominent, defining characteristics or large text labels. "
+            "Reply with ONLY the kebab-case formatted name embodying these traits."
+        )
+        
+        suggested_name = self.provider.describe_image(image_path, prompt, system_prompt=system_prompt)
         
         # Aggressive post-processing for local LLMs that are "chatty"
         cleaned = suggested_name.replace("`", "").replace('"', "").replace("'", "").strip()
