@@ -14,9 +14,25 @@ class LMStudioProvider(ImageVisionProvider):
         )
     
     def _encode_image_to_base64(self, image_path: str) -> str:
-        """Helper to read an image file and encode it as a base64 string."""
-        with open(image_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode("utf-8")
+        """Helper to read an image file, safely compress/resize it, and encode as base64."""
+        from PIL import Image
+        import io
+        
+        with Image.open(image_path) as img:
+            # Convert to RGB to strip alpha channels which some VLMs hate in JPEGs
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+                
+            # Scale down large images (e.g. 4K pages) to max 1024x1024
+            # This is critical to prevent LM Studio from silently crashing due to 
+            # exceeding the context window or running out of VRAM, which causes empty string responses.
+            max_size = 1024
+            if max(img.size) > max_size:
+                img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                
+            buffer = io.BytesIO()
+            img.save(buffer, format="JPEG", quality=85)
+            return base64.b64encode(buffer.getvalue()).decode("utf-8")
             
     def _get_mime_type(self, image_path: str) -> str:
         """Simple helper to guess mime type from extension."""
@@ -65,4 +81,10 @@ class LMStudioProvider(ImageVisionProvider):
             max_tokens=60
         )
         
-        return response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        if not content:
+            # If the VLM crashes or fails to generate text, capture the internal API reason
+            reason = response.choices[0].finish_reason
+            raise ValueError(f"LM Studio aborted generation (finish_reason: '{reason}'). Image may be too complex, or context window exceeded.")
+            
+        return content.strip()
