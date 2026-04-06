@@ -5,7 +5,7 @@ class AppConfig(BaseSettings):
     """Configuration based on environment variables or .env file."""
     # LM Studio default settings
     lm_studio_base_url: str = "http://localhost:1234/v1"
-    lm_studio_api_key: str = "lm-studio" # LM studio doesn't actually require one, but openai client expects it
+    lm_studio_api_key: str = "sk-lm-UIfIMcJs:ga4Fhyit5WI6tz0FJTbR" # LM studio doesn't actually require one, but openai client expects it
     
     # Model to use, "local-model" usually works for LM studio
     model_name: str = "local-model"
