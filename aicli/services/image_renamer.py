@@ -222,10 +222,16 @@ class ImageRenamerService:
         new_filename = f"{new_name_without_ext}{ext}"
         new_path = path_obj.parent / new_filename
 
-        if new_path.exists():
-            raise FileExistsError(
-                f"Cannot rename '{path_obj.name}' → '{new_filename}': target already exists."
-            )
+        # If the file already has this exact name, do nothing successfully
+        if path_obj == new_path:
+            return str(new_path)
+
+        # Handle collisions if multiple images get the same name
+        counter = 1
+        while new_path.exists():
+            new_filename = f"{new_name_without_ext}-{counter}{ext}"
+            new_path = path_obj.parent / new_filename
+            counter += 1
 
         os.rename(path_obj, new_path)
         return str(new_path)
