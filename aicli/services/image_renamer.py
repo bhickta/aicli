@@ -267,3 +267,22 @@ class ImageRenamerService:
         """
         new_name = self.generate_new_name(image_path)
         return self.apply_rename(image_path, new_name)
+
+    # ------------------------------------------------------------------
+    # Dedicated Cleanup / Trash Check
+    # ------------------------------------------------------------------
+    
+    def identify_junk(self, image_path: str) -> bool:
+        """
+        Hyper-specific check to evaluate if an image is pure cosmetic junk.
+        Returns True if it's TRASH, False if KEEP.
+        """
+        system_p = (
+            "You are a strict QA filter for a study database. Your ONLY job is to classify the attached image.\n"
+            "If the image is a generic website icon, corporate logo, watermark, UI element, barcode, or tiny decorative graphic that provides absolutely ZERO useful study/informational value, output EXACTLY the word 'TRASH'.\n"
+            "If the image contains ANY useful information (even if it's a map, diagram, readable text block, or photo), output EXACTLY the word 'KEEP'."
+        )
+        user_p = "Analyze this image and return TRASH or KEEP. Output nothing else."
+        
+        raw_response = self.provider.describe_image(image_path, user_p, system_prompt=system_p)
+        return "TRASH" in raw_response.strip().upper()

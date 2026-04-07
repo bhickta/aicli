@@ -261,3 +261,111 @@ def rename_image(
         console.print("[yellow]Action cancelled. No files were renamed.[/yellow]")
 
     raise typer.Exit(code=0)
+
+def _fetch_junk_status(img_path: Path, service: ImageRenamerService) -> tuple[Path, bool, Exception]:
+    """Helper to be run in a separate thread. Just fetches the junk boolean."""
+    try:
+        is_junk = service.identify_junk(str(img_path))
+        return img_path, is_junk, None
+    except Exception as e:
+        return img_path, False, e
+
+@app.command("clean")
+def clean_images(
+    target_path: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        help="Directory to scan for junk images."
+    ),
+    auto_trash: bool = typer.Option(
+        False, 
+        "--auto", "-a", 
+        help="Automatically move junk to .trash without asking for confirmation."
+    ),
+    sync_refs: bool = typer.Option(
+        False,
+        "--sync-refs",
+        help="Remove references to trashed images inside .md and .json files in the same directory."
+    ),
+    workers: int = typer.Option(
+        4,
+        "--workers", "-w",
+        help="Number of concurrent LM inferences."
+    )
+):
+    """
+    Scans a directory using AI. Throws any cosmetic icons, logos, or useless graphics into a .trash folder. Leaves useful images completely untouched.
+    """
+    try:
+        provider = LMStudioProvider()
+        service = ImageRenamerService(provider)
+    except Exception as e:
+        print_error("Failed to initialize AI Provider", e)
+        raise typer.Exit(code=1)
+        
+    console.print(f"[bold cyan]Scanning directory {target_path} for junk images...[/bold cyan]")
+    valid_extensions = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+    images = [p for p in target_path.iterdir() if p.is_file() and p.suffix.lower() in valid_extensions]
+    
+    if not images:
+        console.print("[yellow]No supported images found in the directory.[/yellow]")
+        raise typer.Exit()
+        
+    console.print(f"[bold green]Scanning {len(images)} images rapidly using {workers} parallel workers.[/bold green]\n")
+    
+    results = []
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console
+    ) as progress:
+        task_id = progress.add_task("Inspecting via LM Studio...", total=len(images))
+        
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [executor.submit(_fetch_junk_status, img, service) for img in images]
+            
+            for future in as_completed(futures):
+                img_path, is_junk, err = future.result()
+                
+                if err:
+                    progress.console.print(f"[{img_path.name}] [red]API Error: {str(err)}[/red]")
+                elif is_junk:
+                    if auto_trash:
+                        _apply_trash_safe(img_path, sync_refs=sync_refs, working_dir=target_path)
+                        progress.console.print(f"[dark_orange]🗑 Moved to trash: {img_path.name}[/dark_orange]")
+                    else:
+                        progress.console.print(f"[dark_orange]🏷 Flagged as junk: {img_path.name}[/dark_orange]")
+                else:
+                    progress.console.print(f"[dim]✓ Keep: {img_path.name}[/dim]")
+                
+                results.append((img_path, is_junk, err))
+                progress.advance(task_id)
+
+    junk_items = [r for r in results if r[1] and not r[2]]
+    failures = [r for r in results if r[2]]
+
+    if failures:
+        console.print(f"[bold red]Failed to process {len(failures)} images based on API errors.[/bold red]")
+
+    if not junk_items:
+        print_success("No junk images detected in this directory!")
+        raise typer.Exit(code=0)
+
+    if auto_trash:
+        print_success(f"Successfully cleaned up {len(junk_items)} junk images!")
+        raise typer.Exit(code=0)
+
+    # Manual confirmation flow
+    console.print(f"\n[bold yellow]Found {len(junk_items)} purely cosmetic/useless images.[/bold yellow]")
+    if confirm_action("Do you want to move all flagged images to .trash bulk?"):
+        for img_path, _, _ in junk_items:
+            _apply_trash_safe(img_path, sync_refs=sync_refs, working_dir=target_path)
+        print_success("Bulk wipe complete!")
+    else:
+        console.print("[yellow]Action cancelled. No files were trashed.[/yellow]")
+    raise typer.Exit(code=0)
