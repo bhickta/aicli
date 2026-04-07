@@ -73,6 +73,7 @@ def _apply_trash_safe(img_path: Path, sync_refs: bool = False, working_dir: Path
                         content = file_path.read_text(encoding="utf-8")
                         if img_path.name in content:
                             new_content = re.sub(rf'!\[.*?\]\({re.escape(img_path.name)}\)\n?', '', content)
+                            new_content = re.sub(rf'<<{re.escape(img_path.name)}>>\n?', '', new_content)
                             new_content = new_content.replace(img_path.name, "")
                             file_path.write_text(new_content, encoding="utf-8")
                             console.print(f"[dim]Removed trash references from {file_path.name}[/dim]")
@@ -398,8 +399,9 @@ def _apply_digitize_safe(img_path: Path, markdown_text: str, sync_refs: bool = F
                     try:
                         content = file_path.read_text(encoding="utf-8")
                         if img_path.name in content:
-                            # Replace markdown image ![](_page...) with \n{markdown_text}\n
+                            # Replace markdown image ![](_page...) or <<_page...>> with \n{markdown_text}\n
                             new_content = re.sub(rf'!\[.*?\]\({re.escape(img_path.name)}\)\n?', f"\n{markdown_text}\n\n", content)
+                            new_content = re.sub(rf'<<{re.escape(img_path.name)}>>\n?', f"\n{markdown_text}\n\n", new_content)
                             if img_path.name in new_content:
                                 new_content = new_content.replace(img_path.name, markdown_text)
                             file_path.write_text(new_content, encoding="utf-8")
@@ -530,4 +532,71 @@ def digitize_images(
         print_success("Bulk conversion complete!")
     else:
         console.print("[yellow]Action cancelled. No text was injected.[/yellow]")
+    raise typer.Exit(code=0)
+
+@app.command("prune-refs")
+def prune_refs(
+    target_path: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        help="Directory to scan for broken image references."
+    )
+):
+    """
+    Rapidly scans .md and .json files to strip out image references to files that no longer exist on disk.
+    """
+    console.print(f"[bold cyan]Scanning directory {target_path} for broken links...[/bold cyan]")
+    
+    import re
+    extensions = {".md", ".json"}
+    target_files = [p for p in target_path.iterdir() if p.is_file() and p.suffix.lower() in extensions]
+    
+    if not target_files:
+        console.print("[yellow]No .md or .json files found in the directory.[/yellow]")
+        raise typer.Exit(code=0)
+        
+    broken_links_removed = 0
+    modified_files = 0
+    
+    # Regex to find ![alt](filename.ext) OR <<filename.ext>>
+    pattern = re.compile(r'!\[.*?\]\(([^)]+\.(?:jpg|jpeg|png|webp|gif|svg))\)|<<([^>]+\.(?:jpg|jpeg|png|webp|gif|svg))>>', re.IGNORECASE)
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console
+    ) as progress:
+        progress.add_task("Sweeping for broken references...", total=None)
+        
+        for file_path in target_files:
+            try:
+                original_content = file_path.read_text(encoding="utf-8")
+                
+                def replacer(match):
+                    nonlocal broken_links_removed
+                    # Extract whichever group matched
+                    img_name = match.group(1) or match.group(2)
+                    if not img_name:
+                        return match.group(0)
+                        
+                    img_name = img_name.strip()
+                    
+                    # If it DOES NOT exist physically in the root folder, kill the link
+                    if not (target_path / img_name).exists():
+                        broken_links_removed += 1
+                        return ""
+                    return match.group(0)
+                    
+                new_content = pattern.sub(replacer, original_content)
+                
+                if new_content != original_content:
+                    file_path.write_text(new_content, encoding="utf-8")
+                    modified_files += 1
+                    console.print(f"[dim]Cleaned broken links in {file_path.name}[/dim]")
+            except Exception as e:
+                console.print(f"[red]Failed to process {file_path.name}: {e}[/red]")
+            
+    print_success(f"Removed {broken_links_removed} broken references across {modified_files} files!")
     raise typer.Exit(code=0)
