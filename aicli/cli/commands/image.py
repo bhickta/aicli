@@ -10,10 +10,10 @@ from aicli.cli.tui import print_header, print_success, print_error, confirm_acti
 
 app = typer.Typer(help="Image management commands.")
 
-def _fetch_suggestion(img_path: Path, service: ImageRenamerService) -> tuple[Path, str, Exception]:
+def _fetch_suggestion(img_path: Path, service: ImageRenamerService, trash_junk: bool = False) -> tuple[Path, str, Exception]:
     """Helper to be run in a separate thread. Just fetches the name."""
     try:
-        suggested_name = service.generate_new_name(str(img_path))
+        suggested_name = service.generate_new_name(str(img_path), trash_junk=trash_junk)
         if not suggested_name:
             return img_path, None, ValueError("AI did not return a valid name.")
         return img_path, suggested_name, None
@@ -49,7 +49,41 @@ def _apply_rename_safe(img_path: Path, suggested_name: str, service: ImageRename
         return ""
 
 
-def _process_single_image(image_path: Path, service: ImageRenamerService, auto_rename: bool, sync_refs: bool):
+def _apply_trash_safe(img_path: Path, sync_refs: bool = False, working_dir: Path = None) -> str:
+    """Moves the image to a .trash folder and removes all file references if requested."""
+    try:
+        trash_dir = img_path.parent / ".trash"
+        trash_dir.mkdir(exist_ok=True)
+        new_path = trash_dir / img_path.name
+        
+        counter = 1
+        while new_path.exists():
+            new_path = trash_dir / f"{img_path.stem}-{counter}{img_path.suffix}"
+            counter += 1
+            
+        import shutil
+        shutil.move(str(img_path), str(new_path))
+        
+        if sync_refs and working_dir:
+            import re
+            extensions = {".md", ".json"}
+            for file_path in working_dir.iterdir():
+                if file_path.is_file() and file_path.suffix.lower() in extensions:
+                    try:
+                        content = file_path.read_text(encoding="utf-8")
+                        if img_path.name in content:
+                            new_content = re.sub(rf'!\[.*?\]\({re.escape(img_path.name)}\)\n?', '', content)
+                            new_content = new_content.replace(img_path.name, "")
+                            file_path.write_text(new_content, encoding="utf-8")
+                            console.print(f"[dim]Removed trash references from {file_path.name}[/dim]")
+                    except Exception:
+                        pass
+        return str(new_path)
+    except Exception as e:
+        console.print(f"[red]Failed to move {img_path.name} to trash: {str(e)}[/red]")
+        return ""
+
+def _process_single_image(image_path: Path, service: ImageRenamerService, auto_rename: bool, sync_refs: bool, trash_junk: bool):
     """Processes a single image sequentially."""
     print_header(f"Inspecting {image_path.name}")
     suggested_name = None
@@ -61,10 +95,20 @@ def _process_single_image(image_path: Path, service: ImageRenamerService, auto_r
         console=console
     ) as progress:
         progress.add_task(description="Asking LM Studio for a name...", total=None)
-        _, suggested_name, err = _fetch_suggestion(image_path, service)
+        _, suggested_name, err = _fetch_suggestion(image_path, service, trash_junk=trash_junk)
             
     if err:
         print_error(f"Failed to communicate with LM Studio for {image_path.name}.", err)
+        return
+        
+    if suggested_name == "TRASH":
+        console.print(f"[bold dark_orange]AI flagged {image_path.name} as JUNK.[/bold dark_orange]")
+        if not auto_rename:
+            if not confirm_action(f"Do you want to throw [cyan]{image_path.name}[/cyan] into the `.trash` folder?"):
+                console.print("[yellow]Trash cancelled by user.[/yellow]\n")
+                return
+        _apply_trash_safe(image_path, sync_refs=sync_refs, working_dir=image_path.parent)
+        print_success(f"File moved to .trash!\n")
         return
         
     full_new_name = f"{suggested_name}{image_path.suffix}"
@@ -107,6 +151,11 @@ def rename_image(
         False,
         "--sync-refs",
         help="Update references to renamed images inside .md and .json files in the same directory."
+    ),
+    trash_junk: bool = typer.Option(
+        False,
+        "--trash-junk",
+        help="Automatically move icons, logos, and purely cosmetic graphics to a .trash folder."
     )
 ):
     """
@@ -121,7 +170,7 @@ def rename_image(
         raise typer.Exit(code=1)
 
     if target_path.is_file():
-        _process_single_image(target_path, service, auto_rename, sync_refs)
+        _process_single_image(target_path, service, auto_rename, sync_refs, trash_junk)
         raise typer.Exit(code=0)
 
     # Directory processing via ThreadPool
@@ -148,13 +197,19 @@ def rename_image(
         task_id = progress.add_task(f"Inspecting via LM Studio...", total=len(images))
         
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = [executor.submit(_fetch_suggestion, img, service) for img in images]
+            futures = [executor.submit(_fetch_suggestion, img, service, trash_junk) for img in images]
             
             for future in as_completed(futures):
                 img_path, suggested_name, err = future.result()
                 
                 if err:
                     progress.console.print(f"[{img_path.name}] [red]API Error: {str(err)}[/red]")
+                elif suggested_name == "TRASH":
+                    if auto_rename:
+                        _apply_trash_safe(img_path, sync_refs=sync_refs, working_dir=target_path)
+                        progress.console.print(f"[dark_orange]🗑 Moved to trash: {img_path.name}[/dark_orange]")
+                    else:
+                        progress.console.print(f"[dark_orange]🏷 Flagged as junk: {img_path.name}[/dark_orange]")
                 elif suggested_name:
                     # If auto rename is checked, we rename it immediately right now
                     if auto_rename:
@@ -197,8 +252,11 @@ def rename_image(
     
     if confirm_action("Do you want to apply all these renames bulk?"):
         for img_path, suggested_name, _ in successful:
-            _apply_rename_safe(img_path, suggested_name, service, sync_refs=sync_refs, working_dir=target_path)
-        print_success("Bulk rename complete!")
+            if suggested_name == "TRASH":
+                _apply_trash_safe(img_path, sync_refs=sync_refs, working_dir=target_path)
+            else:
+                _apply_rename_safe(img_path, suggested_name, service, sync_refs=sync_refs, working_dir=target_path)
+        print_success("Bulk operation complete!")
     else:
         console.print("[yellow]Action cancelled. No files were renamed.[/yellow]")
 

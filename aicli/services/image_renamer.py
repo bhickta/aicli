@@ -23,8 +23,8 @@ class ImageRenamerService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_system_prompt() -> str:
-        return (
+    def _build_system_prompt(trash_junk: bool = False) -> str:
+        prompt = (
             "You are a precise image archiving system. Your sole function is to output a single "
             "kebab-case filename string that captures the most identifying characteristics of an image.\n\n"
 
@@ -66,6 +66,16 @@ class ImageRenamerService:
             "  red_sports_car.jpg                <- underscores + extension\n"
             "  car                               <- too vague, too short\n"
         )
+        
+        if trash_junk:
+            prompt += (
+                "\nSPECIAL JUNK FILTER:\n"
+                "If the image is purely a cosmetic website icon, corporate logo, watermark, UI element, barcode, "
+                "or decorative graphic that provides absolutely ZERO useful study/informational value, "
+                "you MUST output EXACTLY the word 'TRASH' instead of generating a filename."
+            )
+            
+        return prompt
 
     @staticmethod
     def _build_user_prompt() -> str:
@@ -81,7 +91,7 @@ class ImageRenamerService:
     # Core name generation
     # ------------------------------------------------------------------
 
-    def generate_new_name(self, image_path: str) -> str:
+    def generate_new_name(self, image_path: str, trash_junk: bool = False) -> str:
         """
         Uses the vision provider to analyze the image and suggest a new concise
         kebab-case filename (without extension).
@@ -95,7 +105,7 @@ class ImageRenamerService:
         raw_response = self.provider.describe_image(
             image_path,
             self._build_user_prompt(),
-            system_prompt=self._build_system_prompt(),
+            system_prompt=self._build_system_prompt(trash_junk),
         )
 
         cleaned = self._post_process(raw_response)
@@ -124,6 +134,11 @@ class ImageRenamerService:
             5. Collapse/strip leading and trailing hyphens.
             6. Enforce word-count bounds.
         """
+        # Check for TRASH early bypass
+        raw_upper = raw.strip().strip("`\"'").upper()
+        if raw_upper == "TRASH":
+            return "TRASH"
+            
         # Stage 1 — basic strip
         text = raw.strip().strip("`\"'")
 
