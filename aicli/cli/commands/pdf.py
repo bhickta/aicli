@@ -32,6 +32,11 @@ def process_pdf(
         4,
         "--workers", "-w",
         help="Number of concurrent LM inferences for AI tasks."
+    ),
+    digitize: bool = typer.Option(
+        False,
+        "--digitize",
+        help="Enable Phase 2: Lossless OCR to convert text-heavy images into Markdown. (Disabled by default)"
     )
 ):
     """
@@ -57,10 +62,13 @@ def process_pdf(
     run_step(cmd_clean, "Phase 1: Deep Clean (Trash Junk)")
     
     # 3. Digitize
-    # Use max 2 workers for digitize to prevent VRAM explosion due to massive OCR context
-    dig_workers = min(workers, 2)
-    cmd_digitize = ["aicli", "image", "digitize", str(target_dir), "--auto", "--sync-refs", "--workers", str(dig_workers)]
-    run_step(cmd_digitize, "Phase 2: Digitize (Lossless OCR)")
+    if digitize:
+        # Use max 2 workers for digitize to prevent VRAM explosion due to massive OCR context
+        dig_workers = min(workers, 2)
+        cmd_digitize = ["aicli", "image", "digitize", str(target_dir), "--auto", "--sync-refs", "--workers", str(dig_workers)]
+        run_step(cmd_digitize, "Phase 2: Digitize (Lossless OCR)")
+    else:
+        console.print("\n[bold yellow]==== Phase 2 Skipped: Digitize (OCR disabled by user) ====[/bold yellow]")
     
     # 4. Smart Rename
     cmd_rename = ["aicli", "image", "rename", str(target_dir), "--auto", "--sync-refs", "--workers", str(workers)]
