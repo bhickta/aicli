@@ -272,16 +272,24 @@ class ImageRenamerService:
     # Dedicated Cleanup / Trash Check
     # ------------------------------------------------------------------
     
-    def identify_junk(self, image_path: str) -> bool:
+    def identify_junk(self, image_path: str, strict: bool = False) -> bool:
         """
         Hyper-specific check to evaluate if an image is pure cosmetic junk.
         Returns True if it's TRASH, False if KEEP.
         """
-        system_p = (
-            "You are a strict QA filter for a study database. Your ONLY job is to classify the attached image.\n"
-            "If the image is a generic website icon, corporate logo, watermark, UI element, barcode, or tiny decorative graphic that provides absolutely ZERO useful study/informational value, output EXACTLY the word 'TRASH'.\n"
-            "If the image contains ANY useful information (even if it's a map, diagram, readable text block, or photo), output EXACTLY the word 'KEEP'."
-        )
+        if strict:
+            system_p = (
+                "You are a hyper-aggressive QA filter for a strict study database. Your job is to discard ANY fluff.\n"
+                "If the image is NOT a highly detailed map, data chart, dense readable text block, or highly specific educational diagram, you MUST output EXACTLY the word 'TRASH'.\n"
+                "Generic stock photos, abstract art, vaguer landscapes, UI elements, logos, watermarks, and simplistic drawings have no direct study/data value and must be classified as 'TRASH'.\n"
+                "If and only if it is a highly detailed, data-rich educational graphic, output 'KEEP'."
+            )
+        else:
+            system_p = (
+                "You are a strict QA filter for a study database. Your ONLY job is to classify the attached image.\n"
+                "If the image is a generic website icon, corporate logo, watermark, UI element, barcode, or tiny decorative graphic that provides absolutely ZERO useful study/informational value, output EXACTLY the word 'TRASH'.\n"
+                "If the image contains ANY useful information (even if it's a map, diagram, readable text block, or photo), output EXACTLY the word 'KEEP'."
+            )
         user_p = "Analyze this image and return TRASH or KEEP. Output nothing else."
         
         raw_response = self.provider.describe_image(image_path, user_p, system_prompt=system_p)

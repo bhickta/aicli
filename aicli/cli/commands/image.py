@@ -262,10 +262,10 @@ def rename_image(
 
     raise typer.Exit(code=0)
 
-def _fetch_junk_status(img_path: Path, service: ImageRenamerService) -> tuple[Path, bool, Exception]:
+def _fetch_junk_status(img_path: Path, service: ImageRenamerService, strict: bool = False) -> tuple[Path, bool, Exception]:
     """Helper to be run in a separate thread. Just fetches the junk boolean."""
     try:
-        is_junk = service.identify_junk(str(img_path))
+        is_junk = service.identify_junk(str(img_path), strict=strict)
         return img_path, is_junk, None
     except Exception as e:
         return img_path, False, e
@@ -283,6 +283,11 @@ def clean_images(
         False, 
         "--auto", "-a", 
         help="Automatically move junk to .trash without asking for confirmation."
+    ),
+    strict: bool = typer.Option(
+        False,
+        "--strict", "-s",
+        help="Hyper-aggressive filtering. Trashes generic photos, scenes, and abstract art that lack explicit data/study value."
     ),
     sync_refs: bool = typer.Option(
         False,
@@ -327,7 +332,7 @@ def clean_images(
         task_id = progress.add_task("Inspecting via LM Studio...", total=len(images))
         
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = [executor.submit(_fetch_junk_status, img, service) for img in images]
+            futures = [executor.submit(_fetch_junk_status, img, service, strict) for img in images]
             
             for future in as_completed(futures):
                 img_path, is_junk, err = future.result()
