@@ -374,3 +374,160 @@ def clean_images(
     else:
         console.print("[yellow]Action cancelled. No files were trashed.[/yellow]")
     raise typer.Exit(code=0)
+
+def _apply_digitize_safe(img_path: Path, markdown_text: str, sync_refs: bool = False, working_dir: Path = None) -> str:
+    """Moves the image to .trash/converted/ and replaces file references with text."""
+    try:
+        trash_dir = img_path.parent / ".trash" / "converted"
+        trash_dir.mkdir(parents=True, exist_ok=True)
+        new_path = trash_dir / img_path.name
+        
+        counter = 1
+        while new_path.exists():
+            new_path = trash_dir / f"{img_path.stem}-{counter}{img_path.suffix}"
+            counter += 1
+            
+        import shutil
+        shutil.move(str(img_path), str(new_path))
+        
+        if sync_refs and working_dir:
+            import re
+            extensions = {".md", ".json"}
+            for file_path in working_dir.iterdir():
+                if file_path.is_file() and file_path.suffix.lower() in extensions:
+                    try:
+                        content = file_path.read_text(encoding="utf-8")
+                        if img_path.name in content:
+                            # Replace markdown image ![](_page...) with \n{markdown_text}\n
+                            new_content = re.sub(rf'!\[.*?\]\({re.escape(img_path.name)}\)\n?', f"\n{markdown_text}\n\n", content)
+                            if img_path.name in new_content:
+                                new_content = new_content.replace(img_path.name, markdown_text)
+                            file_path.write_text(new_content, encoding="utf-8")
+                            console.print(f"[dim]Injected Markdown into {file_path.name}[/dim]")
+                    except Exception:
+                        pass
+        return str(new_path)
+    except Exception as e:
+        console.print(f"[red]Failed to digitize {img_path.name}: {str(e)}[/red]")
+        return ""
+
+def _fetch_ocr_text(img_path: Path, service: ImageRenamerService) -> tuple[Path, str, Exception]:
+    """Helper to fetch transcription from the model."""
+    try:
+        text_out = service.convert_to_markdown(str(img_path))
+        return img_path, text_out, None
+    except Exception as e:
+        return img_path, "", e
+
+@app.command("digitize")
+def digitize_images(
+    target_path: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        help="Directory to scan for text-heavy images."
+    ),
+    auto_replace: bool = typer.Option(
+        False, 
+        "--auto", "-a", 
+        help="Automatically convert and trash images without asking for confirmation."
+    ),
+    sync_refs: bool = typer.Option(
+        False,
+        "--sync-refs",
+        help="Inject the generated markdown into the .md notes in place of the image."
+    ),
+    workers: int = typer.Option(
+        2,
+        "--workers", "-w",
+        help="Number of concurrent LM inferences."
+    )
+):
+    """
+    Intelligently extracts completely text-based images into Markdown data, deleting the original screenshot.
+    """
+    try:
+        provider = LMStudioProvider()
+        service = ImageRenamerService(provider)
+    except Exception as e:
+        print_error("Failed to initialize AI Provider", e)
+        raise typer.Exit(code=1)
+        
+    console.print(f"[bold cyan]Scanning directory {target_path} for text images...[/bold cyan]")
+    valid_extensions = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+    images = [p for p in target_path.iterdir() if p.is_file() and p.suffix.lower() in valid_extensions]
+    
+    if not images:
+        console.print("[yellow]No supported images found in the directory.[/yellow]")
+        raise typer.Exit()
+        
+    console.print(f"[bold green]Generating Markdown for {len(images)} images using {workers} parallel workers.[/bold green]\n")
+    
+    results = []
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console
+    ) as progress:
+        task_id = progress.add_task("Inspecting via LM Studio...", total=len(images))
+        
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [executor.submit(_fetch_ocr_text, img, service) for img in images]
+            
+            for future in as_completed(futures):
+                img_path, raw_text, err = future.result()
+                
+                is_text = False
+                clean_markdown = ""
+                
+                if err:
+                    progress.console.print(f"[{img_path.name}] [red]API Error: {str(err)}[/red]")
+                elif raw_text == "KEEP":
+                    progress.console.print(f"[dim]✓ Keep as Graphic: {img_path.name}[/dim]")
+                else: 
+                    # If it didn't explicitly say KEEP, see if it prefixed TEXT:
+                    clean_markdown = raw_text
+                    if clean_markdown.upper().startswith("TEXT:"):
+                        clean_markdown = clean_markdown[5:].strip()
+                        is_text = True
+                    # Model fallback handling: if it just started generating markdown anyway
+                    elif len(clean_markdown) > 10:
+                        is_text = True
+                        
+                    if is_text:
+                        if auto_replace:
+                            _apply_digitize_safe(img_path, clean_markdown, sync_refs=sync_refs, working_dir=target_path)
+                            progress.console.print(f"[bold magenta]✍ Injected markdown for: {img_path.name}[/bold magenta]")
+                        else:
+                            progress.console.print(f"[bold magenta]📝 Scanned markdown for: {img_path.name} ({len(clean_markdown)} chars)[/bold magenta]")
+
+                results.append((img_path, is_text, clean_markdown, err))
+                progress.advance(task_id)
+
+    ocr_items = [r for r in results if r[1] and not r[3]]
+    failures = [r for r in results if r[3]]
+
+    if failures:
+        console.print(f"[bold red]Failed to process {len(failures)} images based on API errors.[/bold red]")
+
+    if not ocr_items:
+        print_success("No pure text images suitable for conversion detected!")
+        raise typer.Exit(code=0)
+
+    if auto_replace:
+        print_success(f"Successfully digitized and replaced {len(ocr_items)} images!")
+        raise typer.Exit(code=0)
+
+    # Manual confirmation flow
+    console.print(f"\n[bold yellow]Found {len(ocr_items)} text-heavy images capable of being fully digitized.[/bold yellow]")
+    if confirm_action("Do you want to convert these to text and delete the images?"):
+        for img_path, _, markdown, _ in ocr_items:
+            _apply_digitize_safe(img_path, markdown, sync_refs=sync_refs, working_dir=target_path)
+        print_success("Bulk conversion complete!")
+    else:
+        console.print("[yellow]Action cancelled. No text was injected.[/yellow]")
+    raise typer.Exit(code=0)

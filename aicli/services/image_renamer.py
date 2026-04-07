@@ -294,3 +294,28 @@ class ImageRenamerService:
         
         raw_response = self.provider.describe_image(image_path, user_p, system_prompt=system_p)
         return "TRASH" in raw_response.strip().upper()
+
+    # ------------------------------------------------------------------
+    # Lossless OCR / Markdown Extraction
+    # ------------------------------------------------------------------
+    
+    def convert_to_markdown(self, image_path: str) -> str:
+        """
+        Evaluates an image. If it's text/tables/lists, transcribes it to markdown.
+        Returns the markdown string prefixed with 'TEXT:' or exactly 'KEEP'.
+        """
+        system_p = (
+            "You are an expert Data Extractor for a study database.\n"
+            "Evaluate the provided image. If it is primarily text, a simple table, or a hierarchical list that can be flawlessly represented in pure Markdown without losing structural information, transcribe it perfectly.\n"
+            "If you decide to transcribe it, you MUST prefix your ENTIRE response with 'TEXT:'.\n"
+            "If it is a complex map, photograph, abstract chart, or intricate diagram that fundamentally MUST remain an image, output EXACTLY the word 'KEEP'. No other explanation."
+        )
+        user_p = "Extract to Markdown or Keep as Image? Respond strictly according to system rules."
+        
+        raw_response = self.provider.describe_image(image_path, user_p, system_prompt=system_p)
+        raw_upper = raw_response.strip().upper()
+        
+        if raw_upper == "KEEP":
+            return "KEEP"
+        
+        return raw_response.strip()
