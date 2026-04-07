@@ -20,16 +20,36 @@ def _fetch_suggestion(img_path: Path, service: ImageRenamerService) -> tuple[Pat
     except Exception as e:
         return img_path, None, e
 
-def _apply_rename_safe(img_path: Path, suggested_name: str, service: ImageRenamerService) -> str:
+def _sync_file_references(working_dir: Path, old_name: str, new_name: str):
+    """Scans all .md and .json files in the directory and replaces occurrences of old_name with new_name."""
+    if not working_dir or not working_dir.is_dir():
+        return
+        
+    extensions = {".md", ".json"}
+    for file_path in working_dir.iterdir():
+        if file_path.is_file() and file_path.suffix.lower() in extensions:
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                if old_name in content:
+                    new_content = content.replace(old_name, new_name)
+                    file_path.write_text(new_content, encoding="utf-8")
+                    console.print(f"[dim]Synced references in {file_path.name}[/dim]")
+            except Exception as e:
+                console.print(f"[yellow]Failed to sync refs in {file_path.name}: {e}[/yellow]")
+
+def _apply_rename_safe(img_path: Path, suggested_name: str, service: ImageRenamerService, sync_refs: bool = False, working_dir: Path = None) -> str:
     """Renames file silently and prints error if fails. Returns the new path if successful."""
     try:
-        return service.apply_rename(str(img_path), suggested_name)
+        new_path_str = service.apply_rename(str(img_path), suggested_name)
+        if new_path_str and sync_refs and working_dir:
+            _sync_file_references(working_dir, img_path.name, Path(new_path_str).name)
+        return new_path_str
     except Exception as e:
         console.print(f"[red]Failed to rename {img_path.name}: {str(e)}[/red]")
         return ""
 
 
-def _process_single_image(image_path: Path, service: ImageRenamerService, auto_rename: bool):
+def _process_single_image(image_path: Path, service: ImageRenamerService, auto_rename: bool, sync_refs: bool):
     """Processes a single image sequentially."""
     print_header(f"Inspecting {image_path.name}")
     suggested_name = None
@@ -57,6 +77,8 @@ def _process_single_image(image_path: Path, service: ImageRenamerService, auto_r
 
     try:
         new_path = service.apply_rename(str(image_path), suggested_name)
+        if sync_refs:
+            _sync_file_references(image_path.parent, image_path.name, Path(new_path).name)
         print_success(f"File successfully renamed to: [bold underline]{Path(new_path).name}[/bold underline]\n")
     except Exception as e:
         print_error(f"Failed to rename file {image_path.name}", e)
@@ -80,6 +102,11 @@ def rename_image(
         4,
         "--workers", "-w",
         help="Number of concurrent LM inferences when processing a directory."
+    ),
+    sync_refs: bool = typer.Option(
+        False,
+        "--sync-refs",
+        help="Update references to renamed images inside .md and .json files in the same directory."
     )
 ):
     """
@@ -94,7 +121,7 @@ def rename_image(
         raise typer.Exit(code=1)
 
     if target_path.is_file():
-        _process_single_image(target_path, service, auto_rename)
+        _process_single_image(target_path, service, auto_rename, sync_refs)
         raise typer.Exit(code=0)
 
     # Directory processing via ThreadPool
@@ -131,7 +158,7 @@ def rename_image(
                 elif suggested_name:
                     # If auto rename is checked, we rename it immediately right now
                     if auto_rename:
-                        new_path = _apply_rename_safe(img_path, suggested_name, service)
+                        new_path = _apply_rename_safe(img_path, suggested_name, service, sync_refs=sync_refs, working_dir=target_path)
                         if new_path:
                             progress.console.print(f"[green]✔ Renamed: {img_path.name} → {Path(new_path).name}[/green]")
                     else:
@@ -170,7 +197,7 @@ def rename_image(
     
     if confirm_action("Do you want to apply all these renames bulk?"):
         for img_path, suggested_name, _ in successful:
-            _apply_rename_safe(img_path, suggested_name, service)
+            _apply_rename_safe(img_path, suggested_name, service, sync_refs=sync_refs, working_dir=target_path)
         print_success("Bulk rename complete!")
     else:
         console.print("[yellow]Action cancelled. No files were renamed.[/yellow]")
