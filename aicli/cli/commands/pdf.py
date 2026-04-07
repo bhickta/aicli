@@ -39,14 +39,18 @@ def process_pdf(
     """
     print_header(f"Starting God-Mode Pipeline for {pdf_path.name}")
     
-    # 1. Marker Extraction
-    cmd_marker = ["marker_single", str(pdf_path), "--output_dir", str(output_dir)]
-    run_step(cmd_marker, "Phase 0: PDF Extraction (marker_single)")
-    
     target_dir = output_dir / pdf_path.stem
-    if not target_dir.exists() or not target_dir.is_dir():
-        print_error("Extraction Failed", ValueError(f"Expected output directory {target_dir} was not created."))
-        raise typer.Exit(code=1)
+    
+    # 1. Marker Extraction
+    if target_dir.exists() and target_dir.is_dir():
+        console.print(f"[bold yellow]Phase 0 Skipped:[/bold yellow] Output directory [cyan]{target_dir}[/cyan] already exists! Skipping 2-minute marker extraction.")
+    else:
+        cmd_marker = ["marker_single", str(pdf_path), "--output_dir", str(output_dir)]
+        run_step(cmd_marker, "Phase 0: PDF Extraction (marker_single)")
+        
+        if not target_dir.exists() or not target_dir.is_dir():
+            print_error("Extraction Failed", ValueError(f"Expected output directory {target_dir} was not created."))
+            raise typer.Exit(code=1)
         
     # 2. Deep Clean
     cmd_clean = ["aicli", "image", "clean", str(target_dir), "--auto", "--strict", "--sync-refs", "--workers", str(workers)]
