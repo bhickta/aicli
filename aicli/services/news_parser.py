@@ -321,15 +321,22 @@ def _style_data_row(
 
     fill = even_fill if row_index % 2 == 0 else odd_fill
 
+    news_col_idx = 5  # News column is at index 5 (column E, 1-indexed = 5)
+    news_text = values[news_col_idx - 1] if news_col_idx <= len(values) else ""
+    line_count = news_text.count("\n") + 1
+    row_height = max(15, min(line_count * 12, 300))
+
     for col, value in enumerate(values, 1):
         cell = ws.cell(row=row_num, column=col, value=value)
         cell.font = data_font
         cell.fill = fill
         cell.border = thin_border
-        if col in (1, 2):  # S.No, Date — centered
+        if col in (1, 2):
             cell.alignment = Alignment(horizontal="center", vertical="top")
         else:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+    ws.row_dimensions[row_num].height = row_height
 
 
 def _apply_finishing(ws, total_rows: int, col_widths: dict) -> None:

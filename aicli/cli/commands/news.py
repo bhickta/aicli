@@ -673,8 +673,8 @@ def process_news(
         if not no_cache:
             cache_file.write_text(json.dumps(merge_cache, indent=2), encoding="utf-8")
 
-    def get_cache_key(source_order_keys: list[tuple]) -> str:
-        return "|".join(sorted(f"{s}:{o}" for s, o in source_order_keys if s or o))
+    def get_cache_key(source_order_keys: set) -> str:
+        return "|".join(sorted(k for k in source_order_keys if k and ":" in k))
 
     # ── 1. Parse JSON block (New Data) ─────────────────────────────────
     print_header("God-Mode Processing")
@@ -890,7 +890,7 @@ def process_news(
                     pass
 
         if len(all_json_items) >= longest_array_len and not force_merge:
-            cache_key = get_cache_key(list(source_order_keys))
+            cache_key = get_cache_key(source_order_keys)
             if cache_key in merge_cache:
                 bypass_llm = True
                 merged_news = merge_cache[cache_key]
@@ -913,7 +913,7 @@ def process_news(
             merged_news = ""
             news_strings = [i["news"] for i in items_to_merge]
             job_cache_key = (
-                get_cache_key(list(source_order_keys)) if source_order_keys else None
+                get_cache_key(source_order_keys) if source_order_keys else None
             )
             if force_merge and len(all_json_items) >= longest_array_len:
                 console.print(
