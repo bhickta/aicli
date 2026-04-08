@@ -279,13 +279,20 @@ def from_json(
             else:
                 topic = "Miscellaneous"
 
+        src_val = str(source).strip() if source else ""
+        ord_val = str(order).strip() if order else ""
+        if src_val and ord_val:
+            src_str = f"{src_val} - {ord_val}"
+        else:
+            src_str = src_val or ord_val
+            
         records.append({
             "date": f"{item.get('month', 'Not Specified')} - {item.get('year', 'Not Specified')}",
             "topic": topic,
             "tags": str(item.get("tags", "")),
             "news": news_str,
-            "source_key": f"{source} - {order}",
-            "_raw_order": str(order),
+            "source_key": src_str,
+            "_raw_order": ord_val,
             "concat": ""
         })
 
