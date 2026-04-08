@@ -211,3 +211,88 @@ def parse_news(
 
     print_success(f"Done! {len(all_records)} news items → {output}")
     console.print("[dim]Open in Excel → use column header dropdowns to filter by Month, Year, Topic, Tags[/dim]")
+
+
+@app.command("from-json")
+def from_json(
+    file_path: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        help="Path to the JSON file containing current affairs data.",
+    ),
+    output: Path = typer.Option(
+        None,
+        "--output", "-o",
+        help="Output Excel file path. Defaults to <input_name>.xlsx. Appends if exists.",
+    )
+):
+    """
+    Convert a generated JSON file directly into the filterable Excel spreadsheet.
+    Requires no AI — purely deterministic parsing.
+    """
+    import json
+    from aicli.services.news_parser import write_excel, STANDARD_TOPICS
+
+    print_header(f"Parsing JSON: {file_path.name}")
+    
+    if output is None:
+        output = file_path.parent / f"{file_path.stem}.xlsx"
+
+    try:
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        print_error("Failed to read JSON file.", e)
+        raise typer.Exit(code=1)
+
+    if not isinstance(data, list):
+        print_error("JSON file must contain an array of objects.")
+        raise typer.Exit(code=1)
+
+    records = []
+    for item in data:
+        # Construct News string
+        title = item.get("title", "").strip()
+        key_answer = item.get("key_answer", "").strip()
+        details = item.get("details", "").strip()
+        
+        news_parts = []
+        if title:
+            news_parts.append(f"**{title}**")
+        if key_answer:
+            news_parts.append(key_answer)
+        if details:
+            news_parts.append(details)
+            
+        news_str = "\n".join(news_parts)
+        
+        # Read keys (support upper and lower case added by user)
+        source = item.get("Source") or item.get("source", "")
+        order = item.get("Order") or item.get("order", "")
+        
+        # Standardize topic if possible
+        topic = item.get("category", "")
+        if topic not in STANDARD_TOPICS:
+            if topic: 
+                pass # keep whatever is in JSON if present
+            else:
+                topic = "Miscellaneous"
+
+        records.append({
+            "month": item.get("month", "Not Specified"),
+            "year": str(item.get("year", "Not Specified")),
+            "topic": topic,
+            "tags": str(item.get("tags", "")),
+            "news": news_str,
+            "source_key": str(source),
+            "order_key": str(order)
+        })
+
+    if output.exists():
+        console.print(f"[yellow]⚡ Appending {len(records)} records to existing file:[/yellow] {output}")
+    else:
+        console.print(f"[green]Creating new file with {len(records)} records:[/green] {output}")
+
+    write_excel(records, output, source_filename=file_path.name)
+    print_success(f"Done! {len(records)} items written to {output}")
