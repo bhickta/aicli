@@ -178,21 +178,22 @@ def merge_duplicate_news(news_items: list[str], client, model_name: str) -> str:
     from rich.console import Console
     console = Console()
     
+    # Pre-concatenate the items in Python as requested
+    raw_concatenation = "\n\n---\n".join(news_items)
+    
     system_prompt = (
         "You are an expert editor handling current affairs data.\n"
-        "You will be given multiple news items that describe the exact same event.\n"
-        "Your task is to merge them into a single cohesive entry.\n"
+        "You will be given a concatenated block of duplicate news items describing the exact same event.\n"
+        "Your task is to rewrite and merge them into a single cohesive entry.\n"
         "CRITICAL RULES:\n"
-        "1. DO NOT simply summarize; you MUST merge EVERYTHING. Synthesize the inputs into a single narrative: remove redundant sentences or phrasing while ensuring EVERY UNIQUE fact, name, date, location, and statistic is retained.\n"
-        "2. Retain EVERY SINGLE detail from ALL variations.\n"
-        "3. Ensure the final merged output is well-formatted, professional, and is a coherent paragraph or set of bullets.\n"
-        "4. DO NOT add any outside knowledge. Only use the provided facts.\n"
-        "5. Output ONLY the perfectly merged text block. Do NOT wrap it in JSON. Do NOT include markdown quotes."
+        "1. FORMAT: Always start with a **Bold Title**. Use a double newline between the title and the narrative.\n"
+        "2. SYNTHESIS: DO NOT simply summarize; you MUST merge EVERYTHING. Synthesize the overlapping info into a single narrative: remove redundant sentences while ensuring EVERY UNIQUE fact, name, date, location, and statistic is retained.\n"
+        "3. RETAIN: Retain EVERY SINGLE detail from the provided text.\n"
+        "4. STYLE: Ensure the final output matches the professional style of the inputs.\n"
+        "5. Output ONLY the perfectly merged text block. Do NOT include markdown code fences or quotes."
     )
     
-    user_prompt = "Merge these overlapping news records into one:\n\n"
-    for i, item in enumerate(news_items, 1):
-        user_prompt += f"--- RECORD {i} ---\n{item}\n\n"
+    user_prompt = f"Merge and synthesize this concatenated news data into one clean record:\n\n{raw_concatenation}"
         
     try:
         response = client.chat.completions.create(
@@ -205,18 +206,19 @@ def merge_duplicate_news(news_items: list[str], client, model_name: str) -> str:
         )
         content = response.choices[0].message.content.strip()
         return content
+        
     except Exception as e:
         console.print(f"[red]⚠ AI Merge Error on cluster of size {len(news_items)}: {str(e)}[/red]")
         # Fallback to concatenation if AI merge fails
-        return f"[MERGE ERROR - FALLBACK CONCATENATION]:\n\n" + "\n\n".join(news_items)
+        return f"[MERGE ERROR - FALLBACK CONCATENATION]:\n\n" + raw_concatenation
 
 
 # ──────────────────────────────────────────────────────────────────────
 # Excel writer — supports CREATE and APPEND
 # ──────────────────────────────────────────────────────────────────────
 
-HEADERS = ["S.No", "Month", "Year", "Topic", "Tags", "News", "Source", "Order"]
-COL_WIDTHS = {"A": 6, "B": 14, "C": 8, "D": 30, "E": 36, "F": 100, "G": 20, "H": 10}
+HEADERS = ["S.No", "Date", "Topic", "Tags", "News", "Source", "Order", "Concat"]
+COL_WIDTHS = {"A": 6, "B": 18, "C": 30, "D": 36, "E": 80, "F": 20, "G": 10, "H": 60}
 
 
 def _style_header_row(ws) -> None:
@@ -262,7 +264,7 @@ def _style_data_row(ws, row_num: int, values: list, row_index: int) -> None:
         cell.font = data_font
         cell.fill = fill
         cell.border = thin_border
-        if col in (1, 2, 3, 8):  # S.No, Month, Year, Order — centered
+        if col in (1, 2, 7):  # S.No, Date, Order — centered
             cell.alignment = Alignment(horizontal="center", vertical="top")
         elif col == 6:  # News — wrap text
             cell.alignment = Alignment(vertical="top", wrap_text=True)
@@ -274,7 +276,7 @@ def _apply_finishing(ws, total_rows: int) -> None:
     """Apply auto-filter, freeze panes, and column widths."""
     ws.auto_filter.ref = f"A1:H{total_rows}"
     ws.freeze_panes = "A2"
-    for col_letter, width in zip("ABCDEFGH", [6, 14, 8, 30, 36, 100, 20, 10]):
+    for col_letter, width in COL_WIDTHS.items():
         ws.column_dimensions[col_letter].width = width
 
 
@@ -306,13 +308,13 @@ def write_excel(records: list[dict], output_path: Path, source_filename: str) ->
 
         values = [
             serial,
-            record.get("month", "Not Specified"),
-            record.get("year", "Not Specified"),
+            record.get("date", "Not Specified"),
             record.get("topic", "Miscellaneous"),
             record.get("tags", ""),
             record.get("news", ""),
             record.get("source_key", ""),
             record.get("order_key", ""),
+            record.get("concat", ""),
         ]
         _style_data_row(ws, row_num, values, global_idx)
 

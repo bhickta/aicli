@@ -280,13 +280,13 @@ def from_json(
                 topic = "Miscellaneous"
 
         records.append({
-            "month": item.get("month", "Not Specified"),
-            "year": str(item.get("year", "Not Specified")),
+            "date": f"{item.get('month', 'Not Specified')} - {item.get('year', 'Not Specified')}",
             "topic": topic,
             "tags": str(item.get("tags", "")),
             "news": news_str,
             "source_key": str(source),
-            "order_key": str(order)
+            "order_key": str(order),
+            "concat": ""
         })
 
     if output.exists():
@@ -317,6 +317,11 @@ def dedupe(
         "--threshold", "-t",
         help="Cosine similarity threshold for embeddings (0.0 to 1.0). Default is 0.80.",
     ),
+    workers: int = typer.Option(
+        10,
+        "--workers", "-w",
+        help="Number of parallel LLM workers for merging duplicates. Default is 10.",
+    ),
 ):
     """
     De-duplicate an existing Current Affairs Excel file using RAG AI.
@@ -344,19 +349,53 @@ def dedupe(
         print_error("Failed to read Excel file.", e)
         raise typer.Exit(code=1)
         
+    # ── Smart Header Mapping ─────────────────────────────────────────
+    # Identify column indices based on header names (case-insensitive)
+    headers = [str(cell).strip().lower() for cell in next(ws.iter_rows(max_row=1, values_only=True))]
+    
+    def get_idx(candidates: list[str]) -> int:
+        for c in candidates:
+            if c.lower() in headers:
+                return headers.index(c.lower())
+        return -1
+
+    idx_month = get_idx(["month"])
+    idx_year = get_idx(["year"])
+    idx_date = get_idx(["date", "month - year"])
+    idx_topic = get_idx(["topic", "category"])
+    idx_tags = get_idx(["tags"])
+    idx_news = get_idx(["news", "details"])
+    idx_source = get_idx(["source", "provider"])
+    idx_order = get_idx(["order", "id"])
+    idx_concat = get_idx(["concat", "original", "raw"])
+
     records = []
     for row in ws.iter_rows(min_row=2, values_only=True):
         if not any(row):
             continue
             
+        # Synthesize Date from Month/Year if needed
+        month = str(row[idx_month]) if idx_month != -1 and row[idx_month] is not None else ""
+        year = str(row[idx_year]) if idx_year != -1 and row[idx_year] is not None else ""
+        
+        if idx_date != -1 and row[idx_date]:
+            date_val = str(row[idx_date])
+        elif month or year:
+            date_val = f"{month or 'Not Specified'} - {year or 'Not Specified'}"
+        else:
+            date_val = "Not Specified"
+
         records.append({
-            "month": str(row[1]) if len(row)>1 and row[1] is not None else "Not Specified",
-            "year": str(row[2]) if len(row)>2 and row[2] is not None else "Not Specified",
-            "topic": str(row[3]) if len(row)>3 and row[3] is not None else "Miscellaneous",
-            "tags": str(row[4]) if len(row)>4 and row[4] is not None else "",
-            "news": str(row[5]) if len(row)>5 and row[5] is not None else "",
-            "source_key": str(row[6]) if len(row)>6 and row[6] is not None else "",
-            "order_key": str(row[7]) if len(row)>7 and row[7] is not None else "",
+            "date": date_val,
+            "topic": str(row[idx_topic]) if idx_topic != -1 and row[idx_topic] is not None else "Miscellaneous",
+            "tags": str(row[idx_tags]) if idx_tags != -1 and row[idx_tags] is not None else "",
+            "news": str(row[idx_news]) if idx_news != -1 and row[idx_news] is not None else "",
+            "source_key": str(row[idx_source]) if idx_source != -1 and row[idx_source] is not None else "",
+            "order_key": str(row[idx_order]) if idx_order != -1 and row[idx_order] is not None else "",
+            "concat": str(row[idx_concat]) if idx_concat != -1 and row[idx_concat] is not None else "",
+            # Keep raw parts for sorting if they exist
+            "raw_month": month,
+            "raw_year": year
         })
         
     if not records:
@@ -403,6 +442,81 @@ def dedupe(
     
     unique_records = []
     
+    # Separate pass-throughs from actual merges
+    merge_clusters = [c for c in clusters if len(c) > 1]
+    single_clusters = [c for c in clusters if len(c) == 1]
+    
+    # Pass-throughs: no LLM needed
+    for cluster in single_clusters:
+        unique_records.append(records[cluster[0]])
+    
+    # ── Pre-compute metadata for all merge clusters (fast, no LLM) ──
+    merge_jobs = []
+    for cluster in merge_clusters:
+        items_to_merge = [records[idx] for idx in cluster]
+        
+        t_tags = []
+        month = ""
+        year = ""
+        topic = "Miscellaneous"
+        date_from_cluster = ""
+        
+        pairs = []
+        seen = set()
+        
+        for item in items_to_merge:
+            t_tags.extend([t.strip() for t in item["tags"].split(",") if t.strip()])
+            
+            if item.get("raw_month") and item["raw_month"] != "Not Specified": month = item["raw_month"]
+            if item.get("raw_year") and item["raw_year"] != "Not Specified": year = item["raw_year"]
+            if item.get("topic") and item["topic"] != "Miscellaneous": topic = item["topic"]
+            if item.get("date") and item["date"] != "Not Specified": date_from_cluster = item["date"]
+            
+            sp = [s.strip() for s in item.get("source_key", "").split("|")]
+            op = [o.strip() for o in item.get("order_key", "").split("|")]
+            max_l = max(len(sp), len(op))
+            sp += [""] * (max_l - len(sp))
+            op += [""] * (max_l - len(op))
+            for s, o in zip(sp, op):
+                if (s, o) not in seen and (s or o):
+                    seen.add((s, o))
+                    pairs.append((s, o))
+
+        unique_tags = list(dict.fromkeys(t_tags))
+        merged_source_key = " | ".join(p[0] for p in pairs)
+        merged_order_key = " | ".join(p[1] for p in pairs)
+        
+        if date_from_cluster:
+            merged_date = date_from_cluster
+        elif month or year:
+            merged_date = f"{month or 'Not Specified'} - {year or 'Not Specified'}"
+        else:
+            merged_date = "Not Specified"
+
+        news_strings = [i["news"] for i in items_to_merge]
+        visual_concat = "\n\n---\n".join([f"RECORD {i}:\n{item}" for i, item in enumerate(news_strings, 1)])
+        
+        merge_jobs.append({
+            "date": merged_date,
+            "topic": topic,
+            "tags": ", ".join(unique_tags),
+            "source_key": merged_source_key,
+            "order_key": merged_order_key,
+            "concat": visual_concat,
+            "_news_strings": news_strings,
+        })
+
+    # ── Parallel LLM merging ─────────────────────────────────────────
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
+    def _do_merge(job):
+        news_strs = job.pop("_news_strings")
+        merged = merge_duplicate_news(news_strs, client, config.model_name)
+        job["news"] = merged
+        return job
+    
+    console.print(f"[cyan]  Launching {workers} parallel LLM workers for {len(merge_jobs)} merge tasks...[/cyan]")
+    
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -410,70 +524,24 @@ def dedupe(
         MofNCompleteColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task("Merging duplicates via LLM...", total=len(clusters))
+        task = progress.add_task(f"Merging {len(merge_jobs)} duplicates...", total=len(merge_jobs))
         
-        for cluster in clusters:
-            items_to_merge = [records[idx] for idx in cluster]
-            
-            # Base case: no duplicate
-            if len(items_to_merge) == 1:
-                unique_records.append(items_to_merge[0])
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(_do_merge, job): i for i, job in enumerate(merge_jobs)}
+            for future in as_completed(futures):
+                result = future.result()
+                unique_records.append(result)
                 progress.advance(task)
-                continue
-                
-            # Merge case
-            t_tags = []
-            month = ""
-            year = ""
-            topic = "Miscellaneous"
-            
-            pairs = []
-            seen = set()
-            
-            for item in items_to_merge:
-                t_tags.extend([t.strip() for t in item["tags"].split(",") if t.strip()])
-                
-                if item["month"] and item["month"] != "Not Specified": month = item["month"]
-                if item["year"] and item["year"] != "Not Specified": year = item["year"]
-                if item["topic"] and item["topic"] != "Miscellaneous": topic = item["topic"]
-                
-                sp = [s.strip() for s in item.get("source_key", "").split("|")]
-                op = [o.strip() for o in item.get("order_key", "").split("|")]
-                max_l = max(len(sp), len(op))
-                sp += [""] * (max_l - len(sp))
-                op += [""] * (max_l - len(op))
-                for s, o in zip(sp, op):
-                    if (s, o) not in seen and (s or o):
-                        seen.add((s, o))
-                        pairs.append((s, o))
 
-            unique_tags = list(dict.fromkeys(t_tags))
-            merged_source = " | ".join(p[0] for p in pairs)
-            merged_order = " | ".join(p[1] for p in pairs)
-            
-            news_strings = [i["news"] for i in items_to_merge]
-            merged_news = merge_duplicate_news(news_strings, client, config.model_name)
-            
-            unique_records.append({
-                "month": month or "Not Specified",
-                "year": year or "Not Specified",
-                "topic": topic,
-                "tags": ", ".join(unique_tags),
-                "news": merged_news,
-                "source_key": merged_source,
-                "order_key": merged_order
-            })
-            
-            progress.advance(task)
-
-    # ── 4. Sorting ──────────────────────────────────────────────────
     def sort_key(rec):
-        first_source = rec["source_key"].split("|")[0].strip().lower()
-        first_order = rec["order_key"].split("|")[0].strip()
+        # Sort by source and then attempt numeric order
+        src = rec["source_key"].split("|")[0].strip().lower()
+        ord_val = rec.get("order_key", "").split("|")[0].strip()
+            
         try:
-            return (first_source, int(first_order))
+            return (src, int(ord_val))
         except ValueError:
-            return (first_source, 999999)
+            return (src, 999999)
 
     unique_records.sort(key=sort_key)
 
