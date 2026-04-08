@@ -54,6 +54,16 @@ def parse_news(
         "--batch-size", "-b",
         help="Number of lines to send per LLM call (lower = more accurate, higher = faster).",
     ),
+    month: str = typer.Option(
+        "Not Specified",
+        "--month", "-m",
+        help="Global month to apply to all items (e.g. 'December').",
+    ),
+    year: str = typer.Option(
+        "Not Specified",
+        "--year", "-y",
+        help="Global year to apply to all items (e.g. '2025').",
+    ),
     workers: int = typer.Option(
         4,
         "--workers",
@@ -72,7 +82,8 @@ def parse_news(
     Parse a current affairs file into a filterable Excel spreadsheet.
 
     Each line in the file is treated as one news item. The local LLM classifies
-    each into Month, Year, Topic, Tags and a clean summary.
+    each into Topic and Tags. Month and Year are supplied via CLI options.
+    The original line is preserved completely as the News block.
 
     Supports APPEND mode: run on multiple files with the same --output and all
     rows accumulate into a single master Excel sheet.
@@ -102,7 +113,7 @@ def parse_news(
         raise typer.Exit(code=1)
 
     console.print(f"[cyan]Found {len(lines)} news lines to classify[/cyan]")
-    console.print(f"[dim]Topics: {len(STANDARD_TOPICS)} standard categories · Batch size: {batch_size} · Workers: {workers}[/dim]")
+    console.print(f"[dim]Topics: {len(STANDARD_TOPICS)} · Config: Month={month}, Year={year}[/dim]")
 
     # ── Output path ───────────────────────────────────────────────────
     if output is None:
@@ -154,13 +165,10 @@ def parse_news(
                     # Fallback: use raw text for failed batches
                     records = [
                         {
-                            "month": "Not Specified",
-                            "year": "Not Specified",
                             "topic": "Miscellaneous",
                             "tags": "",
-                            "news": line.lstrip("- ").strip(),
                         }
-                        for line in batch
+                        for _ in batch
                     ]
 
                 elif len(records) != len(batch):
@@ -169,13 +177,9 @@ def parse_news(
                         f"got {len(records)}. Padding/trimming.[/yellow]"
                     )
                     while len(records) < len(batch):
-                        i = len(records)
                         records.append({
-                            "month": "Not Specified",
-                            "year": "Not Specified",
                             "topic": "Miscellaneous",
                             "tags": "",
-                            "news": batch[i].lstrip("- ").strip() if i < len(batch) else "PARSE ERROR",
                         })
                     records = records[: len(batch)]
                 else:
@@ -183,10 +187,15 @@ def parse_news(
                         f"[green]✔ Batch {batch_idx + 1}: {len(records)} items classified[/green]"
                     )
 
-                # Validate topics
-                for rec in records:
+                # Validate topics and inject month/year/news
+                for i, rec in enumerate(records):
                     if rec.get("topic") not in STANDARD_TOPICS:
                         rec["topic"] = "Miscellaneous"
+                    
+                    # Inject CLI-provided and original line data
+                    rec["month"] = month
+                    rec["year"] = year
+                    rec["news"] = batch[i].lstrip("- ").strip()
 
                 batch_results[batch_idx] = records
                 progress.advance(task)

@@ -54,29 +54,13 @@ def build_system_prompt() -> str:
 You will receive one or more news items, each on its own numbered line. For EACH line, extract structured data and return it as a JSON array.
 
 ## OUTPUT FORMAT
-Return a JSON array. Each element corresponds to one input line IN ORDER and must have exactly these 5 keys:
+Return a JSON array. Each element corresponds to one input line IN ORDER and must have exactly these 2 keys:
 [
   {{
-    "month": "<Full month name OR 'Not Specified'>",
-    "year": "<4-digit year string OR 'Not Specified'>",
     "topic": "<Exactly one topic from the STANDARD LIST below>",
-    "tags": "<Comma-separated micro-level keywords for granular filtering>",
-    "news": "<Clean single-sentence summary of the news item>"
+    "tags": "<Comma-separated micro-level keywords for granular filtering>"
   }}
 ]
-
-## MONTH & YEAR EXTRACTION RULES — CRITICAL
-- Extract month and year ONLY from EXPLICIT date references found WITHIN the text of that specific line.
-- "Dec 2025" or "December 2025" → month: "December", year: "2025"
-- "Dec 14, 2025" → month: "December", year: "2025"
-- "Nov 2025" → month: "November", year: "2025"
-- "Oct 2026" → month: "October", year: "2026"
-- A bare year like "(2024)" with no month context → month: "Not Specified", year: "2024"
-- A bare month like "Dec 25" with no year → month: "December", year: "Not Specified"
-- If the line contains NO date reference whatsoever → month: "Not Specified", year: "Not Specified"
-- NEVER assume, infer, or fabricate dates. Do NOT use the filename, heading, or neighboring lines.
-- If multiple dates appear, use the date of the PRIMARY news event (the most recent/main occurrence).
-- Founding/establishment dates (e.g., "Est. 1950", "started 2014") are NOT the event date — ignore them unless the news IS specifically about the founding.
 
 ## STANDARD TOPICS — USE EXACTLY ONE PER LINE
 {topics_block}
@@ -117,16 +101,9 @@ Return a JSON array. Each element corresponds to one input line IN ORDER and mus
   - Topic "International Relations", Tags: "India, Russia, Summit, Putin, Delhi"
 - Tags should be proper nouns or specific terms — NOT generic adjectives.
 
-## NEWS SUMMARY RULES
-- Produce a clean, single-sentence summary capturing the essential fact.
-- Remove bullet markers (- ), markdown bold formatting (**), and noise characters.
-- Preserve ALL key data: names, numbers, locations, dates, ranks.
-- Do NOT editorialize, add, or assume information not present in the original line.
-- Keep it concise but information-complete — this goes into an exam revision sheet.
-
 ## STRICT OUTPUT RULES
 - Output ONLY the raw JSON array. No markdown code fences, no explanation, no commentary.
-- Every element must have all 5 keys. Never use null — use "Not Specified" for unknown month/year.
+- Every element must have all 2 keys.
 - The array must have EXACTLY as many elements as input lines, in the same order."""
 
 
