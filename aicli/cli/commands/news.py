@@ -313,9 +313,9 @@ def dedupe(
         help="Output Excel file path. Defaults to <input_name>_deduped.xlsx.",
     ),
     threshold: float = typer.Option(
-        0.85,
+        0.80,
         "--threshold", "-t",
-        help="Cosine similarity threshold for embeddings (0.0 to 1.0). Default is 0.85.",
+        help="Cosine similarity threshold for embeddings (0.0 to 1.0). Default is 0.80.",
     ),
 ):
     """
