@@ -217,8 +217,8 @@ def merge_duplicate_news(news_items: list[str], client, model_name: str) -> str:
 # Excel writer — supports CREATE and APPEND
 # ──────────────────────────────────────────────────────────────────────
 
-HEADERS = ["S.No", "Date", "Topic", "Tags", "News", "Source", "Order", "Concat"]
-COL_WIDTHS = {"A": 6, "B": 18, "C": 30, "D": 36, "E": 80, "F": 20, "G": 10, "H": 60}
+HEADERS = ["S.No", "Date", "Topic", "Tags", "News", "Source", "Concat"]
+COL_WIDTHS = {"A": 6, "B": 18, "C": 30, "D": 36, "E": 80, "F": 30, "G": 60}
 
 
 def _style_header_row(ws) -> None:
@@ -264,7 +264,7 @@ def _style_data_row(ws, row_num: int, values: list, row_index: int) -> None:
         cell.font = data_font
         cell.fill = fill
         cell.border = thin_border
-        if col in (1, 2, 7):  # S.No, Date, Order — centered
+        if col in (1, 2):  # S.No, Date — centered
             cell.alignment = Alignment(horizontal="center", vertical="top")
         elif col == 6:  # News — wrap text
             cell.alignment = Alignment(vertical="top", wrap_text=True)
@@ -274,7 +274,7 @@ def _style_data_row(ws, row_num: int, values: list, row_index: int) -> None:
 
 def _apply_finishing(ws, total_rows: int) -> None:
     """Apply auto-filter, freeze panes, and column widths."""
-    ws.auto_filter.ref = f"A1:H{total_rows}"
+    ws.auto_filter.ref = f"A1:G{total_rows}"
     ws.freeze_panes = "A2"
     for col_letter, width in COL_WIDTHS.items():
         ws.column_dimensions[col_letter].width = width
@@ -313,7 +313,6 @@ def write_excel(records: list[dict], output_path: Path, source_filename: str) ->
             record.get("tags", ""),
             record.get("news", ""),
             record.get("source_key", ""),
-            record.get("order_key", ""),
             record.get("concat", ""),
         ]
         _style_data_row(ws, row_num, values, global_idx)

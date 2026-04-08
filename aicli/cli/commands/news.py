@@ -284,8 +284,8 @@ def from_json(
             "topic": topic,
             "tags": str(item.get("tags", "")),
             "news": news_str,
-            "source_key": str(source),
-            "order_key": str(order),
+            "source_key": f"{source} - {order}",
+            "_raw_order": str(order),
             "concat": ""
         })
 
@@ -390,8 +390,8 @@ def dedupe(
             "topic": str(row[idx_topic]) if idx_topic != -1 and row[idx_topic] is not None else "Miscellaneous",
             "tags": str(row[idx_tags]) if idx_tags != -1 and row[idx_tags] is not None else "",
             "news": str(row[idx_news]) if idx_news != -1 and row[idx_news] is not None else "",
-            "source_key": str(row[idx_source]) if idx_source != -1 and row[idx_source] is not None else "",
-            "order_key": str(row[idx_order]) if idx_order != -1 and row[idx_order] is not None else "",
+            "source_key": f"{str(row[idx_source]) if idx_source != -1 and row[idx_source] is not None else ''} - {str(row[idx_order]) if idx_order != -1 and row[idx_order] is not None else ''}",
+            "_raw_order": str(row[idx_order]) if idx_order != -1 and row[idx_order] is not None else "",
             "concat": str(row[idx_concat]) if idx_concat != -1 and row[idx_concat] is not None else "",
             # Keep raw parts for sorting if they exist
             "raw_month": month,
@@ -483,8 +483,8 @@ def dedupe(
                     pairs.append((s, o))
 
         unique_tags = list(dict.fromkeys(t_tags))
-        merged_source_key = " | ".join(p[0] for p in pairs)
-        merged_order_key = " | ".join(p[1] for p in pairs)
+        merged_source_key = " | ".join(f"{p[0]} - {p[1]}" for p in pairs)
+        raw_first_order = pairs[0][1] if pairs else ""
         
         if date_from_cluster:
             merged_date = date_from_cluster
@@ -501,13 +501,23 @@ def dedupe(
             "topic": topic,
             "tags": ", ".join(unique_tags),
             "source_key": merged_source_key,
-            "order_key": merged_order_key,
+            "_raw_order": raw_first_order,
             "concat": visual_concat,
             "_news_strings": news_strings,
         })
 
     # ── Parallel LLM merging ─────────────────────────────────────────
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    import threading
+    
+    save_lock = threading.Lock()
+    
+    def _save_snapshot(recs, path):
+        """Thread-safe progressive save — writes current state to Excel."""
+        with save_lock:
+            if path.exists():
+                path.unlink()
+            write_excel(list(recs), path, source_filename="")
     
     def _do_merge(job):
         news_strs = job.pop("_news_strings")
@@ -516,6 +526,13 @@ def dedupe(
         return job
     
     console.print(f"[cyan]  Launching {workers} parallel LLM workers for {len(merge_jobs)} merge tasks...[/cyan]")
+    
+    # Must remove the output file if it exists, because write_excel appends
+    if output.exists():
+        output.unlink()
+    
+    # Save pass-throughs immediately as a baseline snapshot
+    _save_snapshot(unique_records, output)
     
     with Progress(
         SpinnerColumn(),
@@ -532,11 +549,14 @@ def dedupe(
                 result = future.result()
                 unique_records.append(result)
                 progress.advance(task)
+                
+                # ── Save on the go: write after each merge ──
+                _save_snapshot(unique_records, output)
 
     def sort_key(rec):
-        # Sort by source and then attempt numeric order
-        src = rec["source_key"].split("|")[0].strip().lower()
-        ord_val = rec.get("order_key", "").split("|")[0].strip()
+        # Sort by first source alphabetically, then by raw order numerically
+        src = rec["source_key"].split("|")[0].split("-")[0].strip().lower()
+        ord_val = rec.get("_raw_order", "").split("|")[0].strip()
             
         try:
             return (src, int(ord_val))
@@ -548,9 +568,8 @@ def dedupe(
     console.print(f"[green]✔ AI De-duplication complete. Merged {num_duplicates} duplicate records.[/green]")
     console.print(f"[cyan]Writing {len(unique_records)} sorted, pristine records to Excel...[/cyan]")
     
-    # Must remove the output file if it exists, because write_excel appends if it exists
+    # Final sorted save
     if output.exists():
         output.unlink()
-        
     write_excel(unique_records, output, source_filename="")
     print_success(f"Deduplicated file saved → {output}")
