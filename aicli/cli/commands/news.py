@@ -637,6 +637,11 @@ def process_news(
         "-f",
         help="Force LLM merge even when source+order cache hit (re-merges current batch).",
     ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Bypass file-based LLM cache (equivalent to deleting cache file).",
+    ),
 ):
     """
     Unified God-Mode Pipeline: Parses JSON, appends to existing master Excel, and natively deduplicates the entire dataset.
@@ -654,6 +659,22 @@ def process_news(
         merge_duplicate_news,
         read_excel_records,
     )
+
+    cache_file = json_path.parent / f".{json_path.stem}_merge_cache.json"
+    merge_cache: dict[str, str] = {}
+    if cache_file.exists() and not no_cache:
+        try:
+            merge_cache = json.loads(cache_file.read_text(encoding="utf-8"))
+            console.print(f"[dim]Loaded merge cache: {len(merge_cache)} entries[/dim]")
+        except Exception:
+            merge_cache = {}
+
+    def save_cache():
+        if not no_cache:
+            cache_file.write_text(json.dumps(merge_cache, indent=2), encoding="utf-8")
+
+    def get_cache_key(source_order_keys: list[tuple]) -> str:
+        return "|".join(sorted(f"{s}:{o}" for s, o in source_order_keys if s or o))
 
     # ── 1. Parse JSON block (New Data) ─────────────────────────────────
     print_header("God-Mode Processing")
@@ -869,16 +890,31 @@ def process_news(
                     pass
 
         if len(all_json_items) >= longest_array_len and not force_merge:
-            bypass_llm = True
-            merged_news = items_to_merge[0].get("news", "")
-            for item in items_to_merge:
-                if len(item.get("news", "")) > len(merged_news):
-                    merged_news = item.get("news", "")
-            news_strings = []
+            cache_key = get_cache_key(list(source_order_keys))
+            if cache_key in merge_cache:
+                bypass_llm = True
+                merged_news = merge_cache[cache_key]
+                news_strings = []
+                console.print(
+                    f"[dim]  Cache hit: using cached merge for {len(source_order_keys)} items[/dim]"
+                )
+                job_cache_key = None
+            else:
+                bypass_llm = True
+                merged_news = items_to_merge[0].get("news", "")
+                for item in items_to_merge:
+                    if len(item.get("news", "")) > len(merged_news):
+                        merged_news = item.get("news", "")
+                news_strings = []
+                merge_cache[cache_key] = merged_news
+                job_cache_key = cache_key
         else:
             bypass_llm = False
             merged_news = ""
             news_strings = [i["news"] for i in items_to_merge]
+            job_cache_key = (
+                get_cache_key(list(source_order_keys)) if source_order_keys else None
+            )
             if force_merge and len(all_json_items) >= longest_array_len:
                 console.print(
                     f"[dim]  Force merge: re-merging cluster with {len(all_json_items)} items[/dim]"
@@ -896,6 +932,7 @@ def process_news(
                 "_bypass_llm": bypass_llm,
                 "_merged_news": merged_news if bypass_llm else None,
                 "_news_strings": news_strings if not bypass_llm else None,
+                "_cache_key": job_cache_key,
             }
         )
 
@@ -909,12 +946,15 @@ def process_news(
 
     def _do_merge(job):
         bypass = job.pop("_bypass_llm", False)
+        cache_key = job.pop("_cache_key", None)
         if bypass:
             job["news"] = job.pop("_merged_news", "")
         else:
             news_strs = job.pop("_news_strings", [])
             merged = merge_duplicate_news(news_strs, client, config.model_name)
             job["news"] = merged
+            if cache_key:
+                merge_cache[cache_key] = merged
         return job
 
     console.print(
@@ -971,4 +1011,6 @@ def process_news(
     if output.exists():
         output.unlink()
     write_excel(unique_records, output, source_filename="")
+    save_cache()
+    console.print(f"[dim]Merge cache saved to {cache_file.name}[/dim]")
     print_success(f"Master file updated and saved → {output}")
