@@ -195,22 +195,37 @@ def merge_duplicate_news(news_items: list[str], client, model_name: str) -> str:
     
     user_prompt = f"Merge and synthesize this concatenated news data into one clean record:\n\n{raw_concatenation}"
         
-    try:
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.0,
-        )
-        content = response.choices[0].message.content.strip()
-        return content
-        
-    except Exception as e:
-        console.print(f"[red]⚠ AI Merge Error on cluster of size {len(news_items)}: {str(e)}[/red]")
-        # Fallback to concatenation if AI merge fails
-        return f"[MERGE ERROR - FALLBACK CONCATENATION]:\n\n" + raw_concatenation
+    import time
+    max_retries = 5
+    base_delay = 2.0
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.0,
+            )
+            content = response.choices[0].message.content.strip()
+            return content
+            
+        except Exception as e:
+            # If it's the last attempt, fail. Otherwise wait and retry.
+            if attempt == max_retries - 1:
+                console.print(f"[red]⚠ AI Merge Error on cluster of size {len(news_items)} after {max_retries} attempts: {str(e)}[/red]")
+                return f"[MERGE ERROR - FALLBACK CONCATENATION]:\n\n" + raw_concatenation
+            
+            # Check for model unloaded / context size issues which are concurrency symptoms
+            err_msg = str(e).lower()
+            if "model unloaded" in err_msg or "context size" in err_msg or "no models loaded" in err_msg or "failed to parse" in err_msg:
+                sleep_time = base_delay * (2 ** attempt)
+                time.sleep(sleep_time)
+            else:
+                # For other hard errs, just retry with standard backoff
+                time.sleep(base_delay)
 
 
 # ──────────────────────────────────────────────────────────────────────
