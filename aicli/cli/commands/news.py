@@ -587,3 +587,328 @@ def dedupe(
         output.unlink()
     write_excel(unique_records, output, source_filename="")
     print_success(f"Deduplicated file saved → {output}")
+
+@app.command("process")
+def process_news(
+    json_path: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        help="Path to the JSON file containing new current affairs data.",
+    ),
+    output: Path = typer.Option(
+        None,
+        "--output", "-o",
+        help="Master Output Excel file path. Defaults to <input_name>_master.xlsx.",
+    ),
+    workers: int = typer.Option(
+        4,
+        "--workers",
+        "-w",
+        help="Number of parallel LLM inference threads.",
+        min=1,
+    ),
+    threshold: float = typer.Option(
+        0.8,
+        "--threshold",
+        "-t",
+        help="Cosine similarity threshold for duplicates (0.0 to 1.0).",
+    )
+):
+    """
+    Unified God-Mode Pipeline: Parses JSON, appends to existing master Excel, and natively deduplicates the entire dataset.
+    """
+    import json
+    import openpyxl
+    import threading
+    from sentence_transformers import SentenceTransformer, util
+    from openai import OpenAI
+    from aicli.config import config
+    from aicli.services.news_parser import write_excel, STANDARD_TOPICS, build_system_prompt, merge_duplicate_news
+    
+    # ── 1. Parse JSON block (New Data) ─────────────────────────────────
+    print_header("God-Mode Processing")
+    console.print(f"[cyan]Parsing input JSON: {json_path.name}...[/cyan]")
+    
+    if output is None:
+        output = json_path.parent / f"{json_path.stem}_master.xlsx"
+        
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        print_error("Failed to read JSON file.", e)
+        raise typer.Exit(code=1)
+
+    if not isinstance(data, list):
+        print_error("JSON file must contain an array of objects.")
+        raise typer.Exit(code=1)
+
+    records = []
+    for item in data:
+        title = item.get("title", "").strip()
+        key_answer = item.get("key_answer", "").strip()
+        details = item.get("details", "").strip()
+        
+        news_parts = []
+        if title:
+            news_parts.append(f"**{title}**")
+        if key_answer:
+            news_parts.append(key_answer)
+        if details:
+            news_parts.append(details)
+            
+        news_str = "\n".join(news_parts)
+        
+        source = item.get("Source") or item.get("source", "")
+        order = item.get("Order") or item.get("order", "")
+        
+        topic = item.get("category", "")
+        if topic not in STANDARD_TOPICS:
+            if topic: 
+                pass 
+            else:
+                topic = "Miscellaneous"
+
+        src_val = str(source).strip() if source else ""
+        ord_val = str(order).strip() if order else ""
+        if src_val and ord_val:
+            src_str = f"{src_val} - {ord_val}"
+        else:
+            src_str = src_val or ord_val
+            
+        records.append({
+            "date": f"{item.get('month', 'Not Specified')} - {item.get('year', 'Not Specified')}",
+            "topic": topic,
+            "tags": str(item.get("tags", "")),
+            "news": news_str,
+            "source_key": src_str,
+            "_raw_order": ord_val,
+            "concat": ""  # Handled below
+        })
+        
+    console.print(f"[green]✔ Extracted {len(records)} new records from JSON.[/green]")
+    
+    # ── 2. Load Existing Master Excel ──────────────────────────────────
+    if output.exists():
+        console.print(f"[cyan]Master database exists. Loading existing records from {output.name}...[/cyan]")
+        try:
+            wb = openpyxl.load_workbook(output)
+            ws = wb.active
+            
+            headers = [str(cell).strip().lower() for cell in next(ws.iter_rows(max_row=1, values_only=True))]
+            def get_idx(candidates: list[str]) -> int:
+                for c in candidates:
+                    if c.lower() in headers:
+                        return headers.index(c.lower())
+                return -1
+
+            idx_month = get_idx(["month"]) # Fallback if no date 
+            idx_year = get_idx(["year"])   # Fallback if no date
+            idx_date = get_idx(["date", "month - year"])
+            idx_topic = get_idx(["topic", "category"])
+            idx_tags = get_idx(["tags"])
+            idx_news = get_idx(["news", "details"])
+            idx_source = get_idx(["source", "provider"])
+            idx_order = get_idx(["order", "id"])
+            idx_concat = get_idx(["concat", "original", "raw"])
+            
+            existing_count = 0
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if not any(row):
+                    continue
+                
+                month = str(row[idx_month]) if idx_month != -1 and row[idx_month] is not None else ""
+                year = str(row[idx_year]) if idx_year != -1 and row[idx_year] is not None else ""
+                if idx_date != -1 and row[idx_date]:
+                    date_val = str(row[idx_date])
+                elif month or year:
+                    date_val = f"{month or 'Not Specified'} - {year or 'Not Specified'}"
+                else:
+                    date_val = "Not Specified"
+                    
+                s_val = str(row[idx_source]).strip() if idx_source != -1 and row[idx_source] is not None else ""
+                o_val = str(row[idx_order]).strip() if idx_order != -1 and row[idx_order] is not None else ""
+                if s_val and o_val:
+                    s_str = f"{s_val} - {o_val}"
+                else:
+                    s_str = s_val or o_val
+                    
+                records.append({
+                    "date": date_val,
+                    "topic": str(row[idx_topic]) if idx_topic != -1 and row[idx_topic] is not None else "Miscellaneous",
+                    "tags": str(row[idx_tags]) if idx_tags != -1 and row[idx_tags] is not None else "",
+                    "news": str(row[idx_news]) if idx_news != -1 and row[idx_news] is not None else "",
+                    "source_key": s_str,
+                    "_raw_order": o_val,
+                    "concat": str(row[idx_concat]) if idx_concat != -1 and row[idx_concat] is not None else "",
+                    "raw_month": month,
+                    "raw_year": year
+                })
+                existing_count += 1
+            console.print(f"[green]✔ Loaded {existing_count} existing records. Total pool: {len(records)} items.[/green]")
+        except Exception as e:
+            print_error("Failed to read existing Excel file.", e)
+            raise typer.Exit(code=1)
+    else:
+        console.print(f"[yellow]Master database does not exist. A new one will be created: {output.name}[/yellow]")
+        
+    # ── 3. Embeddings & Clustering ─────────────────────────────────────
+    console.print(f"\n[cyan]Loading local embedding model ('all-MiniLM-L6-v2')...[/cyan]")
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    
+    news_texts = [r["news"] for r in records]
+    console.print(f"[cyan]Computing semantic embeddings for {len(records)} records...[/cyan]")
+    embeddings = model.encode(news_texts, convert_to_tensor=True)
+    
+    console.print(f"[cyan]Clustering duplicates (Threshold > {threshold})...[/cyan]")
+    cos_scores = util.cos_sim(embeddings, embeddings)
+    
+    visited = set()
+    clusters = []
+    
+    for i in range(len(records)):
+        if i in visited: continue
+        cluster = [i]
+        visited.add(i)
+        for j in range(i + 1, len(records)):
+            if j not in visited and cos_scores[i][j].item() >= threshold:
+                cluster.append(j)
+                visited.add(j)
+        clusters.append(cluster)
+        
+    num_duplicates = sum(len(c) - 1 for c in clusters)
+    if num_duplicates == 0:
+        console.print("[green]✔ No duplicates found! Pool is perfectly clean.[/green]")
+        if output.exists():
+            output.unlink()
+        write_excel(records, output, source_filename="")
+        print_success(f"File updated and saved → {output}")
+        raise typer.Exit()
+        
+    console.print(f"[yellow]⚠ Found {len(clusters)} unique events. {num_duplicates} duplicate records will be merged.[/yellow]")
+
+    # ── 4. AI Merging with Progressive Saves ───────────────────────────
+    client = OpenAI(
+        base_url=config.lm_studio_base_url,
+        api_key=config.lm_studio_api_key,
+    )
+    
+    unique_records = []
+    merge_clusters = [c for c in clusters if len(c) > 1]
+    single_clusters = [c for c in clusters if len(c) == 1]
+    
+    # Pass-throughs
+    for cluster in single_clusters:
+        unique_records.append(records[cluster[0]])
+        
+    # Pre-compute metadata for merge clusters
+    merge_jobs = []
+    for cluster in merge_clusters:
+        items_to_merge = [records[idx] for idx in cluster]
+        
+        t_tags = []
+        month = ""
+        year = ""
+        topic = "Miscellaneous"
+        date_from_cluster = ""
+        
+        pairs = []
+        seen = set()
+        
+        for item in items_to_merge:
+            t_tags.extend([t.strip() for t in item["tags"].split(",") if t.strip()])
+            
+            if item.get("raw_month") and item["raw_month"] != "Not Specified": month = item["raw_month"]
+            if item.get("raw_year") and item["raw_year"] != "Not Specified": year = item["raw_year"]
+            if item.get("topic") and item["topic"] != "Miscellaneous": topic = item["topic"]
+            if item.get("date") and item["date"] != "Not Specified": date_from_cluster = item["date"]
+            
+            sp = [s.strip() for s in item.get("source_key", "").split("|")]
+            op = [o.strip() for o in item.get("_raw_order", "").split("|")]
+            max_l = max(len(sp), len(op))
+            sp += [""] * (max_l - len(sp))
+            op += [""] * (max_l - len(op))
+            for s, o in zip(sp, op):
+                if (s, o) not in seen and (s or o):
+                    seen.add((s, o))
+                    pairs.append((s, o))
+
+        unique_tags = list(dict.fromkeys(t_tags))
+        merged_source_key = " | ".join(f"{p[0]} - {p[1]}" for p in pairs)
+        raw_first_order = pairs[0][1] if pairs else ""
+        
+        if date_from_cluster:
+            merged_date = date_from_cluster
+        elif month or year:
+            merged_date = f"{month or 'Not Specified'} - {year or 'Not Specified'}"
+        else:
+            merged_date = "Not Specified"
+
+        news_strings = [i["news"] for i in items_to_merge]
+        visual_concat = "\n\n---\n".join([f"RECORD {i}:\n{item}" for i, item in enumerate(news_strings, 1)])
+        
+        merge_jobs.append({
+            "date": merged_date,
+            "topic": topic,
+            "tags": ", ".join(unique_tags),
+            "source_key": merged_source_key,
+            "_raw_order": raw_first_order,
+            "concat": visual_concat,
+            "_news_strings": news_strings,
+        })
+    
+    file_lock = threading.Lock()
+    def _save_snapshot(current_merged, output_file):
+        with file_lock:
+            if output_file.exists():
+                output_file.unlink()
+            write_excel(current_merged, output_file, source_filename="")
+            
+    def _do_merge(job):
+        news_strs = job.pop("_news_strings")
+        # Check if already merged (progressive bypass is nice, but we lack the 'unmerged_new' array in this refactor. Let's just merge all strings natively.)
+        merged = merge_duplicate_news(news_strs, client, config.model_name)
+        job["news"] = merged
+        return job
+
+    console.print(f"  [dim]Launching {workers} parallel LLM workers for {len(merge_jobs)} merge tasks...[/dim]")
+    
+    # Initial save snapshot with passthroughs
+    _save_snapshot(unique_records, output)
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(f"Merging {len(merge_jobs)} duplicates...", total=len(merge_jobs))
+        
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(_do_merge, job): i for i, job in enumerate(merge_jobs)}
+            for future in as_completed(futures):
+                result = future.result()
+                unique_records.append(result)
+                progress.advance(task)
+                
+                _save_snapshot(unique_records, output)
+
+    def sort_key(rec):
+        src = rec.get("source_key", "").split("|")[0].split("-")[0].strip().lower()
+        ord_val = rec.get("_raw_order", "").split("|")[0].strip()
+        try:
+            return (src, int(ord_val))
+        except ValueError:
+            return (src, 999999)
+
+    unique_records.sort(key=sort_key)
+
+    console.print(f"[green]✔ AI De-duplication complete. Merged {num_duplicates} duplicate records.[/green]")
+    console.print(f"[cyan]Writing {len(unique_records)} sorted, pristine records to Excel...[/cyan]")
+    
+    if output.exists():
+        output.unlink()
+    write_excel(unique_records, output, source_filename="")
+    print_success(f"Master file updated and saved → {output}")
