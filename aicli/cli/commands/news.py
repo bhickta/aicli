@@ -385,13 +385,20 @@ def dedupe(
         else:
             date_val = "Not Specified"
 
+        source_val = str(row[idx_source]).strip() if idx_source != -1 and row[idx_source] is not None else ""
+        order_val = str(row[idx_order]).strip() if idx_order != -1 and row[idx_order] is not None else ""
+        if source_val and order_val:
+            src_str = f"{source_val} - {order_val}"
+        else:
+            src_str = source_val or order_val
+            
         records.append({
             "date": date_val,
             "topic": str(row[idx_topic]) if idx_topic != -1 and row[idx_topic] is not None else "Miscellaneous",
             "tags": str(row[idx_tags]) if idx_tags != -1 and row[idx_tags] is not None else "",
             "news": str(row[idx_news]) if idx_news != -1 and row[idx_news] is not None else "",
-            "source_key": f"{str(row[idx_source]) if idx_source != -1 and row[idx_source] is not None else ''} - {str(row[idx_order]) if idx_order != -1 and row[idx_order] is not None else ''}",
-            "_raw_order": str(row[idx_order]) if idx_order != -1 and row[idx_order] is not None else "",
+            "source_key": src_str,
+            "_raw_order": order_val,
             "concat": str(row[idx_concat]) if idx_concat != -1 and row[idx_concat] is not None else "",
             # Keep raw parts for sorting if they exist
             "raw_month": month,

@@ -186,7 +186,7 @@ def merge_duplicate_news(news_items: list[str], client, model_name: str) -> str:
         "You will be given a concatenated block of duplicate news items describing the exact same event.\n"
         "Your task is to merge them into a single cohesive entry while strictly mimicking ultra-dense study notes.\n"
         "CRITICAL RULES (NON-NEGOTIABLE):\n"
-        "1. FORMAT: Always start with a **Bold Title**. Use a double newline, then optionally a one-line summary (key_answer), then the bulleted details.\n"
+        "1. FORMAT: Always start with a **Bold Title**. Use a double newline, then optionally a one-line summary, then the bulleted details.\n"
         "2. ZERO DATA LOSS: Every single fact, number, date, name, percentage, and detail from ALL source items MUST appear in your output. You are merging facts, NOT summarizing them away. Losing even one unique fact is UNACCEPTABLE.\n"
         "3. DETAILS FORMATTING (ULTRA-DENSE): Use **telegraphic language**. No 'is', 'was', 'the', or 'has been' unless necessary for meaning. Eliminate filler words and obvious explanations.\n"
         "4. STRUCTURE: Each distinct fact MUST be on its own line starting with a bullet point (e.g. `- **India's Rank**: 16th/154 countries.`).\n"
