@@ -497,7 +497,7 @@ def dedupe(
                     pairs.append((s, o))
 
         unique_tags = list(dict.fromkeys(t_tags))
-        merged_source_key = " | ".join(f"{p[0]} - {p[1]}" for p in pairs)
+        merged_source_key = " | ".join(p[0] for p in pairs if p[0])
         raw_first_order = pairs[0][1] if pairs else ""
         
         if date_from_cluster:
@@ -835,7 +835,7 @@ def process_news(
                     pairs.append((s, o))
 
         unique_tags = list(dict.fromkeys(t_tags))
-        merged_source_key = " | ".join(f"{p[0]} - {p[1]}" for p in pairs)
+        merged_source_key = " | ".join(p[0] for p in pairs if p[0])
         raw_first_order = pairs[0][1] if pairs else ""
         
         if date_from_cluster:
