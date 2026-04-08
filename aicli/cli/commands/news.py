@@ -466,8 +466,19 @@ def dedupe(
             
             progress.advance(task)
 
+    # ── 4. Sorting ──────────────────────────────────────────────────
+    def sort_key(rec):
+        first_source = rec["source_key"].split("|")[0].strip().lower()
+        first_order = rec["order_key"].split("|")[0].strip()
+        try:
+            return (first_source, int(first_order))
+        except ValueError:
+            return (first_source, 999999)
+
+    unique_records.sort(key=sort_key)
+
     console.print(f"[green]✔ AI De-duplication complete. Merged {num_duplicates} duplicate records.[/green]")
-    console.print(f"[cyan]Writing {len(unique_records)} pristine records to Excel...[/cyan]")
+    console.print(f"[cyan]Writing {len(unique_records)} sorted, pristine records to Excel...[/cyan]")
     
     # Must remove the output file if it exists, because write_excel appends if it exists
     if output.exists():

@@ -175,19 +175,19 @@ def merge_duplicate_news(news_items: list[str], client, model_name: str) -> str:
     Given a list of semantically similar news strings, use the LLM to merge them into a single, comprehensive string.
     Ensures zero loss of factual detail.
     """
-    import json
+    from rich.console import Console
+    console = Console()
     
     system_prompt = (
         "You are an expert editor handling current affairs data.\n"
         "You will be given multiple news items that describe the exact same event.\n"
         "Your task is to merge them into a single cohesive entry.\n"
         "CRITICAL RULES:\n"
-        "1. DO NOT simply summarize; you MUST merge EVERYTHING.\n"
-        "2. Retain EVERY SINGLE FACT, name, date, location, and statistic found across ALL variations.\n"
-        "3. Ensure the final merged output is well-formatted, professional, and uses bullet points if details are lengthy.\n"
+        "1. DO NOT simply summarize; you MUST merge EVERYTHING. Synthesize the inputs into a single narrative: remove redundant sentences or phrasing while ensuring EVERY UNIQUE fact, name, date, location, and statistic is retained.\n"
+        "2. Retain EVERY SINGLE detail from ALL variations.\n"
+        "3. Ensure the final merged output is well-formatted, professional, and is a coherent paragraph or set of bullets.\n"
         "4. DO NOT add any outside knowledge. Only use the provided facts.\n"
-        "Output ONLY a raw JSON object matching this schema:\n"
-        '{\n  "merged_news": "<the unified text result>"\n}'
+        "5. Output ONLY the perfectly merged text block. Do NOT wrap it in JSON. Do NOT include markdown quotes."
     )
     
     user_prompt = "Merge these overlapping news records into one:\n\n"
@@ -202,12 +202,11 @@ def merge_duplicate_news(news_items: list[str], client, model_name: str) -> str:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.0,
-            response_format={"type": "json_object"},
         )
-        content = response.choices[0].message.content
-        data = json.loads(content)
-        return data.get("merged_news", "\n\n".join(news_items)).strip()
+        content = response.choices[0].message.content.strip()
+        return content
     except Exception as e:
+        console.print(f"[red]⚠ AI Merge Error on cluster of size {len(news_items)}: {str(e)}[/red]")
         # Fallback to concatenation if AI merge fails
         return f"[MERGE ERROR - FALLBACK CONCATENATION]:\n\n" + "\n\n".join(news_items)
 
