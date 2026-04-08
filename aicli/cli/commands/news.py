@@ -631,6 +631,12 @@ def process_news(
         "-t",
         help="Cosine similarity threshold for duplicates (0.0 to 1.0).",
     ),
+    force_merge: bool = typer.Option(
+        False,
+        "--force-merge",
+        "-f",
+        help="Force LLM merge even when source+order cache hit (re-merges current batch).",
+    ),
 ):
     """
     Unified God-Mode Pipeline: Parses JSON, appends to existing master Excel, and natively deduplicates the entire dataset.
@@ -862,7 +868,7 @@ def process_news(
                 except:
                     pass
 
-        if len(all_json_items) >= longest_array_len:
+        if len(all_json_items) >= longest_array_len and not force_merge:
             bypass_llm = True
             merged_news = items_to_merge[0].get("news", "")
             for item in items_to_merge:
@@ -873,6 +879,10 @@ def process_news(
             bypass_llm = False
             merged_news = ""
             news_strings = [i["news"] for i in items_to_merge]
+            if force_merge and len(all_json_items) >= longest_array_len:
+                console.print(
+                    f"[dim]  Force merge: re-merging cluster with {len(all_json_items)} items[/dim]"
+                )
 
         merged_concat_json = json.dumps(all_json_items)
 
