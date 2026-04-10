@@ -3,7 +3,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn, TimeRemainingColumn
 from rich.table import Table
 
 from aicli.services.video import FFprobeClient, MetadataBackupManager, WhisperEngine, VideoTaggerService
@@ -111,6 +111,9 @@ def tag_video(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
+        TimeElapsedColumn(),
+        TextColumn("•"),
+        TimeRemainingColumn(),
         console=console
     ) as progress:
         task_id = progress.add_task("Processing videos...", total=len(files))
@@ -195,6 +198,11 @@ def restore_tags(
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        TextColumn("•"),
+        TimeRemainingColumn(),
         console=console
     ) as progress:
         task_id = progress.add_task("Restoring backup sidecars...", total=len(files))
