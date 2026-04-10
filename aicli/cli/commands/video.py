@@ -46,6 +46,11 @@ def tag_video(
         "--retranscribe",
         help="Ignore cached sidecar data and force a full re-transcription."
     ),
+    transcribe_only: bool = typer.Option(
+        False,
+        "--transcribe-only",
+        help="Skip AI tagging and file renaming. Only perform transcription (writes .srt if --full-cc is used)."
+    ),
     workers: int = typer.Option(
         2,
         "--workers",
@@ -129,6 +134,7 @@ def tag_video(
                 full_cc,
                 text_thumb,
                 retranscribe, 
+                transcribe_only,
                 clip_every, 
                 clip_len, 
                 progress, 

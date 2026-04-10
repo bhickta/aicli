@@ -19,7 +19,8 @@ class VideoBatchProcessor:
         no_rename: bool, 
         full_cc: bool,
         text_thumb: bool,
-        retranscribe: bool, 
+        retranscribe: bool,
+        transcribe_only: bool,
         clip_every: int, 
         clip_len: int, 
         progress: Progress, 
@@ -57,6 +58,17 @@ class VideoBatchProcessor:
                     
                 cache["clips"] = clips
                 MetadataBackupManager.save_cache(video_path, cache)
+
+            if transcribe_only:
+                # If doing full CC, rewrite tmp_cc.srt to .srt if it exists, otherwise just return
+                tmp_srt = video_path.with_suffix(".tmp_cc.srt")
+                final_srt = video_path.with_suffix(".srt")
+                if tmp_srt.exists():
+                    shutil.move(str(tmp_srt), str(final_srt))
+                    progress.console.print(f"[bold green]\[{video_path.name}] Saved transcript directly to {final_srt.name}[/bold green]")
+                else:
+                    progress.console.print(f"[bold green]\[{video_path.name}] Extracted sparse clips (no SRT written as --full-cc was not used).[/bold green]")
+                return video_path, {}, None
 
             if "ai" in cache and not retranscribe:
                 ai = cache["ai"]
