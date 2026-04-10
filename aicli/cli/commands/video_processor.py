@@ -34,12 +34,18 @@ class VideoBatchProcessor:
                 clips = cache["clips"]
                 progress.console.print(f"[dim]\[{video_path.name}] Loaded cached transcript[/dim]")
             else:
-                srt_path = video_path.with_suffix(".srt")
-                if srt_path.exists() and not retranscribe:
+                # We always generate a temporary .srt if --full-cc is requested so we can mux it later
+                srt_path = video_path.with_suffix(".tmp_cc.srt") 
+                
+                # Check if a non-temp SRT exists to salvage text context from
+                ext_srt = video_path.with_suffix(".srt")
+                if ext_srt.exists() and not retranscribe:
                     progress.console.print(f"[green]\[{video_path.name}] Reading context directly from existing .srt...[/green]")
-                    clips = WhisperEngine.extract_clips_from_existing_srt(srt_path)
+                    clips = WhisperEngine.extract_clips_from_existing_srt(ext_srt)
+                    if full_cc: 
+                        shutil.copy(ext_srt, srt_path) # Stage for muxing
                 elif full_cc:
-                    progress.console.print(f"[purple]\[{video_path.name}] Fully Transcribing to SRT...[/purple]")
+                    progress.console.print(f"[purple]\[{video_path.name}] Fully Transcribing to container CCs...[/purple]")
                     clips = WhisperEngine.transcribe_video_full_srt(video_path, whisper_model, srt_path)
                 else:
                     progress.console.print(f"[cyan]\[{video_path.name}] Extracting sparse transcript samples...[/cyan]")
@@ -77,8 +83,18 @@ class VideoBatchProcessor:
             }
 
             if write:
-                FFmpegClient.write_tags(video_path, new_tags, original_tags=cache.get("original_tags"))
-                progress.console.print(f"[{video_path.name}] [bold green]Tags and backup embedded natively.[/bold green]")
+                tmp_srt = video_path.with_suffix(".tmp_cc.srt")
+                embed_path = tmp_srt if tmp_srt.exists() else None
+                
+                FFmpegClient.write_tags(video_path, new_tags, original_tags=cache.get("original_tags"), srt_path=embed_path)
+                if embed_path:
+                    progress.console.print(f"[{video_path.name}] [bold green]Tags, CC track, and backup embedded natively.[/bold green]")
+                else:
+                    progress.console.print(f"[{video_path.name}] [bold green]Tags and backup embedded natively.[/bold green]")
+
+                # Delete temporary SRT after successful mux
+                if embed_path and embed_path.exists():
+                    embed_path.unlink()
 
                 sc_path = MetadataBackupManager.sidecar_path(video_path)
                 if sc_path.exists():
@@ -92,10 +108,6 @@ class VideoBatchProcessor:
                         new_path = video_path.parent / new_name
                         if new_path != video_path and not new_path.exists():
                             shutil.move(str(video_path), str(new_path))
-                            # Rename the SRT alongside it if it exists!
-                            srt_path = video_path.with_suffix(".srt")
-                            if srt_path.exists():
-                                shutil.move(str(srt_path), str(new_path.with_suffix(".srt")))
                             
                             progress.console.print(f"[{video_path.name}] [bold blue]Renamed → {new_name}[/bold blue]")
                             video_path = new_path

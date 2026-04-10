@@ -56,11 +56,35 @@ class FFmpegClient:
         return np.frombuffer(result.stdout, dtype=np.float32)
 
     @staticmethod
-    def write_tags(video_path: Path, tags: Dict[str, Any], clear_first: bool = False, original_tags: Optional[Dict[str, Any]] = None) -> bool:
-        """Write metadata tags using ffmpeg stream copy (no re-encode). Embeds original tags as b64 if provided."""
-        tmp = video_path.with_suffix(".tmp_tagged.mp4")
+    def write_tags(
+        video_path: Path, 
+        tags: Dict[str, Any], 
+        clear_first: bool = False, 
+        original_tags: Optional[Dict[str, Any]] = None,
+        srt_path: Optional[Path] = None
+    ) -> bool:
+        """Write metadata tags using ffmpeg stream copy (no re-encode). Embeds original tags as b64 if provided. Embeds SRT if provided."""
+        tmp = video_path.with_suffix(".tmp_tagged.mp4" if video_path.suffix.lower() == ".mp4" else ".tmp_tagged.mkv")
 
+        cmd = ["ffmpeg", "-y", "-v", "quiet", "-i", str(video_path)]
         meta_args = []
+        
+        if srt_path and srt_path.exists():
+            cmd += ["-i", str(srt_path)]
+            cmd += ["-map", "0", "-map", "1:0"]
+            cmd += ["-c", "copy"]
+            
+            # Embed SRT into specific supported container track formats
+            if video_path.suffix.lower() == ".mp4":
+                cmd += ["-c:s", "mov_text"]
+            else:
+                cmd += ["-c:s", "srt"]
+                
+            # Add metadata specifically targeting the newly mapped subtitle track
+            # Map 1:0 is the subtitle. It gets mapped to index N in the output, but FFMPEG evaluates map order.
+        else:
+            cmd += ["-c", "copy"]
+
         if clear_first:
             meta_args += ["-map_metadata", "-1"]
         else:
@@ -78,9 +102,7 @@ class FFmpegClient:
             b64_backup = base64.b64encode(json.dumps(original_tags).encode("utf-8")).decode("utf-8")
             meta_args += ["-metadata", f"aicli_backup={b64_backup}"]
 
-        cmd = ["ffmpeg", "-y", "-v", "quiet",
-               "-i", str(video_path), "-c", "copy",
-               *meta_args, str(tmp)]
+        cmd += [*meta_args, str(tmp)]
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0 or not tmp.exists():
