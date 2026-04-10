@@ -31,10 +31,10 @@ def tag_video(
         "--no-rename",
         help="Tag only, keep the original filename. (Requires --write)"
     ),
-    thumb: bool = typer.Option(
-        True,
-        "--thumb/--no-thumb",
-        help="Automatically generate a .jpg thumbnail alongside the video."
+    full_cc: bool = typer.Option(
+        False,
+        "--full-cc",
+        help="Perform a full transcription to generate a sidecar .srt track."
     ),
     retranscribe: bool = typer.Option(
         False,
@@ -118,7 +118,7 @@ def tag_video(
                 model_instance, 
                 write, 
                 no_rename,
-                thumb,
+                full_cc,
                 retranscribe, 
                 clip_every, 
                 clip_len, 

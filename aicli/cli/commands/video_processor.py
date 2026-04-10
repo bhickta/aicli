@@ -17,7 +17,7 @@ class VideoBatchProcessor:
         whisper_model, 
         write: bool, 
         no_rename: bool, 
-        generate_thumb: bool, 
+        full_cc: bool,
         retranscribe: bool, 
         clip_every: int, 
         clip_len: int, 
@@ -34,11 +34,19 @@ class VideoBatchProcessor:
                 clips = cache["clips"]
                 progress.console.print(f"[dim]\[{video_path.name}] Loaded cached transcript[/dim]")
             else:
-                progress.console.print(f"[cyan]\[{video_path.name}] Transcribing audio...[/cyan]")
+                srt_path = video_path.with_suffix(".srt")
+                if srt_path.exists() and not retranscribe:
+                    progress.console.print(f"[green]\[{video_path.name}] Reading context directly from existing .srt...[/green]")
+                    clips = WhisperEngine.extract_clips_from_existing_srt(srt_path)
+                elif full_cc:
+                    progress.console.print(f"[purple]\[{video_path.name}] Fully Transcribing to SRT...[/purple]")
+                    clips = WhisperEngine.transcribe_video_full_srt(video_path, whisper_model, srt_path)
+                else:
+                    progress.console.print(f"[cyan]\[{video_path.name}] Extracting sparse transcript samples...[/cyan]")
+                    clips = WhisperEngine.transcribe_video_sparse(video_path, whisper_model, clip_every, clip_len)
                     
-                clips = WhisperEngine.transcribe_video(video_path, whisper_model, clip_every, clip_len)
                 if not clips:
-                    return video_path, None, ValueError("No speech detected.")
+                    return video_path, None, ValueError("No speech or text detected.")
                     
                 cache["clips"] = clips
                 MetadataBackupManager.save_cache(video_path, cache)
@@ -84,15 +92,13 @@ class VideoBatchProcessor:
                         new_path = video_path.parent / new_name
                         if new_path != video_path and not new_path.exists():
                             shutil.move(str(video_path), str(new_path))
+                            # Rename the SRT alongside it if it exists!
+                            srt_path = video_path.with_suffix(".srt")
+                            if srt_path.exists():
+                                shutil.move(str(srt_path), str(new_path.with_suffix(".srt")))
+                            
                             progress.console.print(f"[{video_path.name}] [bold blue]Renamed → {new_name}[/bold blue]")
                             video_path = new_path
-
-                if generate_thumb:
-                    thumb_path = video_path.with_suffix(".jpg")
-                    from aicli.services.video.ffmpeg_utils import FFprobeClient
-                    duration = FFprobeClient.get_duration(video_path)
-                    if FFmpegClient.generate_thumbnail(video_path, thumb_path, duration):
-                        progress.console.print(f"[{video_path.name}] [bold magenta]Thumbnail generated: {thumb_path.name}[/bold magenta]")
 
             return video_path, ai, None
             

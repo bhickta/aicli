@@ -38,23 +38,6 @@ class FFprobeClient:
 
 class FFmpegClient:
     """Handles destructive or modifying video operations."""
-    
-    @staticmethod
-    def generate_thumbnail(video_path: Path, output_path: Path, duration: float) -> bool:
-        """Extract a single frame from the video to serve as a thumbnail."""
-        target_sec = duration * 0.15 if duration > 0 else 5.0
-        
-        cmd = [
-            "ffmpeg", "-y", "-v", "quiet",
-            "-ss", str(target_sec),
-            "-i", str(video_path),
-            "-frames:v", "1",
-            "-q:v", "2",
-            str(output_path)
-        ]
-        
-        result = subprocess.run(cmd)
-        return result.returncode == 0 and output_path.exists()
 
     @staticmethod
     def stream_audio_clip(video_path: Path, start_sec: float, duration_sec: float) -> Optional[np.ndarray]:
