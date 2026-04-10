@@ -13,7 +13,7 @@ from aicli.cli.tui import print_header, print_success, print_error, confirm_acti
 app = typer.Typer(help="Video transcription and metadata tagging commands.")
 
 
-def _process_video(video_path: Path, whisper_model, write: bool, no_rename: bool, retranscribe: bool, clip_every: int, clip_len: int, progress: Progress, task_id) -> tuple[Path, dict, Exception]:
+def _process_video(video_path: Path, whisper_model, write: bool, no_rename: bool, generate_thumb: bool, retranscribe: bool, clip_every: int, clip_len: int, progress: Progress, task_id) -> tuple[Path, dict, Exception]:
     """Helper to process a single video in a worker thread."""
     try:
         cache = VideoTaggerService.load_cache(video_path) if not retranscribe else {}
@@ -62,8 +62,14 @@ def _process_video(video_path: Path, whisper_model, write: bool, no_rename: bool
         }
 
         if write:
-            VideoTaggerService.write_tags(video_path, new_tags)
-            progress.console.print(f"[{video_path.name}] [bold green]Tags written.[/bold green]")
+            # Pass original_tags to embed them into the video natively
+            VideoTaggerService.write_tags(video_path, new_tags, original_tags=cache.get("original_tags"))
+            progress.console.print(f"[{video_path.name}] [bold green]Tags and backup embedded natively.[/bold green]")
+
+            # Clean up temporary sidecar cache since everything is embedded now
+            sc_path = VideoTaggerService.sidecar_path(video_path)
+            if sc_path.exists():
+                sc_path.unlink()
 
             if not no_rename:
                 new_name = (ai.get("filename") or "").strip()
@@ -72,11 +78,14 @@ def _process_video(video_path: Path, whisper_model, write: bool, no_rename: bool
                         new_name += video_path.suffix
                     new_path = video_path.parent / new_name
                     if new_path != video_path and not new_path.exists():
-                        old_sc = VideoTaggerService.sidecar_path(video_path)
                         shutil.move(str(video_path), str(new_path))
-                        if old_sc.exists():
-                            shutil.move(str(old_sc), str(VideoTaggerService.sidecar_path(new_path)))
                         progress.console.print(f"[{video_path.name}] [bold blue]Renamed → {new_name}[/bold blue]")
+                        video_path = new_path # Update reference for thumbnail extraction
+
+            if generate_thumb:
+                thumb_path = video_path.with_suffix(".jpg")
+                if VideoTaggerService.generate_thumbnail(video_path, thumb_path):
+                    progress.console.print(f"[{video_path.name}] [bold magenta]Thumbnail generated: {thumb_path.name}[/bold magenta]")
 
         return video_path, ai, None
     except Exception as e:
@@ -99,6 +108,11 @@ def tag_video(
         False,
         "--no-rename",
         help="Tag only, keep the original filename. (Requires --write)"
+    ),
+    thumb: bool = typer.Option(
+        True,
+        "--thumb/--no-thumb",
+        help="Automatically generate a .jpg thumbnail alongside the video."
     ),
     retranscribe: bool = typer.Option(
         False,
@@ -181,7 +195,8 @@ def tag_video(
                     f, 
                     model_instance, 
                     write, 
-                    no_rename, 
+                    no_rename,
+                    thumb,
                     retranscribe, 
                     clip_every, 
                     clip_len, 
@@ -261,3 +276,46 @@ def restore_tags(
             progress.advance(task_id)
 
     print_success("Restore operation complete.")
+
+@app.command("info")
+def view_metadata(
+    target_path: Path = typer.Argument(
+        ...,
+        exists=True,
+        help="Path to the video file or directory."
+    )
+):
+    """
+    View current metadata of a video file.
+    """
+    valid_extensions = VideoTaggerService.VIDEO_EXTENSIONS
+    if target_path.is_file():
+        files = [target_path] if target_path.suffix.lower() in valid_extensions else []
+    else:
+        files = [p for p in target_path.rglob("*") if p.is_file() and p.suffix.lower() in valid_extensions]
+
+    if not files:
+        console.print("[yellow]No supported video files found.[/yellow]")
+        raise typer.Exit()
+        
+    for f in files:
+        tags = VideoTaggerService.read_existing_tags(f)
+        if not tags:
+            console.print(f"\n[cyan]{f.name}[/cyan]\n[yellow]No metadata found.[/yellow]")
+            continue
+            
+        table = Table(title=f"Metadata: {f.name}", show_header=True, header_style="bold magenta")
+        table.add_column("Property", style="dim", width=20)
+        table.add_column("Value")
+        
+        for k, v in tags.items():
+            if k.lower() == "aicli_backup":
+                table.add_row(k, "[dim italic]<Embedded Backup Payload>[/dim italic]")
+            elif isinstance(v, list):
+                table.add_row(k, ", ".join(map(str, v)))
+            else:
+                table.add_row(k, str(v))
+                
+        console.print(table)
+        console.print()
+

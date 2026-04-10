@@ -1,5 +1,6 @@
 import os
 import json
+import base64
 import subprocess
 import shutil
 import urllib.request
@@ -61,10 +62,25 @@ class VideoTaggerService:
 
     @staticmethod
     def restore_original_tags(video_path: Path) -> bool:
-        """Restore the video's original tags from the sidecar backup."""
+        """Restore the video's original tags from embedded backup or sidecar."""
+        # 1. Try embedded backup first
+        existing = VideoTaggerService.read_existing_tags(video_path)
+        embedded_b64 = existing.get("aicli_backup", "")
+        if not embedded_b64:
+            # Fallback for uppercase format variations
+            embedded_b64 = existing.get("AICLI_BACKUP", "")
+
+        if embedded_b64:
+            try:
+                original = json.loads(base64.b64decode(embedded_b64).decode("utf-8"))
+                return VideoTaggerService.write_tags(video_path, original, clear_first=True)
+            except Exception as e:
+                raise ValueError(f"Found embedded backup but failed to parse: {e}")
+
+        # 2. Fall back to sidecar
         sp = VideoTaggerService.sidecar_path(video_path)
         if not sp.exists():
-            raise FileNotFoundError(f"No sidecar found for {video_path.name}")
+            raise FileNotFoundError(f"No embedded backup or sidecar found for {video_path.name}")
         
         cache = json.loads(sp.read_text(encoding="utf-8"))
         original = cache.get("original_tags")
@@ -82,6 +98,25 @@ class VideoTaggerService:
             return float(json.loads(out.stdout)["format"].get("duration", 0))
         except:
             return 0.0
+
+    @staticmethod
+    def generate_thumbnail(video_path: Path, output_path: Path) -> bool:
+        """Extract a single frame from the video to serve as a thumbnail."""
+        duration = VideoTaggerService.get_duration(video_path)
+        # Capture frame at 15% into the video to avoid black intro screens
+        target_sec = duration * 0.15 if duration > 0 else 5.0
+        
+        cmd = [
+            "ffmpeg", "-y", "-v", "quiet",
+            "-ss", str(target_sec),
+            "-i", str(video_path),
+            "-frames:v", "1",
+            "-q:v", "2", # High quality JPEG
+            str(output_path)
+        ]
+        
+        result = subprocess.run(cmd)
+        return result.returncode == 0 and output_path.exists()
 
     @staticmethod
     def stream_audio_clip(video_path: Path, start_sec: float, duration_sec: float) -> Optional[np.ndarray]:
@@ -188,8 +223,8 @@ Return ONLY valid JSON — no markdown, no extra text:
             raise ValueError(f"Failed to parse response: {e}")
 
     @staticmethod
-    def write_tags(video_path: Path, tags: Dict[str, Any], clear_first: bool = False) -> bool:
-        """Write metadata tags using ffmpeg stream copy (no re-encode)."""
+    def write_tags(video_path: Path, tags: Dict[str, Any], clear_first: bool = False, original_tags: Optional[Dict[str, Any]] = None) -> bool:
+        """Write metadata tags using ffmpeg stream copy (no re-encode). Embeds original tags as b64 if provided."""
         tmp = video_path.with_suffix(".tmp_tagged.mp4")
 
         meta_args = []
@@ -199,9 +234,13 @@ Return ONLY valid JSON — no markdown, no extra text:
             meta_args += ["-map_metadata", "0"]
 
         for k, v in tags.items():
-            if v:
+            if v and k.lower() != "aicli_backup": # Prevent feeding old backup recursively
                 val = ", ".join(v) if isinstance(v, list) else str(v)
                 meta_args += ["-metadata", f"{k}={val}"]
+                
+        if original_tags:
+            b64_backup = base64.b64encode(json.dumps(original_tags).encode("utf-8")).decode("utf-8")
+            meta_args += ["-metadata", f"aicli_backup={b64_backup}"]
 
         cmd = ["ffmpeg", "-y", "-v", "quiet",
                "-i", str(video_path), "-c", "copy",
