@@ -25,11 +25,8 @@ def _process_video(video_path: Path, whisper_model, write: bool, no_rename: bool
             progress.console.print(f"[dim]\[{video_path.name}] Loaded cached transcript[/dim]")
         else:
             progress.console.print(f"[cyan]\[{video_path.name}] Transcribing audio...[/cyan]")
-            
-            def log_callback(total, current, t, text):
-                progress.console.print(f"[dim]  [{current}/{total}] @{int(t//60)}m{int(t%60)}s: {text[:60]}...[/dim]")
                 
-            clips = VideoTaggerService.transcribe_video(video_path, whisper_model, clip_every, clip_len, callback=log_callback)
+            clips = VideoTaggerService.transcribe_video(video_path, whisper_model, clip_every, clip_len)
             if not clips:
                 return video_path, None, ValueError("No speech detected.")
                 
@@ -221,11 +218,8 @@ def tag_video(
                 progress.advance(task_id)
         except KeyboardInterrupt:
             progress.console.print("\n[bold red]⚠ Processing interrupted by user! Shutting down abruptly...[/bold red]")
-            executor.shutdown(wait=False, cancel_futures=True)
-            raise typer.Exit(code=130)
-        finally:
-            # Ensure proper cleanup if it wasn't intercepted
-            executor.shutdown(wait=False)
+            import os
+            os._exit(130)  # Instantly kills process, avoiding C++ CUDA destructor core dumps
 
     elapsed = time.time() - start_t
     successful = [r for r in results if not r[2]]
