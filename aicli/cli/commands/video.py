@@ -99,7 +99,7 @@ def tag_video(
     
     if not all_cached:
         try:
-            console.print(f"[cyan]Loading Whisper model on GPU ({workers} hardware streams)...[/cyan]")
+            console.print(f"[cyan]Loading Whisper model on GPU (batch_size=24)...[/cyan]")
             model_instance = WhisperEngine.load_whisper(whisper_model, num_workers=workers)
         except Exception as e:
             print_error("Failed to load whisper model", e)

@@ -13,8 +13,9 @@ class WhisperEngine:
         except ImportError:
             raise ImportError("faster-whisper is not installed. Run: uv add faster-whisper numpy")
         
+        # num_workers is kept for CTranslate2 internal thread pools but real parallelism
+        # comes from batch_size passed to .transcribe() calls
         model = WhisperModel(model_size, device="cuda", compute_type="float16", num_workers=num_workers)
-        # Wrap the model in a BatchedInferencePipeline
         return BatchedInferencePipeline(model=model)
 
     @staticmethod
@@ -40,7 +41,7 @@ class WhisperEngine:
                 continue
                 
             segments, _ = whisper_model.transcribe(
-                audio, beam_size=5, language=None, vad_filter=True
+                audio, batch_size=24, beam_size=1, language=None, vad_filter=True
             )
             text = " ".join(s.text.strip() for s in segments).strip()
             
@@ -60,7 +61,7 @@ class WhisperEngine:
     @staticmethod
     def transcribe_video_full_srt(video_path: Path, whisper_model, srt_path: Path) -> List[Dict[str, Any]]:
         """Fully transcribes the video, writes it to SRT, and returns sparse clips for LM Studio."""
-        segments, _ = whisper_model.transcribe(str(video_path), beam_size=5, language=None, vad_filter=True)
+        segments, _ = whisper_model.transcribe(str(video_path), batch_size=24, beam_size=1, language=None, vad_filter=True)
         
         sample_clips = []
         # Store segments into a list since generators are consumed
