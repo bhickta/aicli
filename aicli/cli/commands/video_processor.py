@@ -60,14 +60,21 @@ class VideoBatchProcessor:
                 MetadataBackupManager.save_cache(video_path, cache)
 
             if transcribe_only:
-                # If doing full CC, rewrite tmp_cc.srt to .srt if it exists, otherwise just return
                 tmp_srt = video_path.with_suffix(".tmp_cc.srt")
-                final_srt = video_path.with_suffix(".srt")
-                if tmp_srt.exists():
+                
+                if write and full_cc and tmp_srt.exists():
+                    # Mux the SRT directly into the video container — no tagging, no renaming
+                    FFmpegClient.write_tags(video_path, {}, srt_path=tmp_srt)
+                    if tmp_srt.exists():
+                        tmp_srt.unlink()
+                    progress.console.print(f"[bold green]\\[{video_path.name}] CC track embedded into container.[/bold green]")
+                elif tmp_srt.exists():
+                    # No --write, just save the .srt as a sidecar
+                    final_srt = video_path.with_suffix(".srt")
                     shutil.move(str(tmp_srt), str(final_srt))
-                    progress.console.print(f"[bold green]\\[{video_path.name}] Saved transcript directly to {final_srt.name}[/bold green]")
+                    progress.console.print(f"[bold green]\\[{video_path.name}] Saved transcript to {final_srt.name}[/bold green]")
                 else:
-                    progress.console.print(f"[bold green]\\[{video_path.name}] Done extracting sparse clips / loaded from cache.[/bold green]")
+                    progress.console.print(f"[bold green]\\[{video_path.name}] Transcript cached (use --full-cc to generate SRT).[/bold green]")
                 return video_path, {}, None
 
             if "ai" in cache and not retranscribe:
