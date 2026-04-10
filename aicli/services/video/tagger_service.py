@@ -26,6 +26,8 @@ Return ONLY valid JSON — no markdown, no extra text:
   "subject": "academic subject",
   "topics": ["topic1", "topic2", "topic3"],
   "description": "2-3 sentence summary",
+  "teacher": "name of the teacher/professor",
+  "coaching": "name of the coaching institute/channel",
   "language": "3-letter ISO-639-2 lowercase code (e.g. hin, eng)"
 }"""
 

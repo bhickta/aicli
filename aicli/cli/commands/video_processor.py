@@ -77,6 +77,8 @@ class VideoBatchProcessor:
                 "comment":     ai.get("description", ""),
                 "genre":       ai.get("subject", ""),
                 "description": ai.get("description", ""),
+                "artist":      ai.get("teacher", ""),
+                "publisher":   ai.get("coaching", ""),
                 "SUBJECT":     ai.get("subject", ""),
                 "TOPICS":      ", ".join(ai.get("topics", [])),
                 "language_track": ai.get("language", ""),
