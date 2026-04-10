@@ -1,6 +1,7 @@
 """Service for generating compressed study notes from SRT transcripts via LM Studio."""
 import json
 import re
+import subprocess
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -50,11 +51,42 @@ class NotesService:
     CHUNK_SIZE = 12000
 
     @staticmethod
+    def has_subtitle_stream(video_path: Path) -> bool:
+        """Check if a video file has an embedded subtitle stream."""
+        cmd = [
+            "ffprobe", "-v", "quiet", "-print_format", "json",
+            "-show_streams", "-select_streams", "s",
+            str(video_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            data = json.loads(result.stdout)
+            return len(data.get("streams", [])) > 0
+        except Exception:
+            return False
+
+    @staticmethod
+    def extract_srt_from_video(video_path: Path) -> Optional[Path]:
+        """Extract the first subtitle stream from a video container to a temp .srt file."""
+        tmp_srt = video_path.with_suffix(".tmp_notes.srt")
+        cmd = [
+            "ffmpeg", "-y", "-v", "quiet",
+            "-i", str(video_path),
+            "-map", "0:s:0",  # First subtitle stream
+            "-c:s", "srt",
+            str(tmp_srt)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0 and tmp_srt.exists() and tmp_srt.stat().st_size > 0:
+            return tmp_srt
+        if tmp_srt.exists():
+            tmp_srt.unlink()
+        return None
+
+    @staticmethod
     def srt_to_text(srt_path: Path) -> str:
         """Strip SRT formatting (indices + timestamps) and return clean plain text."""
         content = srt_path.read_text(encoding="utf-8", errors="replace")
-        # Remove sequence numbers (lines that are just digits)
-        # Remove timestamp lines (00:01:23,456 --> 00:01:25,789)
         lines = []
         for line in content.splitlines():
             line = line.strip()
@@ -100,11 +132,10 @@ class NotesService:
             raise ValueError(f"Failed to parse LM Studio response: {e}")
 
     @staticmethod
-    def generate_notes(srt_path: Path) -> str:
-        """Full pipeline: SRT → plain text → chunked LM Studio calls → merged notes."""
-        text = NotesService.srt_to_text(srt_path)
+    def generate_notes_from_text(text: str) -> str:
+        """Plain text → chunked LM Studio calls → merged notes."""
         if not text.strip():
-            raise ValueError(f"SRT file is empty or contains no text: {srt_path.name}")
+            raise ValueError("Input text is empty.")
 
         # Split into chunks to avoid blowing up context window
         chunks = []
@@ -128,6 +159,12 @@ class NotesService:
                 all_notes.append(notes)
 
         return "\n".join(all_notes)
+
+    @staticmethod
+    def generate_notes(srt_path: Path) -> str:
+        """Full pipeline: SRT file → plain text → notes."""
+        text = NotesService.srt_to_text(srt_path)
+        return NotesService.generate_notes_from_text(text)
 
     @staticmethod
     def save_notes(video_path: Path, notes_content: str) -> Path:
