@@ -266,3 +266,79 @@ def view_metadata(
         console.print(table)
         console.print()
 
+
+@app.command("notes")
+def generate_notes(
+    target_path: Path = typer.Argument(
+        ...,
+        exists=True,
+        help="Path to a video file or directory. Only videos with a matching .srt file will be processed."
+    ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        help="Overwrite existing .md notes files."
+    ),
+):
+    """
+    Generate ultra-dense exam-ready study notes from SRT transcripts via LM Studio.
+
+    Scans for videos that have a .srt sidecar, converts the SRT to plain text,
+    sends it to LM Studio for compression, and saves the result as a .md file.
+    """
+    from aicli.services.video.notes_service import NotesService
+    
+    valid_extensions = VideoTaggerService.VIDEO_EXTENSIONS
+    if target_path.is_file():
+        files = [target_path] if target_path.suffix.lower() in valid_extensions else []
+    else:
+        files = [p for p in target_path.rglob("*") if p.is_file() and p.suffix.lower() in valid_extensions]
+
+    # Filter to only videos that have a .srt file
+    eligible = []
+    for f in files:
+        srt = f.with_suffix(".srt")
+        md = f.with_suffix(".md")
+        if not srt.exists():
+            continue
+        if md.exists() and not overwrite:
+            console.print(f"[dim]\\[{f.name}] Notes already exist, skipping (use --overwrite to regenerate)[/dim]")
+            continue
+        eligible.append(f)
+
+    if not eligible:
+        console.print("[yellow]No videos with .srt transcripts found (or all already have notes).[/yellow]")
+        raise typer.Exit()
+
+    print_header(f"Generating notes for {len(eligible)} video(s)")
+    console.print("[dim]LM Studio must be running with a model loaded.[/dim]\n")
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        TextColumn("•"),
+        TimeRemainingColumn(),
+        console=console
+    ) as progress:
+        task_id = progress.add_task("Generating notes...", total=len(eligible))
+        
+        successes = 0
+        for f in eligible:
+            srt_path = f.with_suffix(".srt")
+            try:
+                progress.console.print(f"[cyan]\\[{f.name}] Processing SRT → notes...[/cyan]")
+                notes = NotesService.generate_notes(srt_path)
+                md_path = NotesService.save_notes(f, notes)
+                progress.console.print(f"[bold green]\\[{f.name}] Notes saved → {md_path.name}[/bold green]")
+                successes += 1
+            except Exception as e:
+                progress.console.print(f"[red]\\[{f.name}] Error: {e}[/red]")
+            progress.advance(task_id)
+
+    if successes:
+        print_success(f"Generated notes for {successes}/{len(eligible)} videos.")
+    else:
+        print_error("No notes were generated.", RuntimeError("All files failed."))

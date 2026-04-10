@@ -1,0 +1,137 @@
+"""Service for generating compressed study notes from SRT transcripts via LM Studio."""
+import json
+import re
+import urllib.request
+import urllib.error
+from pathlib import Path
+from typing import Optional
+
+from aicli.config import config
+
+
+NOTES_SYSTEM_PROMPT = """Your Role: You are an Expert AI Keyword Extractor and Cognitive Compressor.
+Your Goal: Transform the provided source text into ultra-dense, exam-ready bullet notes. The output must be optimized for rapid information recall and memory retention.
+Mandatory Core Principles:
+- **Focus**: Emphasize examples, academic terms, and jargon.
+- **Extreme Conciseness**: No verbose language, strictly no grammar, eliminate obvious explanations. Be space and word efficient but cover everything.
+- **Atomic Units**: Condense all information for a single concept into one line.
+
+Notes MUST be written entirely in English.
+
+Strict Source Integrity & Zero Information Loss:
+- Extract information only from the provided source text. Do not infer, add external knowledge, or fill gaps.
+- CRITICAL RULE: Ensure there is absolutely no loss of any information, examples, facts, dimensions, or concepts. Every detail from the source must be preserved in the compressed output.
+- Correct only obvious, unambiguous typos.
+
+Logical Grouping (DRY Principle):
+- Cluster related ideas under a single main bullet point.
+- Use indentation to create a clear conceptual hierarchy.
+- Consolidate repeated concepts to avoid redundancy.
+
+Prioritization of Key Data:
+- Retain all specific data: proper nouns (names of people, places, policies, scientific terms), key examples, and high-impact statistics (e.g., percentages, years, ranks, quantities).
+
+Mandatory Output Format & Style (Ultra-Compact):
+- Use hyphen (-) for top-level bullets and a single tab (\\t) for indentation.
+- Bold the primary term. All related information (mechanisms, effects, examples) MUST be on the same line.
+- NO sub-bullets. NO new lines for a single concept.
+- NO headings, horizontal rules (---), or blank lines. The output must be a single, continuous block of dense notes.
+- **Example:**
+\t- **Allelopathy**: Mechanism Some roots release **phytotoxins**, inhibit growth, or stop seed germination.
+
+Instruction:
+Process the following text according to all rules specified above."""
+
+
+class NotesService:
+    """Generates compressed study notes from SRT files via LM Studio."""
+
+    # Maximum characters to send in a single LM Studio request
+    CHUNK_SIZE = 12000
+
+    @staticmethod
+    def srt_to_text(srt_path: Path) -> str:
+        """Strip SRT formatting (indices + timestamps) and return clean plain text."""
+        content = srt_path.read_text(encoding="utf-8", errors="replace")
+        # Remove sequence numbers (lines that are just digits)
+        # Remove timestamp lines (00:01:23,456 --> 00:01:25,789)
+        lines = []
+        for line in content.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if re.match(r"^\d+$", line):
+                continue
+            if re.match(r"\d{2}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2}:\d{2}:\d{2},\d{3}", line):
+                continue
+            lines.append(line)
+        return " ".join(lines)
+
+    @staticmethod
+    def _call_lmstudio(text_chunk: str) -> str:
+        """Send a text chunk to LM Studio and return the compressed notes."""
+        payload = json.dumps({
+            "model": config.model_name,
+            "messages": [
+                {"role": "system", "content": NOTES_SYSTEM_PROMPT},
+                {"role": "user", "content": text_chunk},
+            ],
+            "temperature": 0.15,
+            "max_tokens": 4096,
+        }).encode()
+
+        endpoint = f"{config.lm_studio_base_url}/chat/completions"
+        req = urllib.request.Request(
+            endpoint,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {config.lm_studio_api_key}",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                body = json.loads(resp.read())
+                return body["choices"][0]["message"]["content"].strip()
+        except urllib.error.URLError as e:
+            raise ConnectionError(f"LM Studio Error: {e}")
+        except Exception as e:
+            raise ValueError(f"Failed to parse LM Studio response: {e}")
+
+    @staticmethod
+    def generate_notes(srt_path: Path) -> str:
+        """Full pipeline: SRT → plain text → chunked LM Studio calls → merged notes."""
+        text = NotesService.srt_to_text(srt_path)
+        if not text.strip():
+            raise ValueError(f"SRT file is empty or contains no text: {srt_path.name}")
+
+        # Split into chunks to avoid blowing up context window
+        chunks = []
+        words = text.split()
+        current = []
+        current_len = 0
+        for word in words:
+            current.append(word)
+            current_len += len(word) + 1
+            if current_len >= NotesService.CHUNK_SIZE:
+                chunks.append(" ".join(current))
+                current = []
+                current_len = 0
+        if current:
+            chunks.append(" ".join(current))
+
+        all_notes = []
+        for chunk in chunks:
+            notes = NotesService._call_lmstudio(chunk)
+            if notes:
+                all_notes.append(notes)
+
+        return "\n".join(all_notes)
+
+    @staticmethod
+    def save_notes(video_path: Path, notes_content: str) -> Path:
+        """Save notes as .md file next to the video."""
+        md_path = video_path.with_suffix(".md")
+        md_path.write_text(notes_content, encoding="utf-8")
+        return md_path
