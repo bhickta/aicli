@@ -188,24 +188,25 @@ def tag_video(
     ) as progress:
         task_id = progress.add_task("Processing videos...", total=len(files))
 
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = [
-                executor.submit(
-                    _process_video, 
-                    f, 
-                    model_instance, 
-                    write, 
-                    no_rename,
-                    thumb,
-                    retranscribe, 
-                    clip_every, 
-                    clip_len, 
-                    progress, 
-                    task_id
-                ) 
-                for f in files
-            ]
-            
+        executor = ThreadPoolExecutor(max_workers=workers)
+        futures = [
+            executor.submit(
+                _process_video, 
+                f, 
+                model_instance, 
+                write, 
+                no_rename,
+                thumb,
+                retranscribe, 
+                clip_every, 
+                clip_len, 
+                progress, 
+                task_id
+            ) 
+            for f in files
+        ]
+        
+        try:
             for future in as_completed(futures):
                 f_path, metadata, err = future.result()
                 
@@ -218,6 +219,13 @@ def tag_video(
                 
                 results.append((f_path, metadata, err))
                 progress.advance(task_id)
+        except KeyboardInterrupt:
+            progress.console.print("\n[bold red]⚠ Processing interrupted by user! Shutting down abruptly...[/bold red]")
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise typer.Exit(code=130)
+        finally:
+            # Ensure proper cleanup if it wasn't intercepted
+            executor.shutdown(wait=False)
 
     elapsed = time.time() - start_t
     successful = [r for r in results if not r[2]]
