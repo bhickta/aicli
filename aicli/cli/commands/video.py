@@ -151,7 +151,7 @@ def tag_video(
                     progress.console.print(f"[{f_path.name}] [red]Error: {str(err)}[/red]")
                 else:
                     new_name = (metadata.get('filename') or '')
-                    if not write:
+                    if not write and not transcribe_only:
                         progress.console.print(f"[{f_path.name}] [cyan][DRY RUN] Would tag + rename to: {new_name}{f_path.suffix}[/cyan]")
                 
                 results.append((f_path, metadata, err))

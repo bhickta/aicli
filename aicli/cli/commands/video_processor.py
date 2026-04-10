@@ -34,7 +34,7 @@ class VideoBatchProcessor:
 
             if "clips" in cache and not retranscribe:
                 clips = cache["clips"]
-                progress.console.print(f"[dim]\[{video_path.name}] Loaded cached transcript[/dim]")
+                progress.console.print(f"[dim]\\[{video_path.name}] Loaded cached transcript[/dim]")
             else:
                 # We always generate a temporary .srt if --full-cc is requested so we can mux it later
                 srt_path = video_path.with_suffix(".tmp_cc.srt") 
@@ -42,15 +42,15 @@ class VideoBatchProcessor:
                 # Check if a non-temp SRT exists to salvage text context from
                 ext_srt = video_path.with_suffix(".srt")
                 if ext_srt.exists() and not retranscribe:
-                    progress.console.print(f"[green]\[{video_path.name}] Reading context directly from existing .srt...[/green]")
+                    progress.console.print(f"[green]\\[{video_path.name}] Reading context directly from existing .srt...[/green]")
                     clips = WhisperEngine.extract_clips_from_existing_srt(ext_srt)
                     if full_cc: 
                         shutil.copy(ext_srt, srt_path) # Stage for muxing
                 elif full_cc:
-                    progress.console.print(f"[purple]\[{video_path.name}] Fully Transcribing to container CCs...[/purple]")
+                    progress.console.print(f"[purple]\\[{video_path.name}] Fully Transcribing to container CCs...[/purple]")
                     clips = WhisperEngine.transcribe_video_full_srt(video_path, whisper_model, srt_path)
                 else:
-                    progress.console.print(f"[cyan]\[{video_path.name}] Extracting sparse transcript samples...[/cyan]")
+                    progress.console.print(f"[cyan]\\[{video_path.name}] Extracting sparse transcript samples...[/cyan]")
                     clips = WhisperEngine.transcribe_video_sparse(video_path, whisper_model, clip_every, clip_len)
                     
                 if not clips:
@@ -65,16 +65,16 @@ class VideoBatchProcessor:
                 final_srt = video_path.with_suffix(".srt")
                 if tmp_srt.exists():
                     shutil.move(str(tmp_srt), str(final_srt))
-                    progress.console.print(f"[bold green]\[{video_path.name}] Saved transcript directly to {final_srt.name}[/bold green]")
+                    progress.console.print(f"[bold green]\\[{video_path.name}] Saved transcript directly to {final_srt.name}[/bold green]")
                 else:
-                    progress.console.print(f"[bold green]\[{video_path.name}] Extracted sparse clips (no SRT written as --full-cc was not used).[/bold green]")
+                    progress.console.print(f"[bold green]\\[{video_path.name}] Done extracting sparse clips / loaded from cache.[/bold green]")
                 return video_path, {}, None
 
             if "ai" in cache and not retranscribe:
                 ai = cache["ai"]
-                progress.console.print(f"[dim]\[{video_path.name}] Loaded cached AI tags[/dim]")
+                progress.console.print(f"[dim]\\[{video_path.name}] Loaded cached AI tags[/dim]")
             else:
-                progress.console.print(f"[cyan]\[{video_path.name}] Requesting metadata from LM Studio...[/cyan]")
+                progress.console.print(f"[cyan]\\[{video_path.name}] Requesting metadata from LM Studio...[/cyan]")
                 ai = VideoTaggerService.ask_lmstudio(clips, str(video_path.parent))
                 if not ai:
                     return video_path, None, ValueError("LM Studio returned empty response.")
@@ -82,7 +82,7 @@ class VideoBatchProcessor:
                 cache["ai"] = ai
                 MetadataBackupManager.save_cache(video_path, cache)
 
-            progress.console.print(f"[green]\[{video_path.name}] Evaluated: {ai.get('title')} ({ai.get('subject')})[/green]")
+            progress.console.print(f"[green]\\[{video_path.name}] Evaluated: {ai.get('title')} ({ai.get('subject')})[/green]")
 
             new_tags = {
                 "title":       ai.get("title", ""),
