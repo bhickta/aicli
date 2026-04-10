@@ -1,92 +1,17 @@
 import typer
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import shutil
 import time
 
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich.table import Table
 
-from aicli.services.video_tagger import VideoTaggerService
-from aicli.cli.tui import print_header, print_success, print_error, confirm_action, console
+from aicli.services.video import FFprobeClient, MetadataBackupManager, WhisperEngine, VideoTaggerService
+from aicli.cli.commands.video_processor import VideoBatchProcessor
+from aicli.cli.tui import print_header, print_success, print_error, console
 
 app = typer.Typer(help="Video transcription and metadata tagging commands.")
 
-
-def _process_video(video_path: Path, whisper_model, write: bool, no_rename: bool, generate_thumb: bool, retranscribe: bool, clip_every: int, clip_len: int, progress: Progress, task_id) -> tuple[Path, dict, Exception]:
-    """Helper to process a single video in a worker thread."""
-    try:
-        cache = VideoTaggerService.load_cache(video_path) if not retranscribe else {}
-        VideoTaggerService.backup_original_tags(video_path, cache)
-        VideoTaggerService.save_cache(video_path, cache)
-
-        if "clips" in cache and not retranscribe:
-            clips = cache["clips"]
-            progress.console.print(f"[dim]\[{video_path.name}] Loaded cached transcript[/dim]")
-        else:
-            progress.console.print(f"[cyan]\[{video_path.name}] Transcribing audio...[/cyan]")
-                
-            clips = VideoTaggerService.transcribe_video(video_path, whisper_model, clip_every, clip_len)
-            if not clips:
-                return video_path, None, ValueError("No speech detected.")
-                
-            cache["clips"] = clips
-            VideoTaggerService.save_cache(video_path, cache)
-
-        if "ai" in cache and not retranscribe:
-            ai = cache["ai"]
-            progress.console.print(f"[dim]\[{video_path.name}] Loaded cached AI tags[/dim]")
-        else:
-            progress.console.print(f"[cyan]\[{video_path.name}] Requesting metadata from LM Studio...[/cyan]")
-            ai = VideoTaggerService.ask_lmstudio(clips, str(video_path.parent))
-            if not ai:
-                return video_path, None, ValueError("LM Studio returned empty response.")
-                
-            cache["ai"] = ai
-            VideoTaggerService.save_cache(video_path, cache)
-
-        progress.console.print(f"[green]\[{video_path.name}] Evaluated: {ai.get('title')} ({ai.get('subject')})[/green]")
-
-        new_tags = {
-            "title":       ai.get("title", ""),
-            "comment":     ai.get("description", ""),
-            "genre":       ai.get("subject", ""),
-            "description": ai.get("description", ""),
-            "SUBJECT":     ai.get("subject", ""),
-            "TOPICS":      ", ".join(ai.get("topics", [])),
-            "language_track": ai.get("language", ""),
-            "SUMMARY":     ai.get("description", ""),
-        }
-
-        if write:
-            # Pass original_tags to embed them into the video natively
-            VideoTaggerService.write_tags(video_path, new_tags, original_tags=cache.get("original_tags"))
-            progress.console.print(f"[{video_path.name}] [bold green]Tags and backup embedded natively.[/bold green]")
-
-            # Clean up temporary sidecar cache since everything is embedded now
-            sc_path = VideoTaggerService.sidecar_path(video_path)
-            if sc_path.exists():
-                sc_path.unlink()
-
-            if not no_rename:
-                new_name = (ai.get("filename") or "").strip()
-                if new_name:
-                    if not new_name.endswith(video_path.suffix):
-                        new_name += video_path.suffix
-                    new_path = video_path.parent / new_name
-                    if new_path != video_path and not new_path.exists():
-                        shutil.move(str(video_path), str(new_path))
-                        progress.console.print(f"[{video_path.name}] [bold blue]Renamed → {new_name}[/bold blue]")
-                        video_path = new_path # Update reference for thumbnail extraction
-
-            if generate_thumb:
-                thumb_path = video_path.with_suffix(".jpg")
-                if VideoTaggerService.generate_thumbnail(video_path, thumb_path):
-                    progress.console.print(f"[{video_path.name}] [bold magenta]Thumbnail generated: {thumb_path.name}[/bold magenta]")
-
-        return video_path, ai, None
-    except Exception as e:
-        return video_path, None, e
 
 
 @app.command("tag")
@@ -160,12 +85,12 @@ def tag_video(
 
     # Only load Whisper if at least one file needs transcribing
     model_instance = None
-    all_cached = all("clips" in VideoTaggerService.load_cache(f) for f in files) and not retranscribe
+    all_cached = all("clips" in MetadataBackupManager.load_cache(f) for f in files) and not retranscribe
     
     if not all_cached:
         try:
             console.print("[cyan]Loading Whisper model on GPU...[/cyan]")
-            model_instance = VideoTaggerService.load_whisper(whisper_model)
+            model_instance = WhisperEngine.load_whisper(whisper_model)
         except Exception as e:
             print_error("Failed to load whisper model", e)
             raise typer.Exit(1)
@@ -188,7 +113,7 @@ def tag_video(
         executor = ThreadPoolExecutor(max_workers=workers)
         futures = [
             executor.submit(
-                _process_video, 
+                VideoBatchProcessor.process_isolated_video, 
                 f, 
                 model_instance, 
                 write, 
@@ -269,7 +194,7 @@ def restore_tags(
         task_id = progress.add_task("Restoring backup sidecars...", total=len(files))
         for f in files:
             try:
-                if VideoTaggerService.restore_original_tags(f):
+                if MetadataBackupManager.restore_original_tags(f):
                     progress.console.print(f"[green]✔ Restored {f.name}[/green]")
                 else:
                     progress.console.print(f"[yellow]⚠ No backup tags to restore in {f.name}[/yellow]")
@@ -301,7 +226,7 @@ def view_metadata(
         raise typer.Exit()
         
     for f in files:
-        tags = VideoTaggerService.read_existing_tags(f)
+        tags = FFprobeClient.read_existing_tags(f)
         if not tags:
             console.print(f"\n[cyan]{f.name}[/cyan]\n[yellow]No metadata found.[/yellow]")
             continue
