@@ -56,39 +56,98 @@ class FFmpegClient:
         return np.frombuffer(result.stdout, dtype=np.float32)
 
     @staticmethod
+    def generate_text_thumbnail(title: str, output_path: Path) -> bool:
+        """Create a text-based image thumbnail for video cover art using Pillow."""
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+        except ImportError:
+            return False
+            
+        import textwrap
+        import os
+        
+        img = Image.new('RGB', (1280, 720), color=(44, 62, 80)) # Slate Blue
+        d = ImageDraw.Draw(img)
+        
+        font = ImageFont.load_default()
+        paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/opentype/urw-base35/NimbusSans-Bold.otf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/gnu-free/FreeSansBold.ttf",
+            "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf"
+        ]
+        for p in paths:
+            if os.path.exists(p):
+                font = ImageFont.truetype(p, 72)
+                break
+
+        wrapper = textwrap.TextWrapper(width=30)
+        lines = wrapper.wrap(text=title)
+        
+        line_height = 80 
+        total_height = len(lines) * line_height
+        current_y = (720 - total_height) / 2
+        
+        for line in lines:
+            try:
+                left, top, right, bottom = d.textbbox((0,0), line, font=font)
+                width = right - left
+            except AttributeError:
+                width = d.textlength(line, font=font) if hasattr(d, 'textlength') else 500
+            
+            x = (1280 - width) / 2
+            d.text((x, current_y), line, fill=(236, 240, 241), font=font)
+            current_y += line_height
+            
+        img.save(str(output_path), quality=90)
+        return output_path.exists()
+
+    @staticmethod
     def write_tags(
         video_path: Path, 
         tags: Dict[str, Any], 
         clear_first: bool = False, 
         original_tags: Optional[Dict[str, Any]] = None,
-        srt_path: Optional[Path] = None
+        srt_path: Optional[Path] = None,
+        cover_path: Optional[Path] = None
     ) -> bool:
-        """Write metadata tags using ffmpeg stream copy (no re-encode). Embeds original tags as b64 if provided. Embeds SRT if provided."""
+        """Write metadata tags using ffmpeg stream copy (no re-encode). Embeds original tags as b64 if provided. Embeds SRT and Cover Art if provided."""
         tmp = video_path.with_suffix(".tmp_tagged.mp4" if video_path.suffix.lower() == ".mp4" else ".tmp_tagged.mkv")
 
         cmd = ["ffmpeg", "-y", "-v", "quiet", "-i", str(video_path)]
-        meta_args = []
         
         if srt_path and srt_path.exists():
             cmd += ["-i", str(srt_path)]
-            cmd += ["-map", "0", "-map", "1:0"]
-            cmd += ["-c", "copy"]
             
-            # Embed SRT into specific supported container track formats
+        if cover_path and cover_path.exists() and video_path.suffix.lower() == ".mp4":
+            cmd += ["-i", str(cover_path)]
+            
+        cmd += ["-map", "0"]
+        input_idx = 1
+        
+        if srt_path and srt_path.exists():
+            cmd += ["-map", f"{input_idx}:0"]
+            input_idx += 1
+            
+        if cover_path and cover_path.exists() and video_path.suffix.lower() == ".mp4":
+            cmd += ["-map", f"{input_idx}:0"]
+            
+        cmd += ["-c", "copy"]
+        
+        if srt_path and srt_path.exists():
             if video_path.suffix.lower() == ".mp4":
                 cmd += ["-c:s", "mov_text"]
             else:
                 cmd += ["-c:s", "srt"]
-                
-            # Add metadata specifically targeting the newly mapped subtitle track
-            # Map 1:0 is the subtitle. It gets mapped to index N in the output, but FFMPEG evaluates map order.
-        else:
-            cmd += ["-c", "copy"]
 
-        if clear_first:
-            meta_args += ["-map_metadata", "-1"]
-        else:
-            meta_args += ["-map_metadata", "0"]
+        if cover_path and cover_path.exists():
+            if video_path.suffix.lower() == ".mp4":
+                cmd += ["-disposition:v:1", "attached_pic"]
+            else:
+                cmd += ["-attach", str(cover_path), "-metadata:s:t", "mimetype=image/jpeg"]
+
+        meta_args = []
 
         for k, v in tags.items():
             if v and k.lower() != "aicli_backup":

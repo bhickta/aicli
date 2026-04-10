@@ -36,6 +36,11 @@ def tag_video(
         "--full-cc",
         help="Perform a full transcription to generate a sidecar .srt track."
     ),
+    text_thumb: bool = typer.Option(
+        True,
+        "--text-thumb/--no-text-thumb",
+        help="Generate a centered text image from the title and embed it directly into the video as cover art."
+    ),
     retranscribe: bool = typer.Option(
         False,
         "--retranscribe",
@@ -119,6 +124,7 @@ def tag_video(
                 write, 
                 no_rename,
                 full_cc,
+                text_thumb,
                 retranscribe, 
                 clip_every, 
                 clip_len, 

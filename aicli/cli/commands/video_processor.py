@@ -18,6 +18,7 @@ class VideoBatchProcessor:
         write: bool, 
         no_rename: bool, 
         full_cc: bool,
+        text_thumb: bool,
         retranscribe: bool, 
         clip_every: int, 
         clip_len: int, 
@@ -86,15 +87,22 @@ class VideoBatchProcessor:
                 tmp_srt = video_path.with_suffix(".tmp_cc.srt")
                 embed_path = tmp_srt if tmp_srt.exists() else None
                 
-                FFmpegClient.write_tags(video_path, new_tags, original_tags=cache.get("original_tags"), srt_path=embed_path)
-                if embed_path:
-                    progress.console.print(f"[{video_path.name}] [bold green]Tags, CC track, and backup embedded natively.[/bold green]")
+                tmp_cover = None
+                if text_thumb:
+                    tmp_cover = video_path.with_suffix(".tmp_cover.jpg")
+                    if not FFmpegClient.generate_text_thumbnail(ai.get("title", video_path.name), tmp_cover):
+                        tmp_cover = None
+                        
+                FFmpegClient.write_tags(video_path, new_tags, original_tags=cache.get("original_tags"), srt_path=embed_path, cover_path=tmp_cover)
+                
+                if embed_path and tmp_cover:
+                    progress.console.print(f"[{video_path.name}] [bold green]Tags, text cover-art, and CC track embedded natively.[/bold green]")
                 else:
-                    progress.console.print(f"[{video_path.name}] [bold green]Tags and backup embedded natively.[/bold green]")
+                    progress.console.print(f"[{video_path.name}] [bold green]Tags embedded natively into container.[/bold green]")
 
-                # Delete temporary SRT after successful mux
-                if embed_path and embed_path.exists():
-                    embed_path.unlink()
+                # Delete temporary tracks
+                if embed_path and embed_path.exists(): embed_path.unlink()
+                if tmp_cover and tmp_cover.exists(): tmp_cover.unlink()
 
                 sc_path = MetadataBackupManager.sidecar_path(video_path)
                 if sc_path.exists():
