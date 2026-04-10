@@ -185,11 +185,11 @@ class VideoTaggerService:
 Return ONLY valid JSON — no markdown, no extra text:
 {
   "title": "concise descriptive lecture title",
-  "filename": "snake_case_max_60_chars",
+  "filename": "Title Case with Spaces max 60 chars",
   "subject": "academic subject",
   "topics": ["topic1", "topic2", "topic3"],
   "description": "2-3 sentence summary",
-  "language": "detected language"
+  "language": "3-letter ISO-639-2 lowercase code (e.g. hin, eng)"
 }"""
 
         payload = json.dumps({
@@ -236,7 +236,11 @@ Return ONLY valid JSON — no markdown, no extra text:
         for k, v in tags.items():
             if v and k.lower() != "aicli_backup": # Prevent feeding old backup recursively
                 val = ", ".join(v) if isinstance(v, list) else str(v)
-                meta_args += ["-metadata", f"{k}={val}"]
+                if k == "language_track":
+                    # Properly standard tag the primary audio stream with the 3-letter code
+                    meta_args += ["-metadata:s:a", f"language={val}"]
+                else:
+                    meta_args += ["-metadata", f"{k}={val}"]
                 
         if original_tags:
             b64_backup = base64.b64encode(json.dumps(original_tags).encode("utf-8")).decode("utf-8")

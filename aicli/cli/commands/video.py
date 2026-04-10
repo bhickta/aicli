@@ -57,7 +57,7 @@ def _process_video(video_path: Path, whisper_model, write: bool, no_rename: bool
             "description": ai.get("description", ""),
             "SUBJECT":     ai.get("subject", ""),
             "TOPICS":      ", ".join(ai.get("topics", [])),
-            "LANGUAGE":    ai.get("language", ""),
+            "language_track": ai.get("language", ""),
             "SUMMARY":     ai.get("description", ""),
         }
 
