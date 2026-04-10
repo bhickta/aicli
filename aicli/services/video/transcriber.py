@@ -14,8 +14,8 @@ class WhisperEngine:
             raise ImportError("faster-whisper is not installed. Run: uv add faster-whisper numpy")
         
         model = WhisperModel(model_size, device="cuda", compute_type="float16", num_workers=num_workers)
-        # Wrap the model in a BatchedInferencePipeline and use a batch_size of 16 for better GPU saturation
-        return BatchedInferencePipeline(model=model, use_vad_model=True, batch_size=16)
+        # Wrap the model in a BatchedInferencePipeline
+        return BatchedInferencePipeline(model=model)
 
     @staticmethod
     def compute_clip_times(duration: float, clip_every: int, clip_len: int) -> List[float]:
