@@ -7,12 +7,12 @@ class WhisperEngine:
     """Manages speech-to-text generation using faster-whisper."""
     
     @staticmethod
-    def load_whisper(model_size: str):
+    def load_whisper(model_size: str, num_workers: int = 1):
         try:
             from faster_whisper import WhisperModel
         except ImportError:
             raise ImportError("faster-whisper is not installed. Run: uv add faster-whisper numpy")
-        return WhisperModel(model_size, device="cuda", compute_type="float16")
+        return WhisperModel(model_size, device="cuda", compute_type="float16", num_workers=num_workers)
 
     @staticmethod
     def compute_clip_times(duration: float, clip_every: int, clip_len: int) -> List[float]:
