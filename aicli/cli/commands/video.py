@@ -272,7 +272,7 @@ def generate_notes(
     target_path: Path = typer.Argument(
         ...,
         exists=True,
-        help="Path to a video file or directory. Only videos with a matching .srt file will be processed."
+        help="Path to a video file or directory. Processes videos with sidecar .srt files OR embedded subtitle streams."
     ),
     overwrite: bool = typer.Option(
         False,
@@ -283,8 +283,8 @@ def generate_notes(
     """
     Generate ultra-dense exam-ready study notes from SRT transcripts via LM Studio.
 
-    Scans for videos that have a .srt sidecar, converts the SRT to plain text,
-    sends it to LM Studio for compression, and saves the result as a .md file.
+    Detects subtitles from sidecar .srt files or embedded subtitle streams inside the
+    video container. Converts to plain text, sends to LM Studio, saves as .md file.
     """
     from aicli.services.video.notes_service import NotesService
     
@@ -294,20 +294,27 @@ def generate_notes(
     else:
         files = [p for p in target_path.rglob("*") if p.is_file() and p.suffix.lower() in valid_extensions]
 
-    # Filter to only videos that have a .srt file
-    eligible = []
+    if not files:
+        console.print("[yellow]No video files found.[/yellow]")
+        raise typer.Exit()
+
+    # Filter: sidecar .srt exists OR embedded subtitle stream detected
+    console.print(f"[dim]Scanning {len(files)} video(s) for subtitles...[/dim]")
+    eligible = []  # list of (video_path, srt_source: "sidecar" | "embedded")
     for f in files:
-        srt = f.with_suffix(".srt")
         md = f.with_suffix(".md")
-        if not srt.exists():
-            continue
         if md.exists() and not overwrite:
-            console.print(f"[dim]\\[{f.name}] Notes already exist, skipping (use --overwrite to regenerate)[/dim]")
+            console.print(f"[dim]\\[{f.name}] Notes already exist, skipping (use --overwrite)[/dim]")
             continue
-        eligible.append(f)
+
+        srt = f.with_suffix(".srt")
+        if srt.exists():
+            eligible.append((f, "sidecar"))
+        elif NotesService.has_subtitle_stream(f):
+            eligible.append((f, "embedded"))
 
     if not eligible:
-        console.print("[yellow]No videos with .srt transcripts found (or all already have notes).[/yellow]")
+        console.print("[yellow]No videos with subtitles found (or all already have notes).[/yellow]")
         raise typer.Exit()
 
     print_header(f"Generating notes for {len(eligible)} video(s)")
@@ -326,16 +333,31 @@ def generate_notes(
         task_id = progress.add_task("Generating notes...", total=len(eligible))
         
         successes = 0
-        for f in eligible:
-            srt_path = f.with_suffix(".srt")
+        for f, srt_source in eligible:
+            tmp_extracted = None
             try:
-                progress.console.print(f"[cyan]\\[{f.name}] Processing SRT → notes...[/cyan]")
+                if srt_source == "sidecar":
+                    srt_path = f.with_suffix(".srt")
+                    progress.console.print(f"[cyan]\\[{f.name}] Reading sidecar .srt → notes...[/cyan]")
+                else:
+                    progress.console.print(f"[cyan]\\[{f.name}] Extracting embedded CC → notes...[/cyan]")
+                    srt_path = NotesService.extract_srt_from_video(f)
+                    if not srt_path:
+                        progress.console.print(f"[red]\\[{f.name}] Failed to extract subtitle stream.[/red]")
+                        progress.advance(task_id)
+                        continue
+                    tmp_extracted = srt_path  # Mark for cleanup
+
                 notes = NotesService.generate_notes(srt_path)
                 md_path = NotesService.save_notes(f, notes)
                 progress.console.print(f"[bold green]\\[{f.name}] Notes saved → {md_path.name}[/bold green]")
                 successes += 1
             except Exception as e:
                 progress.console.print(f"[red]\\[{f.name}] Error: {e}[/red]")
+            finally:
+                # Clean up temp extracted SRT
+                if tmp_extracted and tmp_extracted.exists():
+                    tmp_extracted.unlink()
             progress.advance(task_id)
 
     if successes:
