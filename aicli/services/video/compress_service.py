@@ -14,11 +14,11 @@ from typing import Optional
 class CompressService:
     """Hardware-accelerated video compression via NVENC (full GPU pipeline)."""
 
-    # Compression presets: (video_bitrate, audio_bitrate, audio_channels, nvenc_preset, fps)
     PRESETS = {
         "ultralight": ("150k", "32k", 1, "p1", 10),   # Absolute minimum — 10fps lecture
         "light":      ("250k", "48k", 1, "p1", 15),   # Good for lectures at 240p
         "balanced":   ("400k", "64k", 1, "p1", 24),   # Decent motion, still fast
+        "slideshow":  ("500k", "copy", 0, "p4", "1/60"), # 1 frame/min, original res, pristine audio
     }
 
     @staticmethod
@@ -41,8 +41,8 @@ class CompressService:
         Args:
             video_path: Source video file.
             output_path: Destination path. Defaults to <name>_240p.mp4 in same dir.
-            resolution: Target vertical resolution (default 240).
-            preset: One of 'ultralight', 'light', 'balanced'.
+            resolution: Target vertical resolution (default 240). Use 0 for original.
+            preset: One of 'ultralight', 'light', 'balanced', 'slideshow'.
             overwrite: If True, replace the original file.
             crf: Optional constant quality value (0-51). If set, overrides bitrate.
             fps: Override output framerate. None uses preset default.
@@ -56,12 +56,16 @@ class CompressService:
         v_bitrate, a_bitrate, a_channels, nvenc_preset, default_fps = CompressService.PRESETS[preset]
         target_fps = fps if fps is not None else default_fps
 
+        if preset == "slideshow" and resolution == 240:
+            resolution = 0  # Force original resolution for slideshows
+
         if output_path is None:
             if overwrite:
                 output_path = video_path.with_suffix(".tmp_compress.mp4")
             else:
                 stem = video_path.stem
-                output_path = video_path.parent / f"{stem}_{resolution}p.mp4"
+                res_suffix = f"_{resolution}p" if resolution > 0 else "_slideshow"
+                output_path = video_path.parent / f"{stem}{res_suffix}.mp4"
 
         if output_path.exists() and not overwrite:
             raise FileExistsError(f"Output already exists: {output_path}. Use --overwrite.")
@@ -74,15 +78,17 @@ class CompressService:
         # → Zero CPU involvement for video. Only audio hits CPU (trivial).
         # ───────────────────────────────────────────────────────────────────
 
-        vf_chain = f"scale_cuda=-2:{resolution}"
-
         cmd = [
             "ffmpeg", "-y", "-v", "quiet", "-stats",
             "-hwaccel", "cuda",
             "-hwaccel_output_format", "cuda",          # Keep frames in GPU VRAM
             "-i", str(video_path),
-            # Video filter: GPU-resident scaling
-            "-vf", vf_chain,
+        ]
+
+        if resolution > 0:
+            cmd += ["-vf", f"scale_cuda=-2:{resolution}"]
+
+        cmd += [
             # Video encoder: NVENC
             "-c:v", "h264_nvenc",
             "-preset", nvenc_preset,
@@ -95,12 +101,18 @@ class CompressService:
         else:
             cmd += ["-b:v", v_bitrate]
 
+        # Audio settings
+        if a_bitrate == "copy":
+            cmd += ["-c:a", "copy"]                    # Pure original audio untouched
+        else:
+            cmd += [
+                "-c:a", "aac",
+                "-b:a", a_bitrate,
+                "-ac", str(a_channels),
+                "-ar", "22050",
+            ]
+
         cmd += [
-            # Audio: AAC mono, aggressively compressed
-            "-c:a", "aac",
-            "-b:a", a_bitrate,
-            "-ac", str(a_channels),
-            "-ar", "22050",
             # Strip everything except first video + first audio
             "-map", "0:v:0",
             "-map", "0:a:0?",

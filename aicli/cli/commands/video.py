@@ -387,7 +387,7 @@ def compress_video(
     preset: str = typer.Option(
         "light",
         "--preset", "-p",
-        help="Compression preset: ultralight, light, balanced."
+        help="Compression preset: ultralight, light, balanced, slideshow."
     ),
     overwrite: bool = typer.Option(
         False,
