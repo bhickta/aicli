@@ -571,6 +571,11 @@ def process_course(
         4,
         "--workers", "-w",
         help="Parallel GPU workers for transcribing and compressing."
+    ),
+    llm_model: str = typer.Option(
+        None,
+        "--llm-model", "--llm",
+        help="Search string for the local model you want to dynamically load (e.g. 'gemma', 'llama3')."
     )
 ):
     """
@@ -615,7 +620,7 @@ def process_course(
     
     try:
         console.print(f"[cyan]Waking up LM Studio & Booting Language Model into VRAM...[/cyan]")
-        resolved_lm = resolve_dynamic_model()
+        resolved_lm = resolve_dynamic_model(llm_model)
         aicli_config.model_name = resolved_lm
         console.print(f"[green]✔ Auto-Connected to LM Studio: {resolved_lm}[/green]")
     except Exception as e:

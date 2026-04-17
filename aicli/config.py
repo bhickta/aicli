@@ -14,7 +14,7 @@ class AppConfig(BaseSettings):
 
 config = AppConfig()
 
-def resolve_dynamic_model() -> str:
+def resolve_dynamic_model(preferred_string: str = None) -> str:
     """Fetch the first available model ID from LM Studio and explicitly load it via native API."""
     import json
     import urllib.request
@@ -30,11 +30,22 @@ def resolve_dynamic_model() -> str:
             with urllib.request.urlopen(req, timeout=2) as resp:
                 data = json.loads(resp.read())
                 if "models" in data:
-                    for m in data["models"]:
+                    models = data["models"]
+                    
+                    # Sort so that preferred models bubble to the top
+                    if preferred_string:
+                        models = sorted(models, key=lambda x: 0 if preferred_string.lower() in x.get("key", "").lower() else 1)
+                        
+                    for m in models:
                         if m.get("type", "llm") == "llm":
-                            # If it's already loaded, just return it!
+                            # If it's already loaded, just return it! (Unless user prefers something else and it's not the top choice yet)
                             if len(m.get("loaded_instances", [])) > 0:
-                                return m["key"]
+                                if not preferred_string or preferred_string.lower() in m.get("key", "").lower():
+                                    return m["key"]
+                                else:
+                                    # We found A loaded model, but they specifically want another one. 
+                                    pass
+                                    
                             if not model_to_load:
                                 model_to_load = m["key"] # store first available to load
                                 
@@ -49,10 +60,10 @@ def resolve_dynamic_model() -> str:
                     headers={"Content-Type": "application/json"}
                 )
                 try:
-                    # Give it up to 45 seconds to load the heavy model into VRAM
-                    urllib.request.urlopen(load_req, timeout=45) 
+                    # Heavy models (like 26B) take a long time to boot into VRAM, give it up to 3 minutes
+                    urllib.request.urlopen(load_req, timeout=180) 
                 except Exception:
-                    pass # Proceed anyway and hope JIT catches it
+                    pass # Proceed anyway and hope JIT catches it, or let the user see the 404
                 return model_to_load
                 
     except Exception:
