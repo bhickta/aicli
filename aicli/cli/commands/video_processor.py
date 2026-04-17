@@ -125,7 +125,24 @@ class VideoBatchProcessor:
                 
                 clips = cache.get("clips", [])
                 if not clips:
-                    return video_path, None, ValueError("No transcript cache found to tag.")
+                    # Recovery: try to reconstruct clips from existing .srt or .txt in cache dir
+                    srt_path = cache_dir / f"{video_path.stem}.srt"
+                    txt_path = cache_dir / f"{video_path.stem}.txt"
+                    if srt_path.exists():
+                        raw = srt_path.read_text(encoding="utf-8", errors="replace")
+                        import re as _re
+                        blocks = _re.split(r'\n\n+', raw.strip())
+                        for block in blocks:
+                            lines = block.strip().split('\n')
+                            if len(lines) >= 3:
+                                text = ' '.join(lines[2:])
+                                clips.append({"start_sec": 0, "text": text})
+                    elif txt_path.exists():
+                        raw = txt_path.read_text(encoding="utf-8", errors="replace")
+                        clips = [{"start_sec": 0, "text": raw[:4000]}]
+                    
+                    if not clips:
+                        return video_path, None, ValueError("No transcript cache found to tag.")
                     
                 ai = VideoTaggerService.ask_lmstudio(clips, str(video_path.parent))
                 if not ai:

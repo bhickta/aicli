@@ -29,6 +29,7 @@ Schema:
 {
   "title": "<Generate a concise, highly accurate descriptive title for the lecture (max 60 chars)>",
   "filename": "<Generate a clean, human-readable filename in Title Case with spaces (e.g. 'Nuclear Energy Fission and Fusion'), max 50 chars, NO hyphens, NO underscores>",
+  "lesson_number": <Analyze the provided Folder/Filename hint. Intelligently extract the ACTUAL chronological lesson, class, or sequence number (ignore long random ID prefixes like 1995382323). Output as a simple integer (e.g., if 'L66' or '056' is in the name, output 66 or 56). If uncertain, output 999.>,
   "subject": "<Determine the academic subject (e.g. Physics, History, Math)>",
   "topics": ["<topic1>", "<topic2>", "<topic3>"],
   "description": "<Generate a 2-3 sentence summary of the core concepts taught>",
@@ -85,3 +86,73 @@ Schema:
         except Exception as e:
             raw = text if 'text' in locals() and text else "<EMPTY STRING>"
             raise ValueError(f"Failed to parse response. Error: {e}. Raw Text: '{raw[:200]}'")
+
+    @staticmethod
+    def global_course_sort(videos: List[Dict[str, Any]]) -> List[str]:
+        """
+        Pass a global snapshot of the course metadata to LM Studio.
+        Gets back a chronologically perfect execution order array of video IDs.
+        """
+        system = """You are an elite academic curriculum architect.
+Your task is to sort an unordered list of lecture videos into a perfectly chronological course.
+Analyze filenames, lesson numbers, unit designations, and lecture topics.
+
+INPUT FORMAT:
+A JSON array where each object has:
+- "id": The exact system filename (DO NOT ALTER THIS STRING)
+- "title": The generated subject title
+- "description": The context of the class
+
+OUTPUT FORMAT:
+Output ONLY a strictly valid JSON array containing EXACTLY all the "id" string values from the input, ordered sequentially from the first lecture to the last. Do NOT output a dictionary. Output ONLY the JSON array `["id1", "id2", ...]`. No markdown formatting.
+"""
+        
+        payload_input = json.dumps([
+            {
+                "id": v["path"],
+                "title": v.get("ai", {}).get("title", ""),
+                "description": v.get("ai", {}).get("description", "")
+            } for v in videos
+        ], indent=2)
+
+        payload = json.dumps({
+            "model": config.model_name,
+            "system_prompt": system,
+            "input": f"{payload_input}\n\nSort the IDs and output the valid JSON array now:",
+            "temperature": 0.0,
+            "max_output_tokens": 4000,
+            "stream": False
+        }).encode()
+
+        base_idx = config.lm_studio_base_url.rfind('/v1')
+        endpoint = config.lm_studio_base_url[:base_idx] + "/api/v1/chat" if base_idx != -1 else f"{config.lm_studio_base_url}/chat"
+        
+        req = urllib.request.Request(
+            endpoint,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {config.lm_studio_api_key}"
+            },
+            method="POST"
+        )
+        
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = json.loads(resp.read())
+                if "output" in data and len(data["output"]) > 0:
+                    text = data["output"][0].get("content", "").strip()
+                else:
+                    raise ValueError("Empty output")
+                    
+                import re
+                match = re.search(r'(\[.*\])', text, re.DOTALL)
+                if match:
+                    text = match.group(1)
+                    
+                sorted_ids = json.loads(text)
+                if not isinstance(sorted_ids, list):
+                    raise ValueError("LLM returned non-array structure for sorting.")
+                return sorted_ids
+        except Exception as e:
+            raise RuntimeError(f"LLM global sort failed: {e}") from e

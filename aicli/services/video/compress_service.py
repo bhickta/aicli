@@ -18,7 +18,7 @@ class CompressService:
         "ultralight": ("150k", "32k", 1, "p1", 10),   # Absolute minimum — 10fps lecture
         "light":      ("250k", "48k", 1, "p1", 15),   # Good for lectures at 240p
         "balanced":   ("400k", "64k", 1, "p1", 24),   # Decent motion, still fast
-        "slideshow":  ("500k", "copy", 0, "p4", "1/60"), # 1 frame/min, original res, pristine audio
+        "slideshow":  ("500k", "48k", 1, "p4", "1/20"), # 1 frame/20s, standard AAC audio for MP4 compliance
     }
 
     @staticmethod
@@ -75,23 +75,18 @@ class CompressService:
                 res_suffix = f"_{resolution}p" if resolution > 0 else "_slideshow"
                 output_path = video_path.parent / f"{stem}{res_suffix}.mp4"
 
-        if output_path.exists() and not overwrite:
-            pass # Just overwrite it implicitly if using standard path routines
-            # raise FileExistsError(f"Output already exists: {output_path}. Use --overwrite.")
-
-        # ── Full GPU pipeline ──────────────────────────────────────────────
-        # -hwaccel cuda              : decode on GPU
-        # -hwaccel_output_format cuda: keep decoded frames in GPU VRAM
-        # scale_cuda                 : resize on GPU (frames stay in VRAM)
-        # h264_nvenc                 : encode on GPU
-        # → Zero CPU involvement for video. Only audio hits CPU (trivial).
-        # ───────────────────────────────────────────────────────────────────
-
         cmd = [
             "ffmpeg", "-y", "-v", "quiet", "-stats",
-            "-hwaccel", "cuda",
-            "-hwaccel_output_format", "cuda",          # Keep frames in GPU VRAM
         ]
+
+        # Use Hardware Decoder ONLY if we are actively scaling on the GPU (resolutions > 0).
+        # Raw MKV files often have broken PTS/DTS which crashes `cuvid` hardware decoding,
+        # especially when jumping via `-skip_frame nokey`. Software decoding handles broken containers 100x better.
+        if resolution > 0:
+            cmd += [
+                "-hwaccel", "cuda",
+                "-hwaccel_output_format", "cuda",
+            ]
 
         if fast_skip:
             cmd += ["-skip_frame", "nokey"]

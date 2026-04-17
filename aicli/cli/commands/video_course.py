@@ -6,6 +6,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
+from rich.status import Status
 
 from aicli.cli.tui import print_header, console
 
@@ -222,11 +223,26 @@ def register(app: typer.Typer):
                         renamed_files.append(new_path)
                     progress.advance(task_p2)
 
-        # ── Sort by first number in filename for correct order ──────────
-        def extract_number(path: Path) -> int:
-            match = re.search(r'\d+', path.name)
-            return int(match.group()) if match else 999
-        renamed_files.sort(key=extract_number)
+        # ── Global AI Sorting ──────────
+        progress_sort = Status("Calling LM Studio for logical chronological course sequence...", spinner="dots", console=console)
+        progress_sort.start()
+        
+        # Build payload of paths and metadata
+        payload_meta = []
+        for p in renamed_files:
+            cache = MetadataBackupManager.load_cache(p)
+            payload_meta.append({
+                "path": str(p),
+                "ai": cache.get("ai", {})
+            })
+            
+        sorted_strings = VideoTaggerService.global_course_sort(payload_meta)
+        # Reconstruct Path objects using exactly matched strings
+        path_map = {str(p): p for p in renamed_files}
+        renamed_files = [path_map[s] for s in sorted_strings if s in path_map]
+            
+        progress_sort.stop()
+        console.print(f"[green]✔ Logical LLM Course Reordering Complete ({len(renamed_files)} videos sequenced)[/green]\n")
 
         # ════════════════════════════════════════════════════════════════
         # PHASE 3: Slideshow Compression (-w parallel FFmpeg workers)
