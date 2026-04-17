@@ -251,6 +251,14 @@ def register(app: typer.Typer):
         progress_sort.stop()
         console.print(f"[green]✔ Logical LLM Course Reordering Complete ({len(renamed_files)} videos sequenced)[/green]\n")
 
+        # ── Intermediate VRAM Flush ─────────────────────────────────────
+        console.print("[cyan]Purging LM Studio from VRAM for NVENC Phase...[/cyan]")
+        try:
+            from aicli.config import unload_all_models
+            unload_all_models()
+        except Exception:
+            pass
+
         # ════════════════════════════════════════════════════════════════
         # PHASE 3: Slideshow Compression (-w parallel FFmpeg workers)
         # ════════════════════════════════════════════════════════════════
@@ -409,5 +417,17 @@ def register(app: typer.Typer):
                 if srt_f.exists(): shutil.move(str(srt_f), str(trash_dir / srt_f.name)); count += 1
                 if txt_f.exists(): shutil.move(str(txt_f), str(trash_dir / txt_f.name)); count += 1
             console.print(f"[dim]Moved {count} intermediate files to Trash folder.[/dim]")
+
+        # ── Global VRAM Flush ───────────────────────────────────────────
+        console.print("[cyan]Flushing all models from VRAM...[/cyan]")
+        from aicli.config import unload_all_models
+        unload_all_models()
+        try:
+            import torch, gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
         console.print("\n[bold magenta]===== GOD-MODE PIPELINE COMPLETE =====[/bold magenta]")
