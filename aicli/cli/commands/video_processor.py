@@ -7,6 +7,7 @@ from aicli.services.video.ffmpeg_utils import FFmpegClient
 from aicli.services.video.transcriber import WhisperEngine
 from aicli.services.video.metadata_manager import MetadataBackupManager
 from aicli.services.video.tagger_service import VideoTaggerService
+from aicli.services.video.notes_service import NotesService
 
 class VideoBatchProcessor:
     """Handles the sequential processing pipeline mapped to UI output."""
@@ -22,7 +23,8 @@ class VideoBatchProcessor:
         retranscribe: bool,
         transcribe_only: bool,
         clip_every: int, 
-        clip_len: int, 
+        clip_len: int,
+        save_txt: bool,
         progress: Progress, 
         task_id
     ) -> tuple[Path, dict, Exception]:
@@ -58,6 +60,21 @@ class VideoBatchProcessor:
                     
                 cache["clips"] = clips
                 MetadataBackupManager.save_cache(video_path, cache)
+
+            # Handle .txt export if requested
+            if save_txt:
+                # The srt_path might vary depending on full_cc or existing srt
+                src_srt = video_path.with_suffix(".tmp_cc.srt")
+                if not src_srt.exists():
+                    src_srt = video_path.with_suffix(".srt")
+                
+                if src_srt.exists():
+                    try:
+                        clean_text = NotesService.srt_to_text(src_srt)
+                        video_path.with_suffix(".txt").write_text(clean_text, encoding="utf-8")
+                        progress.console.print(f"[bold green]\\[{video_path.name}] Clean transcript saved to .txt[/bold green]")
+                    except Exception as e:
+                        progress.console.print(f"[red]\\[{video_path.name}] Failed to save .txt transcript: {e}[/red]")
 
             if transcribe_only:
                 tmp_srt = video_path.with_suffix(".tmp_cc.srt")

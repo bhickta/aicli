@@ -66,6 +66,11 @@ def tag_video(
         "--clip-len",
         help="Duration of each audio sample (in seconds)."
     ),
+    save_txt: bool = typer.Option(
+        False,
+        "--save-txt",
+        help="Save a clean plain-text transcript as a .txt file alongside the video."
+    ),
     whisper_model: str = typer.Option(
         "base",
         "--whisper-model",
@@ -137,6 +142,7 @@ def tag_video(
                 transcribe_only,
                 clip_every, 
                 clip_len, 
+                save_txt,
                 progress, 
                 task_id
             ) 
