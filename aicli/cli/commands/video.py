@@ -544,6 +544,170 @@ def _compress_single(
         fps=fps,
         fast_skip=fast_skip,
     )
+    # Print final summary
     out_mb = CompressService.get_file_size_mb(out_path)
     return out_path, src_mb, out_mb
 
+@app.command("course")
+def process_course(
+    target_dir: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        help="Path to the directory containing raw course videos."
+    ),
+    whisper_model: str = typer.Option(
+        "large-v3",
+        "--whisper-model", "-m",
+        help="Whisper model for extremely accurate closed-captions."
+    ),
+    cleanup: str = typer.Option(
+        "keep",
+        "--cleanup",
+        help="'keep' leaves intermediate files. 'trash' moves individual txt/srt/slideshows to a Trash folder."
+    ),
+    workers: int = typer.Option(
+        4,
+        "--workers", "-w",
+        help="Parallel GPU workers for transcribing and compressing."
+    )
+):
+    """
+    GOD-MODE Pipeline: Turns a folder of raw videos into a single merged course pack.
+    
+    Sequence:
+    1. Transcribe (Full CC) + Text extraction
+    2. AI Tagging & Intelligent Renaming
+    3. Compression into tiny 1-frame-per-minute slideshows
+    4. Merging: Stitches all videos natively into 1 video, and offsets/merges all SRTs and TXTs.
+    5. Clean Notes: Uses LM Studio to generate a single immense "No Fluff" MD file.
+    """
+    from aicli.cli.commands.video_processor import VideoBatchProcessor
+    from aicli.services.video.compress_service import CompressService
+    from aicli.services.video.merge_service import MergeService
+    from aicli.services.video.notes_service import NotesService
+    from aicli.services.video.tagger_service import VideoTaggerService
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import re
+    import shutil
+    
+    console.print("[bold magenta]===== GOD-MODE COURSE PIPELINE INITIATED =====[/bold magenta]")
+    
+    # Locate valid raw files. Ignore already processed ones.
+    valid_exts = VideoTaggerService.VIDEO_EXTENSIONS
+    raw_files = []
+    for p in target_dir.rglob("*"):
+        if p.is_file() and p.suffix.lower() in valid_exts:
+            if "slideshow" in p.name.lower() or "merged" in p.name.lower():
+                continue
+            raw_files.append(p)
+            
+    if not raw_files:
+        console.print("[red]No raw videos found![/red]")
+        return
+        
+    print_header(f"Phase 1: Transcribe & Intelligently Rename {len(raw_files)} files")
+    renamed_files = []
+    
+    with Progress(
+        SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+        BarColumn(), TaskProgressColumn(), TimeElapsedColumn(),
+        console=console
+    ) as progress:
+        task_id = progress.add_task("Transcribing and tagging...", total=len(raw_files))
+        executor = ThreadPoolExecutor(max_workers=min(workers, 2)) # Whisper is heavy, max 2
+        futures = {
+            executor.submit(
+                VideoBatchProcessor.process_isolated_video,
+                f, whisper_model, write=True, no_rename=False, full_cc=True,
+                text_thumb=False, retranscribe=False, transcribe_only=False,
+                clip_every=0, clip_len=0, save_txt=True, progress=progress, task_id=task_id
+            ): f for f in raw_files
+        }
+        for future in as_completed(futures):
+            new_path, _, err = future.result()
+            if err:
+                progress.console.print(f"[red]Error on {futures[future].name}: {err}[/red]")
+            else:
+                renamed_files.append(new_path)
+            progress.advance(task_id)
+
+    # Sort files robustly using first found digits in the new intelligent filename
+    def extract_number(path: Path) -> int:
+        match = re.search(r'\d+', path.name)
+        return int(match.group()) if match else 999
+        
+    renamed_files.sort(key=extract_number)
+    
+    print_header(f"Phase 2: Extremely Fast Slideshow Compression")
+    slideshow_files = []
+    with Progress(
+        SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+        BarColumn(), TaskProgressColumn(), TimeElapsedColumn(),
+        console=console
+    ) as progress:
+        task_id = progress.add_task("GPU NVENC Fast-Skipping...", total=len(renamed_files))
+        executor = ThreadPoolExecutor(max_workers=workers)
+        futures = {
+            executor.submit(
+                CompressService.compress,
+                f, None, 0, "slideshow", False, None, "1/60", True
+            ): f for f in renamed_files
+        }
+        for future in as_completed(futures):
+            try:
+                out_path = future.result()
+                slideshow_files.append(out_path)
+                progress.console.print(f"[green]Compressed → {out_path.name}[/green]")
+            except Exception as e:
+                progress.console.print(f"[red]Compression failed: {e}[/red]")
+            progress.advance(task_id)
+            
+    slideshow_files.sort(key=extract_number)
+
+    print_header("Phase 3: Deep Native Merging")
+    merged_vid = target_dir / "Course_Merged_Slideshow.mp4"
+    merged_srt = target_dir / "Course_Merged.srt"
+    merged_txt = target_dir / "Course_Merged.txt"
+    merged_md  = target_dir / "Course_Merged_NoFluff.md"
+
+    console.print("[cyan]Stitching videos losslessly...[/cyan]")
+    if MergeService.merge_videos(slideshow_files, merged_vid):
+        console.print(f"[bold green]✔ Saved {merged_vid.name}[/bold green]")
+        
+    console.print("[cyan]Time-shifting and merging SRTs (Video track referenced for exact duration offset)...[/cyan]")
+    video_srt_pairs = [(v, v.parent / v.name.replace("_slideshow", "").replace(v.suffix, ".srt")) for v in slideshow_files]
+    if MergeService.merge_srts(video_srt_pairs, merged_srt):
+        console.print(f"[bold green]✔ Saved {merged_srt.name}[/bold green]")
+        
+    console.print("[cyan]Appending raw text transcripts...[/cyan]")
+    txt_files = [v.parent / v.name.replace("_slideshow", "").replace(v.suffix, ".txt") for v in slideshow_files]
+    if MergeService.merge_txts(txt_files, merged_txt):
+         console.print(f"[bold green]✔ Saved {merged_txt.name}[/bold green]")
+         
+    print_header("Phase 4: LM Studio 'No Fluff' Clean Transcription")
+    if merged_txt.exists():
+        console.print("[cyan]Streaming giant merged transcript through LM Studio...[/cyan]")
+        try:
+            full_text = merged_txt.read_text(encoding="utf-8")
+            notes_content = NotesService.generate_notes_from_text(full_text, style="clean")
+            merged_md.write_text(notes_content, encoding="utf-8")
+            console.print(f"[bold green]✔ Fully Cleaned & Lossless Notes saved → {merged_md.name}[/bold green]")
+        except Exception as e:
+             console.print(f"[red]Failed to generate merged notes: {e}[/red]")
+             
+    if cleanup == "trash":
+        print_header("Phase 5: Cleaning up individual components")
+        trash_dir = target_dir / "Trash"
+        trash_dir.mkdir(exist_ok=True)
+        count = 0
+        for f in slideshow_files:
+            srt_f = f.parent / f.name.replace("_slideshow", "").replace(f.suffix, ".srt")
+            txt_f = f.parent / f.name.replace("_slideshow", "").replace(f.suffix, ".txt")
+            if f.exists(): shutil.move(str(f), str(trash_dir / f.name)); count+=1
+            if srt_f.exists(): shutil.move(str(srt_f), str(trash_dir / srt_f.name)); count+=1
+            if txt_f.exists(): shutil.move(str(txt_f), str(trash_dir / txt_f.name)); count+=1
+        console.print(f"[dim]Moved {count} intermediate files to Trash folder.[/dim]")
+
+    console.print("\n[bold magenta]===== GOD-MODE PIPELINE COMPLETE =====[/bold magenta]")
