@@ -88,3 +88,42 @@ def resolve_dynamic_model(preferred_string: str = None) -> str:
         pass
         
     return config.model_name
+
+def unload_all_models():
+    """Unload all currently loaded models in LM Studio to free up VRAM."""
+    import json
+    import urllib.request
+    
+    try:
+        base_idx = config.lm_studio_base_url.rfind('/v1')
+        if base_idx == -1:
+            return
+            
+        native_url = config.lm_studio_base_url[:base_idx] + "/api/v1/models"
+        req = urllib.request.Request(native_url)
+        
+        models_to_unload = []
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            data = json.loads(resp.read())
+            if "models" in data:
+                for m in data["models"]:
+                    if len(m.get("loaded_instances", [])) > 0:
+                        models_to_unload.append(m["key"])
+                        
+        for model_id in models_to_unload:
+            unload_url = config.lm_studio_base_url[:base_idx] + "/api/v1/models/unload"
+            payload = json.dumps({"model": model_id}).encode('utf-8')
+            unload_req = urllib.request.Request(
+                unload_url, 
+                data=payload, 
+                method="POST", 
+                headers={"Content-Type": "application/json"}
+            )
+            try:
+                urllib.request.urlopen(unload_req, timeout=5)
+            except Exception:
+                pass
+                
+    except Exception:
+        pass
+
