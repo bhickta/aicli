@@ -409,7 +409,7 @@ def register(app: typer.Typer):
                         "ffmpeg", "-y", "-v", "quiet",
                         "-i", str(merged_vid_tmp),
                         "-i", str(merged_srt),
-                        "-map", "0:v:0", "-map", "1:s:0", # Slideshows don't have audio, just video and CC
+                        "-map", "0:v:0", "-map", "0:a?", "-map", "1:s:0",
                         "-c", "copy", "-c:s", "mov_text",
                         str(merged_vid)
                     ], capture_output=True)

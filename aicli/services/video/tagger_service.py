@@ -141,9 +141,11 @@ No markdown, no explanation. Just the JSON array."""
                 if match:
                     text = match.group(1)
                     
-                sorted_indices = json.loads(text)
-                if not isinstance(sorted_indices, list):
-                    raise ValueError("LLM returned non-array structure for sorting.")
+                # Use resilient regex to extract integers instead of brittle json.loads
+                numbers = re.findall(r'\d+', text)
+                sorted_indices = [int(n) for n in numbers]
+                if not sorted_indices:
+                    raise ValueError(f"LLM did not return any valid numbers. Raw: {text}")
                 
                 # Map numeric IDs back to full path strings
                 return [filenames[int(i)] for i in sorted_indices if 0 <= int(i) < len(filenames)]
