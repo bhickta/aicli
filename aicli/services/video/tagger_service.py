@@ -21,29 +21,28 @@ class VideoTaggerService:
             for c in clips
         )
 
-        system = """You are a strict data-extraction engine. 
-CRITICAL RULES:
-1. DO NOT generate any "Thinking Process" or reasoning.
-2. DO NOT output any markdown blocks or conversational text.
-3. IMMEDIATELY output the raw JSON object starting with { and ending with }.
+        system = """You are a highly efficient JSON data-extraction engine.
+You extract structured metadata from raw video transcripts.
+CRUCIAL: Output ONLY a valid JSON object. No markdown, no preambles, no "Thinking Process", no explanations.
 
+Schema:
 {
-  "title": "concise descriptive lecture title",
-  "filename": "Title Case with Spaces max 60 chars",
-  "subject": "academic subject",
-  "topics": ["topic1", "topic2", "topic3"],
-  "description": "2-3 sentence summary",
-  "teacher": "name of the teacher/professor",
-  "coaching": "name of the coaching institute/channel",
-  "language": "3-letter ISO-639-2 lowercase code (e.g. hin, eng)"
+  "title": "<Generate a concise, highly accurate descriptive title for the lecture (max 60 chars)>",
+  "filename": "<Generate a clean filename based on the title (Title case, max 60 chars)>",
+  "subject": "<Determine the academic subject (e.g. Physics, History, Math)>",
+  "topics": ["<topic1>", "<topic2>", "<topic3>"],
+  "description": "<Generate a 2-3 sentence summary of the core concepts taught>",
+  "teacher": "<Extract the name of the teacher or professor (if mentioned, else 'Unknown')>",
+  "coaching": "<Extract the coaching institute or channel name (if mentioned, else 'Unknown')>",
+  "language": "<Determine spoken language (e.g. hin, eng)>"
 }"""
 
         payload = json.dumps({
             "model": config.model_name,
             "system_prompt": system,
-            "input": f"Folder: {path_hint}\n\n{transcript[:4000]}",
+            "input": f"Folder: {path_hint}\n\nTranscript Snippet:\n{transcript[:4000]}\n\nGenerate JSON now.",
             "temperature": 0.1,
-            "max_output_tokens": 2048,
+            "max_output_tokens": 500,
             "stream": False
         }).encode()
 
