@@ -119,9 +119,13 @@ class CompressService:
             ]
 
         cmd += [
-            # Strip everything except first video + first audio
+            # Keep first video, first audio, ALL subtitles, and ALL metadata
             "-map", "0:v:0",
             "-map", "0:a:0?",
+            "-map", "0:s?",                 # Carry over all subtitle streams
+            "-c:s", "mov_text",             # Convert subtitles for .mp4 compatibility
+            "-map_metadata", "0",           # Keep global title/metadata
+            "-map_chapters", "0",           # Keep any chapters if present
             "-movflags", "+faststart",
             str(output_path),
         ]
