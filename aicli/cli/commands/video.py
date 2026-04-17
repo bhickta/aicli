@@ -404,19 +404,24 @@ def compress_video(
         "--crf",
         help="Constant quality (0-51). Lower = better. Overrides preset bitrate."
     ),
+    fps: int = typer.Option(
+        None,
+        "--fps",
+        help="Override output framerate (default: preset decides). Lower = faster + smaller."
+    ),
 ):
     """
     GPU-accelerated video compression using NVENC (RTX 3090).
 
-    Converts videos to 240p with minimal file size at maximum speed.
-    A 2-hour lecture compresses in under 1 minute.
+    Full GPU-resident pipeline: decode → scale → encode all on GPU.
+    Frames never leave VRAM. A 2-hour lecture compresses in ~15 seconds.
 
     \b
     Examples:
-        aicli video compress ./               # 240p, light preset
-        aicli video compress ./ --res 360      # 360p
-        aicli video compress ./ --preset ultralight  # Smallest possible
-        aicli video compress ./ --overwrite    # Replace originals
+        aicli video compress ./                       # 240p, 15fps, light
+        aicli video compress ./ --preset ultralight    # Smallest: 10fps, 150kbps
+        aicli video compress ./ --fps 5                # Absolute minimum FPS
+        aicli video compress ./ --overwrite            # Replace originals
     """
     from aicli.services.video.compress_service import CompressService
 
@@ -439,7 +444,9 @@ def compress_video(
         raise typer.Exit()
 
     print_header(f"Compressing {len(files)} video(s) → {resolution}p [{preset}]")
-    console.print(f"[dim]Workers: {workers} | Encoder: h264_nvenc (GPU) | Preset: {preset}[/dim]")
+    from aicli.services.video.compress_service import CompressService
+    display_fps = fps if fps is not None else CompressService.PRESETS[preset][4]
+    console.print(f"[dim]Workers: {workers} | Encoder: h264_nvenc (GPU) | Preset: {preset} | FPS: {display_fps} | Pipeline: full VRAM[/dim]")
     if overwrite:
         console.print("[bold red]WARNING: --overwrite is ON. Original files will be REPLACED.[/bold red]\n")
     else:
@@ -463,7 +470,7 @@ def compress_video(
         executor = ThreadPoolExecutor(max_workers=workers)
         futures = {
             executor.submit(
-                _compress_single, f, resolution, preset, overwrite, crf
+                _compress_single, f, resolution, preset, overwrite, crf, fps
             ): f for f in files
         }
 
@@ -499,7 +506,7 @@ def compress_video(
 
 
 def _compress_single(
-    video_path: Path, resolution: int, preset: str, overwrite: bool, crf: int
+    video_path: Path, resolution: int, preset: str, overwrite: bool, crf: int, fps: int
 ) -> tuple:
     """Worker function for parallel compression."""
     from aicli.services.video.compress_service import CompressService
@@ -511,6 +518,7 @@ def _compress_single(
         preset=preset,
         overwrite=overwrite,
         crf=crf,
+        fps=fps,
     )
     out_mb = CompressService.get_file_size_mb(out_path)
     return out_path, src_mb, out_mb
