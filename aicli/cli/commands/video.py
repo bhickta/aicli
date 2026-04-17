@@ -409,6 +409,11 @@ def compress_video(
         "--fps",
         help="Override output framerate (e.g., 5, 1, or '1/60' for 1 frame per minute)."
     ),
+    fast_skip: bool = typer.Option(
+        False,
+        "--fast-skip",
+        help="Skip decoding non-keyframes. Drops 5 hours down to ~30 seconds for slideshows, at the expense of exact frame accuracy."
+    ),
 ):
     """
     GPU-accelerated video compression using NVENC (RTX 3090).
@@ -470,7 +475,7 @@ def compress_video(
         executor = ThreadPoolExecutor(max_workers=workers)
         futures = {
             executor.submit(
-                _compress_single, f, resolution, preset, overwrite, crf, fps
+                _compress_single, f, resolution, preset, overwrite, crf, fps, fast_skip
             ): f for f in files
         }
 
@@ -506,7 +511,7 @@ def compress_video(
 
 
 def _compress_single(
-    video_path: Path, resolution: int, preset: str, overwrite: bool, crf: int, fps: str
+    video_path: Path, resolution: int, preset: str, overwrite: bool, crf: int, fps: str, fast_skip: bool
 ) -> tuple:
     """Worker function for parallel compression."""
     from aicli.services.video.compress_service import CompressService
@@ -519,6 +524,7 @@ def _compress_single(
         overwrite=overwrite,
         crf=crf,
         fps=fps,
+        fast_skip=fast_skip,
     )
     out_mb = CompressService.get_file_size_mb(out_path)
     return out_path, src_mb, out_mb

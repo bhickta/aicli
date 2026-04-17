@@ -30,6 +30,7 @@ class CompressService:
         overwrite: bool = False,
         crf: Optional[int] = None,
         fps: Optional[str] = None,
+        fast_skip: bool = False,
     ) -> Path:
         """
         Compress a video to the target resolution using a full GPU-resident pipeline.
@@ -46,6 +47,7 @@ class CompressService:
             overwrite: If True, replace the original file.
             crf: Optional constant quality value (0-51). If set, overrides bitrate.
             fps: Override output framerate. None uses preset default.
+            fast_skip: If True, tell decoder to ignore non-keyframes for ultra-fast skipping.
 
         Returns:
             Path to the compressed file.
@@ -82,8 +84,12 @@ class CompressService:
             "ffmpeg", "-y", "-v", "quiet", "-stats",
             "-hwaccel", "cuda",
             "-hwaccel_output_format", "cuda",          # Keep frames in GPU VRAM
-            "-i", str(video_path),
         ]
+
+        if fast_skip:
+            cmd += ["-skip_frame", "nokey"]
+
+        cmd += ["-i", str(video_path)]
 
         if resolution > 0:
             cmd += ["-vf", f"scale_cuda=-2:{resolution}"]
