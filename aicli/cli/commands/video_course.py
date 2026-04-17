@@ -269,13 +269,18 @@ def register(app: typer.Typer):
                     target_name = ai_tags.get("filename", f.stem)
                     ext_srt = f.parent / ".aicli_cache" / f"{f.stem}.srt"
                     
+                    slideshows_dir = f.parent / ".aicli_cache" / "slideshows"
+                    slideshows_dir.mkdir(parents=True, exist_ok=True)
+                    out_dest = slideshows_dir / f"{target_name}_slideshow.mp4"
+                    
                     fut = executor.submit(
                         CompressService.compress,
                         video_path=f,
+                        output_path=out_dest,
                         resolution=0,
                         preset="slideshow",
                         fps="1/2",
-                        fast_skip=True,
+                        fast_skip=False,   # disabled because raw MKVs have sparse keyframes
                         metadata_tags=ai_tags,
                         external_srt=ext_srt,
                         target_name=target_name
