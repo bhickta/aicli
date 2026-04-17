@@ -140,6 +140,31 @@ class VideoBatchProcessor:
                     elif txt_path.exists():
                         raw = txt_path.read_text(encoding="utf-8", errors="replace")
                         clips = [{"start_sec": 0, "text": raw[:4000]}]
+                    else:
+                        # Last resort: extract embedded subtitle stream via ffmpeg
+                        import subprocess, tempfile
+                        with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tmp:
+                            tmp_extract = tmp.name
+                        try:
+                            subprocess.run(
+                                ["ffmpeg", "-y", "-v", "quiet", "-i", str(video_path),
+                                 "-map", "0:s:0", "-c:s", "srt", tmp_extract],
+                                capture_output=True, timeout=30
+                            )
+                            from pathlib import Path as _P
+                            tmp_p = _P(tmp_extract)
+                            if tmp_p.exists() and tmp_p.stat().st_size > 10:
+                                raw = tmp_p.read_text(encoding="utf-8", errors="replace")
+                                import re as _re
+                                blocks = _re.split(r'\n\n+', raw.strip())
+                                for block in blocks:
+                                    lines = block.strip().split('\n')
+                                    if len(lines) >= 3:
+                                        text = ' '.join(lines[2:])
+                                        clips.append({"start_sec": 0, "text": text})
+                            tmp_p.unlink(missing_ok=True)
+                        except Exception:
+                            pass
                     
                     if not clips:
                         return video_path, None, ValueError("No transcript cache found to tag.")

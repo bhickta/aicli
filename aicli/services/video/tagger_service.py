@@ -90,37 +90,26 @@ Schema:
     @staticmethod
     def global_course_sort(videos: List[Dict[str, Any]]) -> List[str]:
         """
-        Pass a global snapshot of the course metadata to LM Studio.
-        Gets back a chronologically perfect execution order array of video IDs.
+        Pass filenames to LM Studio for intelligent chronological ordering.
         """
-        system = """You are an elite academic curriculum architect.
-Your task is to sort an unordered list of lecture videos into a perfectly chronological course.
-Analyze filenames, lesson numbers, unit designations, and lecture topics.
+        system = """You are an elite academic curriculum sequencer.
+Given an unordered list of lecture video filenames, sort them into the correct chronological course order.
+Use lesson numbers, unit numbers, part numbers, and topic progression to determine the correct sequence.
 
-INPUT FORMAT:
-A JSON array where each object has:
-- "id": The exact system filename (DO NOT ALTER THIS STRING)
-- "title": The generated subject title
-- "description": The context of the class
-
-OUTPUT FORMAT:
-Output ONLY a strictly valid JSON array containing EXACTLY all the "id" string values from the input, ordered sequentially from the first lecture to the last. Do NOT output a dictionary. Output ONLY the JSON array `["id1", "id2", ...]`. No markdown formatting.
-"""
+RULES:
+- Output ONLY a valid JSON array of the EXACT input strings, reordered.
+- Do NOT alter any string. Return them exactly as given.
+- No markdown, no explanation, no preamble. Just the JSON array."""
         
-        payload_input = json.dumps([
-            {
-                "id": v["path"],
-                "title": v.get("ai", {}).get("title", ""),
-                "description": v.get("ai", {}).get("description", "")
-            } for v in videos
-        ], indent=2)
-
+        # Send just the filename strings — fast and reliable
+        filenames = [v["path"] for v in videos]
+        
         payload = json.dumps({
             "model": config.model_name,
             "system_prompt": system,
-            "input": f"{payload_input}\n\nSort the IDs and output the valid JSON array now:",
+            "input": json.dumps(filenames, indent=1) + "\n\nSort these filenames chronologically. Output the JSON array now:",
             "temperature": 0.0,
-            "max_output_tokens": 4000,
+            "max_output_tokens": 8000,
             "stream": False
         }).encode()
 
@@ -138,7 +127,7 @@ Output ONLY a strictly valid JSON array containing EXACTLY all the "id" string v
         )
         
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with urllib.request.urlopen(req, timeout=300) as resp:
                 data = json.loads(resp.read())
                 if "output" in data and len(data["output"]) > 0:
                     text = data["output"][0].get("content", "").strip()
