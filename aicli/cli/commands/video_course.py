@@ -29,7 +29,7 @@ def register(app: typer.Typer):
         ),
         workers: int = typer.Option(
             4, "--workers", "-w",
-            help="Parallel workers. Phase 1 (Whisper) caps at 2; Phase 2 (tagging) and Phase 3 (compression) use this value."
+            help="Parallel workers to use uniformly across all phases (Whisper, LM Studio, NVENC)."
         ),
         llm_model: str = typer.Option(
             None, "--llm-model", "--llm",
@@ -129,7 +129,7 @@ def register(app: typer.Typer):
             # ── Load Whisper only if there's actual work to do ────────────
             try:
                 console.print(f"[cyan]Loading Whisper model on GPU ({whisper_model})...[/cyan]")
-                whisper_workers = min(workers, 2)
+                whisper_workers = workers
                 model_instance = WhisperEngine.load_whisper(whisper_model, num_workers=whisper_workers)
             except Exception as e:
                 console.print(f"[red]Failed to load Whisper model: {e}[/red]")
@@ -185,7 +185,7 @@ def register(app: typer.Typer):
         # PHASE 2: AI Tagging & Renaming (-w parallel LM Studio workers)
         # ════════════════════════════════════════════════════════════════
         renamed_files = []
-        tag_workers = max(workers, 4)  # LM Studio can handle high concurrency
+        tag_workers = workers
         print_header(f"Phase 2: Intelligent Tagging & Renaming ({tag_workers} workers)")
         with Progress(
             SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
