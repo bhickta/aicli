@@ -107,12 +107,14 @@ def unload_all_models():
             data = json.loads(resp.read())
             if "models" in data:
                 for m in data["models"]:
-                    if len(m.get("loaded_instances", [])) > 0:
-                        models_to_unload.append(m["key"])
+                    for instance in m.get("loaded_instances", []):
+                        models_to_unload.append(instance.get("id"))
                         
-        for model_id in models_to_unload:
+        for instance_id in models_to_unload:
+            if not instance_id:
+                continue
             unload_url = config.lm_studio_base_url[:base_idx] + "/api/v1/models/unload"
-            payload = json.dumps({"model": model_id}).encode('utf-8')
+            payload = json.dumps({"instance_id": instance_id}).encode('utf-8')
             unload_req = urllib.request.Request(
                 unload_url, 
                 data=payload, 
