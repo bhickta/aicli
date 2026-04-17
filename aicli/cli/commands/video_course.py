@@ -239,12 +239,27 @@ def register(app: typer.Typer):
         ) as progress:
             task_p3 = progress.add_task("GPU NVENC Fast-Skipping...", total=len(renamed_files))
             with ThreadPoolExecutor(max_workers=w3) as executor:
-                futures = {
-                    executor.submit(
+                futures = {}
+                for f in renamed_files:
+                    # Dynamically inject the cached AI tags and SRTs into the final Phase 3 compression!
+                    cache = MetadataBackupManager.load_cache(f)
+                    ai_tags = cache.get("ai", {})
+                    target_name = ai_tags.get("filename", f.stem)
+                    ext_srt = f.parent / ".aicli_cache" / f"{f.stem}.srt"
+                    
+                    fut = executor.submit(
                         CompressService.compress,
-                        f, None, 0, "slideshow", False, None, "1/60", True
-                    ): f for f in renamed_files
-                }
+                        video_path=f,
+                        resolution=0,
+                        preset="slideshow",
+                        fps="1/60",
+                        fast_skip=True,
+                        metadata_tags=ai_tags,
+                        external_srt=ext_srt,
+                        target_name=target_name
+                    )
+                    futures[fut] = f
+                        
                 for future in as_completed(futures):
                     try:
                         out_path = future.result()

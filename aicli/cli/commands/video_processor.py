@@ -121,7 +121,7 @@ class VideoBatchProcessor:
                 ai = cache["ai"]
                 progress.console.print(f"[dim]\\[{video_path.name}] Loaded cached AI tags[/dim]")
             else:
-                progress.console.print(f"[cyan]\\[{video_path.name}] Requesting metadata from LM Studio...[/cyan]")
+                # Muted: progress.console.print(f"[cyan]\\[{video_path.name}] Requesting metadata from LM Studio...[/cyan]")
                 
                 clips = cache.get("clips", [])
                 if not clips:
@@ -134,67 +134,11 @@ class VideoBatchProcessor:
                 cache["ai"] = ai
                 MetadataBackupManager.save_cache(video_path, cache)
 
-            progress.console.print(f"[green]\\[{video_path.name}] Evaluated: {ai.get('title')} ({ai.get('subject')})[/green]")
+            # Muted console spam for cleaner logs
+            # progress.console.print(f"[green]\\[{video_path.name}] Evaluated: {ai.get('title')} ({ai.get('subject')})[/green]")
 
-            new_tags = {
-                "title":       ai.get("title", ""),
-                "comment":     ai.get("description", ""),
-                "genre":       ai.get("subject", ""),
-                "description": ai.get("description", ""),
-                "artist":      ai.get("teacher", ""),
-                "publisher":   ai.get("coaching", ""),
-                "SUBJECT":     ai.get("subject", ""),
-                "TOPICS":      ", ".join(ai.get("topics", [])),
-                "language_track": ai.get("language", ""),
-                "SUMMARY":     ai.get("description", ""),
-            }
-
-            if write:
-                tmp_srt = cache_dir / f"{video_path.stem}.tmp_cc.srt"
-                # Skip SRT embedding if the container already has subtitles from a previous run
-                if tmp_srt.exists() and not FFprobeClient.has_subtitle_stream(video_path):
-                    embed_path = tmp_srt
-                else:
-                    embed_path = None
-                
-                tmp_cover = None
-                if text_thumb:
-                    tmp_cover = cache_dir / f"{video_path.stem}.tmp_cover.jpg"
-                    if not FFmpegClient.generate_text_thumbnail(ai.get("title", video_path.name), tmp_cover):
-                        tmp_cover = None
-                        
-                FFmpegClient.write_tags(video_path, new_tags, original_tags=cache.get("original_tags"), srt_path=embed_path, cover_path=tmp_cover)
-                
-                if embed_path and tmp_cover:
-                    progress.console.print(f"[{video_path.name}] [bold green]Tags, text cover-art, and CC track embedded natively.[/bold green]")
-                else:
-                    progress.console.print(f"[{video_path.name}] [bold green]Tags embedded natively into container.[/bold green]")
-
-                if embed_path and embed_path.exists(): embed_path.unlink()
-                if tmp_cover and tmp_cover.exists(): tmp_cover.unlink()
-
-                sc_path = MetadataBackupManager.sidecar_path(video_path)
-                if sc_path.exists():
-                    sc_path.unlink()
-
-                if not no_rename:
-                    new_name = (ai.get("filename") or "").strip()
-                    if new_name:
-                        if not new_name.endswith(video_path.suffix):
-                            new_name += video_path.suffix
-                        new_path = video_path.parent / new_name
-                        if new_path != video_path and not new_path.exists():
-                            # Save original filename for restore-names
-                            if "original_filename" not in cache:
-                                cache["original_filename"] = video_path.name
-                                MetadataBackupManager.save_cache(video_path, cache)
-                            
-                            shutil.move(str(video_path), str(new_path))
-                            # Migrate all cache artifacts to new filename
-                            MetadataBackupManager.rename_cache_files(video_path, new_path)
-                            progress.console.print(f"[{video_path.name}] [bold blue]Renamed → {new_name}[/bold blue]")
-                            video_path = new_path
-
+            # In zero-copy God-Mode, we do NOT embed tags or rename the file at this stage.
+            # We strictly return the generated tags to be natively injected during Phase 3 NVENC compression.
             return video_path, ai, None
             
         except Exception as e:
