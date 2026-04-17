@@ -79,6 +79,7 @@ def register(app: typer.Typer):
         raw_files = [
             p for p in target_dir.rglob("*")
             if p.is_file() and p.suffix.lower() in valid_exts
+            and ".aicli_cache" not in str(p)
             and "slideshow" not in p.name.lower()
             and "merged" not in p.name.lower()
         ]
@@ -280,7 +281,7 @@ def register(app: typer.Typer):
                         resolution=0,
                         preset="slideshow",
                         fps="1/2",
-                        fast_skip=False,   # disabled because raw MKVs have sparse keyframes
+                        fast_skip=True,
                         metadata_tags=ai_tags,
                         external_srt=ext_srt,
                         target_name=target_name

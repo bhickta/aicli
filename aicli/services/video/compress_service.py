@@ -78,8 +78,13 @@ class CompressService:
         cmd = [
             "ffmpeg", "-y", "-v", "quiet", "-stats",
             "-hwaccel", "cuda",
-            "-hwaccel_output_format", "cuda",
         ]
+
+        # Full GPU pipeline only when scaling — keeps frames in VRAM via scale_cuda filter.
+        # When resolution=0 (original size), skip hwaccel_output_format so frames
+        # auto-transfer to CPU and reach NVENC without needing a filter bridge.
+        if resolution > 0:
+            cmd += ["-hwaccel_output_format", "cuda"]
 
         if fast_skip:
             cmd += ["-skip_frame", "nokey"]
