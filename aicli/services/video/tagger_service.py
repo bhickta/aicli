@@ -53,10 +53,19 @@ Return ONLY valid JSON — no markdown, no extra text:
         )
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
-                text = json.loads(resp.read())["choices"][0]["message"]["content"].strip()
-                text = text.replace("```json", "").replace("```", "").strip()
+                raw_response = resp.read()
+                data = json.loads(raw_response)
+                text = data["choices"][0]["message"]["content"].strip()
+                
+                # Resilient extraction of JSON block from conversational fluff
+                import re
+                match = re.search(r'(\{.*\})', text, re.DOTALL)
+                if match:
+                    text = match.group(1)
+                
                 return json.loads(text)
         except urllib.error.URLError as e:
             raise ConnectionError(f"LM Studio Error: {e}")
         except Exception as e:
-            raise ValueError(f"Failed to parse response: {e}")
+            # Capture the raw text in the exception to avoid blind debugging
+            raise ValueError(f"Failed to parse response. Error: {e}. Raw Text: '{text[:100]}...'")
