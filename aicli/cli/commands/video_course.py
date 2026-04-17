@@ -27,9 +27,17 @@ def register(app: typer.Typer):
             "keep", "--cleanup",
             help="'keep' leaves intermediate files. 'trash' moves individual txt/srt/slideshows to a Trash folder."
         ),
-        workers: int = typer.Option(
-            4, "--workers", "-w",
-            help="Parallel workers to use uniformly across all phases (Whisper, LM Studio, NVENC)."
+        w1: int = typer.Option(
+            2, "--w1",
+            help="Parallel workers for Phase 1 (Whisper Transcription). Maxed by GPU VRAM."
+        ),
+        w2: int = typer.Option(
+            12, "--w2",
+            help="Parallel workers for Phase 2 (LM Studio Tagging & Renaming)."
+        ),
+        w3: int = typer.Option(
+            12, "--w3",
+            help="Parallel workers for Phase 3 (NVENC Compression)."
         ),
         llm_model: str = typer.Option(
             None, "--llm-model", "--llm",
@@ -129,7 +137,7 @@ def register(app: typer.Typer):
             # ── Load Whisper only if there's actual work to do ────────────
             try:
                 console.print(f"[cyan]Loading Whisper model on GPU ({whisper_model})...[/cyan]")
-                whisper_workers = workers
+                whisper_workers = w1
                 model_instance = WhisperEngine.load_whisper(whisper_model, num_workers=whisper_workers)
             except Exception as e:
                 console.print(f"[red]Failed to load Whisper model: {e}[/red]")
@@ -185,7 +193,7 @@ def register(app: typer.Typer):
         # PHASE 2: AI Tagging & Renaming (-w parallel LM Studio workers)
         # ════════════════════════════════════════════════════════════════
         renamed_files = []
-        tag_workers = workers
+        tag_workers = w2
         print_header(f"Phase 2: Intelligent Tagging & Renaming ({tag_workers} workers)")
         with Progress(
             SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
@@ -218,14 +226,14 @@ def register(app: typer.Typer):
         # ════════════════════════════════════════════════════════════════
         # PHASE 3: Slideshow Compression (-w parallel FFmpeg workers)
         # ════════════════════════════════════════════════════════════════
-        print_header(f"Phase 3: Slideshow Compression ({workers} workers)")
+        print_header(f"Phase 3: Slideshow Compression ({w3} workers)")
         slideshow_files = []
         with Progress(
             SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
             BarColumn(), TaskProgressColumn(), TimeElapsedColumn(), console=console
         ) as progress:
             task_p3 = progress.add_task("GPU NVENC Fast-Skipping...", total=len(renamed_files))
-            with ThreadPoolExecutor(max_workers=workers) as executor:
+            with ThreadPoolExecutor(max_workers=w3) as executor:
                 futures = {
                     executor.submit(
                         CompressService.compress,
