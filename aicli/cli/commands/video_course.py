@@ -73,59 +73,80 @@ def register(app: typer.Typer):
             console.print("[red]No raw videos found![/red]")
             return
 
-        # ── Boot LM Studio ──────────────────────────────────────────────
+        # ── Pre-flight: Skip files already fully processed ──────────────
+        from aicli.services.video.ffprobe import FFprobeClient
+        from aicli.services.video.metadata_manager import MetadataBackupManager
+        
         print_header(f"Phase 1: Transcribe {len(raw_files)} files")
+        needs_transcription = []
+        already_done = []
+        for f in raw_files:
+            cache = MetadataBackupManager.load_cache(f)
+            has_cache = "clips" in cache
+            has_subs = FFprobeClient.has_subtitle_stream(f)
+            if has_cache or has_subs:
+                already_done.append(f)
+            else:
+                needs_transcription.append(f)
+        
+        if already_done:
+            console.print(f"[green]✔ {len(already_done)} files already transcribed (skipping)[/green]")
+
+        if needs_transcription:
+            # ── Load Whisper only if there's actual work to do ────────────
+            try:
+                console.print(f"[cyan]Loading Whisper model on GPU ({whisper_model})...[/cyan]")
+                whisper_workers = min(workers, 2)
+                model_instance = WhisperEngine.load_whisper(whisper_model, num_workers=whisper_workers)
+            except Exception as e:
+                console.print(f"[red]Failed to load Whisper model: {e}[/red]")
+                return
+
+            # ════════════════════════════════════════════════════════════
+            # PHASE 1: Transcribe remaining files
+            # ════════════════════════════════════════════════════════════
+            with Progress(
+                SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                BarColumn(), TaskProgressColumn(), TimeElapsedColumn(), console=console
+            ) as progress:
+                task_p1 = progress.add_task(f"Transcribing ({whisper_workers} GPU workers)...", total=len(needs_transcription))
+                with ThreadPoolExecutor(max_workers=whisper_workers) as executor:
+                    futures = {
+                        executor.submit(
+                            VideoBatchProcessor.phase1_transcribe,
+                            f, model_instance, write=True, full_cc=True,
+                            retranscribe=False, transcribe_only=False,
+                            clip_every=0, clip_len=0, save_txt=True,
+                            progress=progress, task_id=task_p1
+                        ): f for f in needs_transcription
+                    }
+                    for future in as_completed(futures):
+                        path, err = future.result()
+                        if err:
+                            progress.console.print(f"[red]Error transcribing {futures[future].name}: {err}[/red]")
+                        progress.advance(task_p1)
+
+            # ── VRAM Purge ──────────────────────────────────────────────
+            console.print("[cyan]Purging Whisper from VRAM...[/cyan]")
+            try:
+                del model_instance
+                import torch, gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
+        else:
+            console.print("[green]All files cached. Skipping Whisper entirely.[/green]")
+
+        # ── Boot LM Studio into now-empty VRAM ──────────────────────────
         try:
-            console.print("[cyan]Waking up LM Studio & Booting Language Model into VRAM...[/cyan]")
+            console.print("[cyan]Booting Language Model into VRAM...[/cyan]")
             resolved_lm = resolve_dynamic_model(llm_model)
             aicli_config.model_name = resolved_lm
-            console.print(f"[green]✔ Auto-Connected to LM Studio: {resolved_lm}[/green]")
+            console.print(f"[green]✔ LM Studio ready: {resolved_lm}[/green]")
         except Exception as e:
-            console.print(f"[dim]Note: Could not pre-load LM Studio model ({e}). Continuing with JIT.[/dim]")
-
-        # ── Load Whisper ─────────────────────────────────────────────────
-        try:
-            console.print(f"[cyan]Loading Whisper model on GPU ({whisper_model})...[/cyan]")
-            whisper_workers = min(workers, 2)  # Whisper is heavy, cap at 2
-            model_instance = WhisperEngine.load_whisper(whisper_model, num_workers=whisper_workers)
-        except Exception as e:
-            console.print(f"[red]Failed to load Whisper model: {e}[/red]")
-            return
-
-        # ════════════════════════════════════════════════════════════════
-        # PHASE 1: Transcribe all files (Whisper-only, max 2 GPU workers)
-        # ════════════════════════════════════════════════════════════════
-        with Progress(
-            SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
-            BarColumn(), TaskProgressColumn(), TimeElapsedColumn(), console=console
-        ) as progress:
-            task_p1 = progress.add_task(f"Transcribing ({whisper_workers} GPU workers)...", total=len(raw_files))
-            with ThreadPoolExecutor(max_workers=whisper_workers) as executor:
-                futures = {
-                    executor.submit(
-                        VideoBatchProcessor.phase1_transcribe,
-                        f, model_instance, write=True, full_cc=True,
-                        retranscribe=False, transcribe_only=False,
-                        clip_every=0, clip_len=0, save_txt=True,
-                        progress=progress, task_id=task_p1
-                    ): f for f in raw_files
-                }
-                for future in as_completed(futures):
-                    path, err = future.result()
-                    if err:
-                        progress.console.print(f"[red]Error transcribing {futures[future].name}: {err}[/red]")
-                    progress.advance(task_p1)
-
-        # ── VRAM Purge: Kill Whisper, free GPU for LM Studio ────────────
-        console.print("[cyan]Transcription complete. Purging Whisper from VRAM...[/cyan]")
-        try:
-            del model_instance
-            import torch, gc
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except Exception:
-            pass
+            console.print(f"[dim]Note: Could not load LM Studio model ({e}). Continuing with JIT.[/dim]")
 
         # ════════════════════════════════════════════════════════════════
         # PHASE 2: AI Tagging & Renaming (-w parallel LM Studio workers)

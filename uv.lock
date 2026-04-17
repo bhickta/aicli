@@ -8,7 +8,7 @@ resolution-markers = [
 
 [[package]]
 name = "aicli"
-version = "0.4.16"
+version = "0.4.19"
 source = { editable = "." }
 dependencies = [
     { name = "faster-whisper" },
