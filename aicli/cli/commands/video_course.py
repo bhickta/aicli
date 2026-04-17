@@ -301,7 +301,7 @@ def register(app: typer.Typer):
                     out_dest = slideshows_dir / f"{target_name}_slideshow.mp4"
                     
                     if out_dest.exists() and CompressService.get_file_size_mb(out_dest) > 0.1:
-                        slideshow_files.append(out_dest)
+                        slideshow_files.append((out_dest, f))
                         progress.console.print(f"[dim]Already compressed → {out_dest.name}[/dim]")
                         progress.advance(task_p3)
                         continue
@@ -323,7 +323,7 @@ def register(app: typer.Typer):
                 for future in as_completed(futures):
                     try:
                         out_path = future.result()
-                        slideshow_files.append(out_path)
+                        slideshow_files.append((out_path, futures[future]))
                         progress.console.print(f"[green]Compressed → {out_path.name}[/green]")
                     except Exception as e:
                         progress.console.print(f"[red]Compression failed: {e}[/red]")
@@ -335,7 +335,7 @@ def register(app: typer.Typer):
             target_name = cache.get("ai", {}).get("filename", f.stem)
             out_dest = f.parent / ".aicli_cache" / "slideshows" / f"{target_name}_slideshow.mp4"
             if out_dest.exists():
-                slideshow_files.append(out_dest)
+                slideshow_files.append((out_dest, f))
 
         # ════════════════════════════════════════════════════════════════
         # PHASE 4: Deep Native Merging
@@ -350,9 +350,10 @@ def register(app: typer.Typer):
         current_sec = 0
 
         from aicli.services.video.merge_service import MergeService
-        for f in slideshow_files:
+        for item in slideshow_files:
+            out_dest, f = item
             try:
-                dur = MergeService.get_video_duration(f)
+                dur = MergeService.get_video_duration(out_dest)
             except Exception:
                 dur = 0
             
@@ -361,7 +362,7 @@ def register(app: typer.Typer):
                 current_chunk = []
                 current_sec = 0
             
-            current_chunk.append(f)
+            current_chunk.append(item)
             current_sec += dur
 
         if current_chunk:
@@ -375,30 +376,35 @@ def register(app: typer.Typer):
         for i, chunk in enumerate(chunks, 1):
             if not chunk: continue
             part_suffix = f"_Part{i}" if is_multipart else ""
+            
+            # Merged MP4 stays in the root UI folder. The intermediate .srt and .txt files are hidden in the cache.
             merged_vid = target_dir / f"Course_Merged_Slideshow{part_suffix}.mp4"
-            merged_srt = target_dir / f"Course_Merged{part_suffix}.srt"
-            merged_txt = target_dir / f"Course_Merged{part_suffix}.txt"
+            merged_srt = cache_dir / f"Course_Merged{part_suffix}.srt"
+            merged_txt = cache_dir / f"Course_Merged{part_suffix}.txt"
             merged_txts.append(merged_txt)
 
+            if merged_vid.exists() and merged_srt.exists() and merged_txt.exists():
+                console.print(f"[dim]Already merged → {merged_vid.name}[/dim]")
+                continue
+
             console.print(f"[cyan]Stitching videos losslessly{(' (Part ' + str(i) + ')') if is_multipart else ''}...[/cyan]")
-            if MergeService.merge_videos(chunk, merged_vid):
+            video_paths = [item[0] for item in chunk]
+            if MergeService.merge_videos(video_paths, merged_vid):
                 console.print(f"[bold green]✔ Saved {merged_vid.name}[/bold green]")
 
             console.print(f"[cyan]Time-shifting and merging SRTs{(' (Part ' + str(i) + ')') if is_multipart else ''}...[/cyan]")
             video_srt_pairs = []
-            for v in chunk:
-                base = v.name.replace("_slideshow", "").replace(v.suffix, "")
-                srt = cache_dir / f"{base}.srt"
-                if not srt.exists():
-                    srt = cache_dir / f"{base}.tmp_cc.srt"
-                video_srt_pairs.append((v, srt))
+            for out_dest, orig_f in chunk:
+                # Resolve the ORIGINAL naming scheme inside the cache folder
+                srt = cache_dir / f"{orig_f.stem}.srt"
+                video_srt_pairs.append((out_dest, srt))
             if MergeService.merge_srts(video_srt_pairs, merged_srt):
-                console.print(f"[bold green]✔ Saved {merged_srt.name}[/bold green]")
+                console.print(f"[bold green]✔ Saved {merged_srt.name} to cache[/bold green]")
 
             console.print(f"[cyan]Appending raw text transcripts{(' (Part ' + str(i) + ')') if is_multipart else ''}...[/cyan]")
-            txt_files = [cache_dir / f"{v.name.replace('_slideshow', '').replace(v.suffix, '')}.txt" for v in chunk]
+            txt_files = [cache_dir / f"{orig_f.stem}.txt" for _, orig_f in chunk]
             if MergeService.merge_txts(txt_files, merged_txt):
-                console.print(f"[bold green]✔ Saved {merged_txt.name}[/bold green]")
+                console.print(f"[bold green]✔ Saved {merged_txt.name} to cache[/bold green]")
 
         # ════════════════════════════════════════════════════════════════
         # PHASE 5: LM Studio 'No Fluff' Notes (hot-swap to bigger model)

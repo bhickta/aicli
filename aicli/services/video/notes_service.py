@@ -64,15 +64,16 @@ class NotesService:
 
         payload = json.dumps({
             "model": config.model_name,
-            "system_prompt": sys_prompt,
-            "input": text_chunk,
+            "messages": [
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": f"Condense the following transcript text into {style} notes:\n\n{text_chunk}"}
+            ],
             "temperature": 0.2,
-            "max_output_tokens": 2048,
+            "max_tokens": 2048,
             "stream": False
         }).encode('utf-8')
 
-        base_idx = config.lm_studio_base_url.rfind('/v1')
-        endpoint = config.lm_studio_base_url[:base_idx] + "/api/v1/chat" if base_idx != -1 else f"{config.lm_studio_base_url}/chat"
+        endpoint = f"{config.lm_studio_base_url}/chat/completions"
         
         req = urllib.request.Request(
             endpoint,
@@ -87,8 +88,8 @@ class NotesService:
         try:
             with urllib.request.urlopen(req, timeout=120) as resp:
                 data = json.loads(resp.read())
-                if "output" in data and len(data["output"]) > 0:
-                    text = data["output"][0].get("content", "").strip()
+                if "choices" in data and len(data["choices"]) > 0:
+                    text = data["choices"][0]["message"].get("content", "").strip()
                 else:
                     text = ""
                 return text
