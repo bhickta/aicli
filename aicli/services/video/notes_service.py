@@ -43,6 +43,17 @@ Mandatory Output Format & Style (Ultra-Compact):
 Instruction:
 Process the following text according to all rules specified above."""
 
+CLEAN_SYSTEM_PROMPT = """Your Role: You are an Expert Transcript Editor and Content Cleaner.
+Your Goal: Clean and format the provided raw transcript without losing ANY informational content.
+
+Mandatory Core Principles:
+- **Strict No-Information-Loss Policy**: You must preserve every single fact, concept, example, explanation, and nuance from the source text. Do NOT summarize or condense the core educational content.
+- **Fluff Removal ONLY**: You may ONLY remove genuine fluff: sponsor ads, "subscribe", irrelevant tangents, "how are you guys doing" chatter, verbal tics, and completely off-topic banter.
+- **Readable Formatting**: Format the cleaned text into well-structured, readable paragraphs with clear headings if topics shift. Do NOT forcefully compress into ultra-dense bullets. Maintain the conversational/educational flow.
+- **Accuracy**: Fix obvious auto-captioning typos, but do not alter the speaker's original meaning.
+
+Output the perfectly cleaned transcript in clear, highly readable English prose."""
+
 
 class NotesService:
     """Generates compressed study notes from SRT files via LM Studio."""
@@ -100,12 +111,14 @@ class NotesService:
         return " ".join(lines)
 
     @staticmethod
-    def _call_lmstudio(text_chunk: str) -> str:
+    def _call_lmstudio(text_chunk: str, style: str = "bullet") -> str:
         """Send a text chunk to LM Studio and return the compressed notes."""
+        sys_prompt = CLEAN_SYSTEM_PROMPT if style == "clean" else NOTES_SYSTEM_PROMPT
+
         payload = json.dumps({
             "model": config.model_name,
             "messages": [
-                {"role": "system", "content": NOTES_SYSTEM_PROMPT},
+                {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": text_chunk},
             ],
             "temperature": 0.15,
@@ -132,7 +145,7 @@ class NotesService:
             raise ValueError(f"Failed to parse LM Studio response: {e}")
 
     @staticmethod
-    def generate_notes_from_text(text: str) -> str:
+    def generate_notes_from_text(text: str, style: str = "bullet") -> str:
         """Plain text → chunked LM Studio calls → merged notes."""
         if not text.strip():
             raise ValueError("Input text is empty.")
@@ -154,17 +167,17 @@ class NotesService:
 
         all_notes = []
         for chunk in chunks:
-            notes = NotesService._call_lmstudio(chunk)
+            notes = NotesService._call_lmstudio(chunk, style=style)
             if notes:
                 all_notes.append(notes)
 
-        return "\n".join(all_notes)
+        return "\n\n".join(all_notes)
 
     @staticmethod
-    def generate_notes(srt_path: Path) -> str:
+    def generate_notes(srt_path: Path, style: str = "bullet") -> str:
         """Full pipeline: SRT file → plain text → notes."""
         text = NotesService.srt_to_text(srt_path)
-        return NotesService.generate_notes_from_text(text)
+        return NotesService.generate_notes_from_text(text, style=style)
 
     @staticmethod
     def save_notes(video_path: Path, notes_content: str) -> Path:
