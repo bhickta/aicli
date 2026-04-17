@@ -184,7 +184,14 @@ class VideoBatchProcessor:
                             new_name += video_path.suffix
                         new_path = video_path.parent / new_name
                         if new_path != video_path and not new_path.exists():
+                            # Save original filename for restore-names
+                            if "original_filename" not in cache:
+                                cache["original_filename"] = video_path.name
+                                MetadataBackupManager.save_cache(video_path, cache)
+                            
                             shutil.move(str(video_path), str(new_path))
+                            # Migrate all cache artifacts to new filename
+                            MetadataBackupManager.rename_cache_files(video_path, new_path)
                             progress.console.print(f"[{video_path.name}] [bold blue]Renamed → {new_name}[/bold blue]")
                             video_path = new_path
 

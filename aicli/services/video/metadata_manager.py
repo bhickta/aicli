@@ -77,3 +77,20 @@ class MetadataBackupManager:
             raise ValueError("No original_tags backup found in sidecar.")
             
         return FFmpegClient.write_tags(video_path, original, clear_first=True)
+
+    @staticmethod
+    def rename_cache_files(old_path: Path, new_path: Path) -> None:
+        """Migrate all cache artifacts from old filename to new filename."""
+        cache_dir = old_path.parent / ".aicli_cache"
+        if not cache_dir.exists():
+            return
+        import shutil
+        old_stem = old_path.stem
+        new_stem = new_path.stem
+        for f in cache_dir.iterdir():
+            if f.name.startswith(old_stem):
+                new_name = f.name.replace(old_stem, new_stem, 1)
+                target = cache_dir / new_name
+                if not target.exists():
+                    shutil.move(str(f), str(target))
+

@@ -1,0 +1,172 @@
+"""Video tag command — Transcribe and AI-tag lecture videos."""
+import typer
+import time
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn, TimeRemainingColumn
+
+from aicli.services.video import MetadataBackupManager, WhisperEngine, VideoTaggerService
+from aicli.cli.commands.video_processor import VideoBatchProcessor
+from aicli.cli.tui import print_header, print_success, print_error, console
+
+
+def register(app: typer.Typer):
+    """Register the tag command on the given Typer app."""
+
+    @app.command("tag")
+    def tag_video(
+        target_path: Path = typer.Argument(
+            ...,
+            exists=True,
+            help="Path to the video file or directory."
+        ),
+        write: bool = typer.Option(
+            False,
+            "--write", "-w",
+            help="Apply tags and rename the file. Without this, it performs a dry run."
+        ),
+        no_rename: bool = typer.Option(
+            False,
+            "--no-rename",
+            help="Tag only, keep the original filename. (Requires --write)"
+        ),
+        full_cc: bool = typer.Option(
+            False,
+            "--full-cc",
+            help="Perform a full transcription to generate a sidecar .srt track."
+        ),
+        text_thumb: bool = typer.Option(
+            True,
+            "--text-thumb/--no-text-thumb",
+            help="Generate a centered text image from the title and embed it directly into the video as cover art."
+        ),
+        retranscribe: bool = typer.Option(
+            False,
+            "--retranscribe",
+            help="Ignore cached sidecar data and force a full re-transcription."
+        ),
+        transcribe_only: bool = typer.Option(
+            False,
+            "--transcribe-only",
+            help="Skip AI tagging and file renaming. Only perform transcription (writes .srt if --full-cc is used)."
+        ),
+        workers: int = typer.Option(
+            2,
+            "--workers",
+            help="Number of concurrent workers."
+        ),
+        clip_every: int = typer.Option(
+            360,
+            "--clip-every",
+            help="Frequency to sample audio clips (in seconds)."
+        ),
+        clip_len: int = typer.Option(
+            60,
+            "--clip-len",
+            help="Duration of each audio sample (in seconds)."
+        ),
+        save_txt: bool = typer.Option(
+            False,
+            "--save-txt",
+            help="Save a clean plain-text transcript as a .txt file alongside the video."
+        ),
+        whisper_model: str = typer.Option(
+            "base",
+            "--whisper-model",
+            help="faster-whisper model size (tiny, base, small, medium, large-v3)."
+        )
+    ):
+        """
+        Transcribe and AI-tag lecture videos. Parallel, cached, and automatically backed up.
+        """
+        valid_extensions = VideoTaggerService.VIDEO_EXTENSIONS
+        if target_path.is_file():
+            files = [target_path] if target_path.suffix.lower() in valid_extensions else []
+        else:
+            files = [p for p in target_path.rglob("*") if p.is_file() and p.suffix.lower() in valid_extensions]
+
+        if not files:
+            console.print("[yellow]No supported video files found.[/yellow]")
+            raise typer.Exit()
+
+        print_header(f"Found {len(files)} video(s) to process")
+        console.print(f"[dim]Workers: {workers} | Whisper: {whisper_model} | Cache: {'IGNORED' if retranscribe else 'Enabled'}[/dim]")
+
+        if write:
+            console.print("[bold red]WARNING: Running in WRITE mode. Files will be tagged and renamed.[/bold red]\n")
+        else:
+            console.print("[bold blue]Running in DRY RUN mode. Provide --write to actually modify files.[/bold blue]\n")
+
+        # Only load Whisper if at least one file needs transcribing
+        model_instance = None
+        all_cached = all("clips" in MetadataBackupManager.load_cache(f) for f in files) and not retranscribe
+        
+        if not all_cached:
+            try:
+                console.print(f"[cyan]Loading Whisper model on GPU (batch_size=24)...[/cyan]")
+                model_instance = WhisperEngine.load_whisper(whisper_model, num_workers=workers)
+            except Exception as e:
+                print_error("Failed to load whisper model", e)
+                raise typer.Exit(1)
+        else:
+            console.print("[green]All files cached. Skipping Whisper instantiation.[/green]")
+
+        results = []
+        start_t = time.time()
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TextColumn("•"),
+            TimeRemainingColumn(),
+            console=console
+        ) as progress:
+            task_id = progress.add_task("Processing videos...", total=len(files))
+
+            executor = ThreadPoolExecutor(max_workers=workers)
+            futures = [
+                executor.submit(
+                    VideoBatchProcessor.process_isolated_video, 
+                    f, model_instance, write, no_rename,
+                    full_cc, text_thumb, retranscribe, transcribe_only,
+                    clip_every, clip_len, save_txt, progress, task_id
+                ) 
+                for f in files
+            ]
+            
+            try:
+                for future in as_completed(futures):
+                    f_path, metadata, err = future.result()
+                    
+                    if err:
+                        progress.console.print(f"[{f_path.name}] [red]Error: {str(err)}[/red]")
+                    else:
+                        new_name = (metadata.get('filename') or '')
+                        if not write and not transcribe_only:
+                            progress.console.print(f"[{f_path.name}] [cyan][DRY RUN] Would tag + rename to: {new_name}{f_path.suffix}[/cyan]")
+                    
+                    results.append((f_path, metadata, err))
+                    progress.advance(task_id)
+            except KeyboardInterrupt:
+                progress.console.print("\n[bold red]⚠ Processing interrupted by user! Shutting down abruptly...[/bold red]")
+                import os
+                os._exit(130)
+
+        elapsed = time.time() - start_t
+        successful = [r for r in results if not r[2]]
+        failures = [r for r in results if r[2]]
+
+        console.print(f"\n[bold]Done in {elapsed:.1f}s[/bold]")
+        if successful:
+            print_success(f"Processed {len(successful)}/{len(files)} files successfully.")
+        if failures:
+            print_error(f"Failed to process {len(failures)} files.", failures[0][2])
+            for f, _, e in failures:
+                console.print(f"  - {f.name}: {e}")
+
+        if not write:
+             console.print("\n[yellow]Run with --write to apply tags and rename.[/yellow]")
