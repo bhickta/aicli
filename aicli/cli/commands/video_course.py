@@ -377,66 +377,87 @@ def register(app: typer.Typer):
             if not chunk: continue
             part_suffix = f"_Part{i}" if is_multipart else ""
             
-            # Merged MP4 stays in the root UI folder. The intermediate .srt and .txt files are hidden in the cache.
+            # The user explicitly requested all final merged outputs to sit beautifully in the UI root folder
             merged_vid = target_dir / f"Course_Merged_Slideshow{part_suffix}.mp4"
-            merged_srt = cache_dir / f"Course_Merged{part_suffix}.srt"
-            merged_txt = cache_dir / f"Course_Merged{part_suffix}.txt"
+            merged_vid_tmp = target_dir / f"Course_Merged_Slideshow_tmp{part_suffix}.mp4"
+            merged_srt = target_dir / f"Course_Merged{part_suffix}.srt"
+            merged_txt = target_dir / f"Course_Merged{part_suffix}.txt"
             merged_txts.append(merged_txt)
 
             if merged_vid.exists() and merged_srt.exists() and merged_txt.exists():
                 console.print(f"[dim]Already merged → {merged_vid.name}[/dim]")
                 continue
 
-            console.print(f"[cyan]Stitching videos losslessly{(' (Part ' + str(i) + ')') if is_multipart else ''}...[/cyan]")
-            video_paths = [item[0] for item in chunk]
-            if MergeService.merge_videos(video_paths, merged_vid):
-                console.print(f"[bold green]✔ Saved {merged_vid.name}[/bold green]")
-
+            # Generate perfectly synchronized master SRT first
             console.print(f"[cyan]Time-shifting and merging SRTs{(' (Part ' + str(i) + ')') if is_multipart else ''}...[/cyan]")
             video_srt_pairs = []
             for out_dest, orig_f in chunk:
-                # Resolve the ORIGINAL naming scheme inside the cache folder
                 srt = cache_dir / f"{orig_f.stem}.srt"
+                if not srt.exists():
+                    srt = cache_dir / f"{orig_f.stem}.tmp_cc.srt"
                 video_srt_pairs.append((out_dest, srt))
             if MergeService.merge_srts(video_srt_pairs, merged_srt):
-                console.print(f"[bold green]✔ Saved {merged_srt.name} to cache[/bold green]")
+                console.print(f"[bold green]✔ Saved {merged_srt.name}[/bold green]")
+
+            # Now stitch video chunks losslessly and hard-mux the master SRT directly into the container!
+            console.print(f"[cyan]Stitching videos and embedding master CC track{(' (Part ' + str(i) + ')') if is_multipart else ''}...[/cyan]")
+            video_paths = [item[0] for item in chunk]
+            if MergeService.merge_videos(video_paths, merged_vid_tmp):
+                if merged_srt.exists():
+                    import subprocess
+                    subprocess.run([
+                        "ffmpeg", "-y", "-v", "quiet",
+                        "-i", str(merged_vid_tmp),
+                        "-i", str(merged_srt),
+                        "-map", "0:v:0", "-map", "1:s:0", # Slideshows don't have audio, just video and CC
+                        "-c", "copy", "-c:s", "mov_text",
+                        str(merged_vid)
+                    ], capture_output=True)
+                    if merged_vid.exists():
+                        merged_vid_tmp.unlink(missing_ok=True)
+                        console.print(f"[bold green]✔ Saved {merged_vid.name} (embedded CC natively inside video)[/bold green]")
+                else:
+                    merged_vid_tmp.rename(merged_vid)
+                    console.print(f"[bold green]✔ Saved {merged_vid.name}[/bold green]")
 
             console.print(f"[cyan]Appending raw text transcripts{(' (Part ' + str(i) + ')') if is_multipart else ''}...[/cyan]")
             txt_files = [cache_dir / f"{orig_f.stem}.txt" for _, orig_f in chunk]
             if MergeService.merge_txts(txt_files, merged_txt):
-                console.print(f"[bold green]✔ Saved {merged_txt.name} to cache[/bold green]")
+                console.print(f"[bold green]✔ Saved {merged_txt.name}[/bold green]")
 
         # ════════════════════════════════════════════════════════════════
         # PHASE 5: LM Studio 'No Fluff' Notes (hot-swap to bigger model)
+        # (Temporarily disabled as requested)
         # ════════════════════════════════════════════════════════════════
-        print_header("Phase 5: LM Studio 'No Fluff' Clean Transcription")
-        
-        # Load notes model once
-        notes_loaded = False
-        if merged_txts and notes_llm:
-            try:
-                console.print(f"[cyan]Hot-swapping to heavier model: '{notes_llm}'...[/cyan]")
-                resolved_notes = resolve_dynamic_model(notes_llm)
-                aicli_config.model_name = resolved_notes
-                console.print(f"[green]✔ Loaded notes model: {resolved_notes}[/green]")
-                notes_loaded = True
-            except Exception as e:
-                console.print(f"[dim]Could not load notes model ({e}). Using current model.[/dim]")
+        if False:
+            print_header("Phase 5: LM Studio 'No Fluff' Clean Transcription")
+            
+            # Load notes model once
+            notes_loaded = False
+            if merged_txts and notes_llm:
+                try:
+                    console.print(f"[cyan]Hot-swapping to heavier model: '{notes_llm}'...[/cyan]")
+                    resolved_notes = resolve_dynamic_model(notes_llm)
+                    aicli_config.model_name = resolved_notes
+                    console.print(f"[green]✔ Loaded notes model: {resolved_notes}[/green]")
+                    notes_loaded = True
+                except Exception as e:
+                    console.print(f"[dim]Could not load notes model ({e}). Using current model.[/dim]")
+                    
+            for i, merged_txt in enumerate(merged_txts, 1):
+                if not merged_txt.exists(): continue
                 
-        for i, merged_txt in enumerate(merged_txts, 1):
-            if not merged_txt.exists(): continue
-            
-            part_suffix = f"_Part{i}" if is_multipart else ""
-            merged_md  = target_dir / f"Course_Merged_NoFluff{part_suffix}.md"
-            
-            console.print(f"[cyan]Streaming merged transcript{(' (Part ' + str(i) + ')') if is_multipart else ''} through LM Studio...[/cyan]")
-            try:
-                full_text = merged_txt.read_text(encoding="utf-8")
-                notes_content = NotesService.generate_notes_from_text(full_text, style="clean")
-                merged_md.write_text(notes_content, encoding="utf-8")
-                console.print(f"[bold green]✔ Notes saved → {merged_md.name}[/bold green]")
-            except Exception as e:
-                console.print(f"[red]Failed to generate notes: {e}[/red]")
+                part_suffix = f"_Part{i}" if is_multipart else ""
+                merged_md  = target_dir / f"Course_Merged_NoFluff{part_suffix}.md"
+                
+                console.print(f"[cyan]Streaming merged transcript{(' (Part ' + str(i) + ')') if is_multipart else ''} through LM Studio...[/cyan]")
+                try:
+                    full_text = merged_txt.read_text(encoding="utf-8")
+                    notes_content = NotesService.generate_notes_from_text(full_text, style="clean")
+                    merged_md.write_text(notes_content, encoding="utf-8")
+                    console.print(f"[bold green]✔ Notes saved → {merged_md.name}[/bold green]")
+                except Exception as e:
+                    console.print(f"[red]Failed to generate notes: {e}[/red]")
 
         # ════════════════════════════════════════════════════════════════
         # PHASE 6: Cleanup
