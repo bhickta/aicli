@@ -101,12 +101,28 @@ def register(app: typer.Typer):
         needs_rename = 0
         needs_compress = 0
         
+        from aicli.services.video.notes_service import NotesService
+        import subprocess
         for f in raw_files:
             cache = MetadataBackupManager.load_cache(f)
             has_cache = "clips" in cache
             has_subs = FFprobeClient.has_subtitle_stream(f)
             
-            if has_cache or has_subs:
+            ext_srt = f.parent / ".aicli_cache" / f"{f.stem}.srt"
+            ext_txt = f.parent / ".aicli_cache" / f"{f.stem}.txt"
+            
+            # Ensure physical text files are forcefully present in the cache for Phase 4 merging
+            if has_subs and not ext_srt.exists():
+                subprocess.run(["ffmpeg", "-y", "-v", "quiet", "-i", str(f), "-map", "0:s:0", "-c:s", "srt", str(ext_srt)])
+                
+            if ext_srt.exists() and not ext_txt.exists():
+                try:
+                    clean_text = NotesService.srt_to_text(ext_srt)
+                    ext_txt.write_text(clean_text, encoding="utf-8")
+                except Exception:
+                    ext_txt.write_text("", encoding="utf-8")
+            
+            if (has_cache or has_subs) and ext_srt.exists() and ext_txt.exists():
                 already_done.append(f)
             else:
                 needs_transcription.append(f)
