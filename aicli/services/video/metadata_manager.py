@@ -10,7 +10,20 @@ class MetadataBackupManager:
     
     @staticmethod
     def sidecar_path(video_path: Path) -> Path:
-        return video_path.with_suffix(".sidecar.json")
+        cache_dir = video_path.parent / ".aicli_cache"
+        cache_dir.mkdir(exist_ok=True, parents=True)
+        new_sp = cache_dir / f"{video_path.stem}.sidecar.json"
+        
+        # Transparently migrate old root-level caches to the new hidden folder
+        old_sp = video_path.with_suffix(".sidecar.json")
+        if old_sp.exists() and not new_sp.exists():
+            import shutil
+            shutil.move(str(old_sp), str(new_sp))
+            # Fallback to delete old if move creates a copy
+            if old_sp.exists():
+                old_sp.unlink()
+                
+        return new_sp
 
     @staticmethod
     def load_cache(video_path: Path) -> Dict[str, Any]:
