@@ -1,6 +1,7 @@
 import json
 import urllib.request
 import urllib.error
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from aicli.config import config
@@ -91,25 +92,26 @@ Schema:
     def global_course_sort(videos: List[Dict[str, Any]]) -> List[str]:
         """
         Pass filenames to LM Studio for intelligent chronological ordering.
+        Uses numeric IDs to minimize token count.
         """
-        system = """You are an elite academic curriculum sequencer.
-Given an unordered list of lecture video filenames, sort them into the correct chronological course order.
-Use lesson numbers, unit numbers, part numbers, and topic progression to determine the correct sequence.
+        system = """You are an academic curriculum sequencer.
+Given a numbered list of lecture video filenames, output their IDs sorted in correct chronological course order.
+Use lesson numbers (L02, L23, LESSON_12), unit numbers (UNIT_1, unit-8), and part numbers to determine sequence.
 
-RULES:
-- Output ONLY a valid JSON array of the EXACT input strings, reordered.
-- Do NOT alter any string. Return them exactly as given.
-- No markdown, no explanation, no preamble. Just the JSON array."""
+OUTPUT: A JSON array of the integer IDs in correct order. Example: [3, 1, 0, 2]
+No markdown, no explanation. Just the JSON array."""
         
-        # Send just the filename strings — fast and reliable
         filenames = [v["path"] for v in videos]
+        
+        # Build compact numbered list
+        numbered = "\n".join(f"{i}: {Path(f).stem}" for i, f in enumerate(filenames))
         
         payload = json.dumps({
             "model": config.model_name,
             "system_prompt": system,
-            "input": json.dumps(filenames, indent=1) + "\n\nSort these filenames chronologically. Output the JSON array now:",
+            "input": f"{numbered}\n\nSort by ID. Output JSON array:",
             "temperature": 0.0,
-            "max_output_tokens": 8000,
+            "max_output_tokens": 2000,
             "stream": False
         }).encode()
 
@@ -139,9 +141,11 @@ RULES:
                 if match:
                     text = match.group(1)
                     
-                sorted_ids = json.loads(text)
-                if not isinstance(sorted_ids, list):
+                sorted_indices = json.loads(text)
+                if not isinstance(sorted_indices, list):
                     raise ValueError("LLM returned non-array structure for sorting.")
-                return sorted_ids
+                
+                # Map numeric IDs back to full path strings
+                return [filenames[int(i)] for i in sorted_indices if 0 <= int(i) < len(filenames)]
         except Exception as e:
             raise RuntimeError(f"LLM global sort failed: {e}") from e

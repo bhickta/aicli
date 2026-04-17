@@ -167,7 +167,10 @@ class VideoBatchProcessor:
                             pass
                     
                     if not clips:
-                        return video_path, None, ValueError("No transcript cache found to tag.")
+                        # Ultimate fallback: use the filename itself as context
+                        # Filenames like "LESSON_26_UNIT_2_Nuclear_Diplomacy" are descriptive enough
+                        clean_name = video_path.stem.replace("_", " ").replace("-", " ")
+                        clips = [{"start_sec": 0, "text": f"Lecture video: {clean_name}"}]
                     
                 ai = VideoTaggerService.ask_lmstudio(clips, str(video_path.parent))
                 if not ai:

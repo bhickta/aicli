@@ -112,7 +112,7 @@ def register(app: typer.Typer):
                 needs_srt += 1
                 needs_txt += 1
             
-            if "ai_metadata" not in cache:
+            if "ai" not in cache:
                 needs_tagging += 1
             if "original_filename" not in cache:
                 needs_rename += 1
