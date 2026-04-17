@@ -75,35 +75,28 @@ class CompressService:
                 res_suffix = f"_{resolution}p" if resolution > 0 else "_slideshow"
                 output_path = video_path.parent / f"{stem}{res_suffix}.mp4"
 
-        cmd = [
-            "ffmpeg", "-y", "-v", "quiet", "-stats",
-            "-hwaccel", "cuda",
-        ]
-
-        # Full GPU pipeline only when scaling — keeps frames in VRAM via scale_cuda filter.
-        # When resolution=0 (original size), skip hwaccel_output_format so frames
-        # auto-transfer to CPU and reach NVENC without needing a filter bridge.
-        if resolution > 0:
-            cmd += ["-hwaccel_output_format", "cuda"]
-
-        if fast_skip:
-            cmd += ["-skip_frame", "nokey"]
-
-        cmd += ["-i", str(video_path)]
-        
-        has_ext_srt = external_srt and external_srt.exists()
-        if has_ext_srt:
-            cmd += ["-i", str(external_srt)]
+        cmd = ["ffmpeg", "-y", "-v", "quiet", "-stats"]
 
         if resolution > 0:
+            # Full GPU pipeline: decode on GPU → scale on GPU → encode on GPU
+            cmd += ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+            if fast_skip:
+                cmd += ["-skip_frame", "nokey"]
+            cmd += ["-i", str(video_path)]
+            has_ext_srt = external_srt and external_srt.exists()
+            if has_ext_srt:
+                cmd += ["-i", str(external_srt)]
             cmd += ["-vf", f"scale_cuda=-2:{resolution}"]
-
-        cmd += [
-            "-c:v", "h264_nvenc",
-            "-preset", nvenc_preset,
-            "-tune", "ll",
-            "-r", str(target_fps),
-        ]
+            cmd += ["-c:v", "h264_nvenc", "-preset", nvenc_preset, "-tune", "ll", "-r", str(target_fps)]
+        else:
+            # Simple slideshow: software decode → fps filter → NVENC encode
+            # No hwaccel, no skip_frame — handles any broken MKV container
+            cmd += ["-i", str(video_path)]
+            has_ext_srt = external_srt and external_srt.exists()
+            if has_ext_srt:
+                cmd += ["-i", str(external_srt)]
+            cmd += ["-vf", f"fps={target_fps}"]
+            cmd += ["-c:v", "h264_nvenc", "-preset", nvenc_preset, "-tune", "ll"]
 
         if crf is not None:
             cmd += ["-cq", str(crf), "-b:v", "0"]
