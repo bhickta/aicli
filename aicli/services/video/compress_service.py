@@ -80,14 +80,14 @@ class CompressService:
         ]
 
         # Use Hardware Decoder ONLY if we are actively scaling on the GPU (resolutions > 0).
-        # Raw MKV files often have broken PTS/DTS which crashes `cuvid` hardware decoding,
-        # especially when jumping via `-skip_frame nokey`. Software decoding handles broken containers 100x better.
+        # Raw MKV files often have broken PTS/DTS which crashes `cuvid` hardware decoding.
         if resolution > 0:
             cmd += [
                 "-hwaccel", "cuda",
                 "-hwaccel_output_format", "cuda",
             ]
 
+        # Only use fast_skip when doing GPU-accelerated scaling (not for slideshows)
         if fast_skip:
             cmd += ["-skip_frame", "nokey"]
 
@@ -97,16 +97,28 @@ class CompressService:
         if has_ext_srt:
             cmd += ["-i", str(external_srt)]
 
+        # Build video filter chain
+        vf_parts = []
         if resolution > 0:
-            cmd += ["-vf", f"scale_cuda=-2:{resolution}"]
+            vf_parts.append(f"scale_cuda=-2:{resolution}")
+        
+        # Use fps filter instead of -r output flag — handles broken MKV timestamps correctly
+        if str(target_fps) != str(default_fps) or preset == "slideshow":
+            vf_parts.append(f"fps={target_fps}")
+        
+        if vf_parts:
+            cmd += ["-vf", ",".join(vf_parts)]
 
         cmd += [
             # Video encoder: NVENC
             "-c:v", "h264_nvenc",
             "-preset", nvenc_preset,
             "-tune", "ll",
-            "-r", str(target_fps),                     # Reduce FPS (huge speedup)
         ]
+        
+        # Only set -r for non-slideshow presets (slideshows use fps filter above)
+        if preset != "slideshow":
+            cmd += ["-r", str(target_fps)]
 
         if crf is not None:
             cmd += ["-cq", str(crf), "-b:v", "0"]

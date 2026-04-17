@@ -239,7 +239,13 @@ def register(app: typer.Typer):
         sorted_strings = VideoTaggerService.global_course_sort(payload_meta)
         # Reconstruct Path objects using exactly matched strings
         path_map = {str(p): p for p in renamed_files}
-        renamed_files = [path_map[s] for s in sorted_strings if s in path_map]
+        sorted_files = [path_map[s] for s in sorted_strings if s in path_map]
+        # Append any files the LLM missed so nothing is dropped
+        sorted_set = set(sorted_strings)
+        for p in renamed_files:
+            if str(p) not in sorted_set:
+                sorted_files.append(p)
+        renamed_files = sorted_files
             
         progress_sort.stop()
         console.print(f"[green]✔ Logical LLM Course Reordering Complete ({len(renamed_files)} videos sequenced)[/green]\n")
@@ -268,7 +274,7 @@ def register(app: typer.Typer):
                         video_path=f,
                         resolution=0,
                         preset="slideshow",
-                        fps="1/60",
+                        fps="1/2",
                         fast_skip=True,
                         metadata_tags=ai_tags,
                         external_srt=ext_srt,
