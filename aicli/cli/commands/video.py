@@ -404,10 +404,10 @@ def compress_video(
         "--crf",
         help="Constant quality (0-51). Lower = better. Overrides preset bitrate."
     ),
-    fps: int = typer.Option(
+    fps: str = typer.Option(
         None,
         "--fps",
-        help="Override output framerate (default: preset decides). Lower = faster + smaller."
+        help="Override output framerate (e.g., 5, 1, or '1/60' for 1 frame per minute)."
     ),
 ):
     """
@@ -506,7 +506,7 @@ def compress_video(
 
 
 def _compress_single(
-    video_path: Path, resolution: int, preset: str, overwrite: bool, crf: int, fps: int
+    video_path: Path, resolution: int, preset: str, overwrite: bool, crf: int, fps: str
 ) -> tuple:
     """Worker function for parallel compression."""
     from aicli.services.video.compress_service import CompressService

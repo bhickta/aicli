@@ -29,7 +29,7 @@ class CompressService:
         preset: str = "light",
         overwrite: bool = False,
         crf: Optional[int] = None,
-        fps: Optional[int] = None,
+        fps: Optional[str] = None,
     ) -> Path:
         """
         Compress a video to the target resolution using a full GPU-resident pipeline.
