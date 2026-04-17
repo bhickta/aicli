@@ -43,6 +43,10 @@ def register(app: typer.Typer):
             None, "--llm-model", "--llm",
             help="Search string for the local model to dynamically load (e.g. 'gemma', 'llama3')."
         ),
+        max_merge_hours: float = typer.Option(
+            0.0, "--max-merge-hours",
+            help="Maximum length (in hours) per merged video. If exceeded, splits into Part1, Part2, etc. (0 = no limit)."
+        ),
         notes_llm: str = typer.Option(
             None, "--notes-llm",
             help="Search string for a BIGGER model for final notes generation (e.g. 'gemma-4-26b'). Uses --llm if not set."
@@ -213,6 +217,7 @@ def register(app: typer.Typer):
                     new_path, _, err = future.result()
                     if err:
                         progress.console.print(f"[red]Error tagging {futures[future].name}: {err}[/red]")
+                        renamed_files.append(futures[future]) # Fallback to original file
                     else:
                         renamed_files.append(new_path)
                     progress.advance(task_p2)
@@ -253,47 +258,90 @@ def register(app: typer.Typer):
         # ════════════════════════════════════════════════════════════════
         # PHASE 4: Deep Native Merging
         # ════════════════════════════════════════════════════════════════
-        print_header("Phase 4: Deep Native Merging")
         cache_dir = target_dir / ".aicli_cache"
-        merged_vid = target_dir / "Course_Merged_Slideshow.mp4"
-        merged_srt = target_dir / "Course_Merged.srt"
-        merged_txt = target_dir / "Course_Merged.txt"
-        merged_md  = target_dir / "Course_Merged_NoFluff.md"
+        
+        # ── Chunking logic for max length ──────────
+        max_sec = max_merge_hours * 3600 if max_merge_hours > 0 else float('inf')
+        
+        chunks = []
+        current_chunk = []
+        current_sec = 0
 
-        console.print("[cyan]Stitching videos losslessly...[/cyan]")
-        if MergeService.merge_videos(slideshow_files, merged_vid):
-            console.print(f"[bold green]✔ Saved {merged_vid.name}[/bold green]")
+        from aicli.services.video.merge_service import MergeService
+        for f in slideshow_files:
+            try:
+                dur = MergeService.get_video_duration(f)
+            except Exception:
+                dur = 0
+            
+            if current_chunk and current_sec + dur > max_sec:
+                chunks.append(current_chunk)
+                current_chunk = []
+                current_sec = 0
+            
+            current_chunk.append(f)
+            current_sec += dur
 
-        console.print("[cyan]Time-shifting and merging SRTs...[/cyan]")
-        video_srt_pairs = []
-        for v in slideshow_files:
-            base = v.name.replace("_slideshow", "").replace(v.suffix, "")
-            srt = cache_dir / f"{base}.srt"
-            if not srt.exists():
-                srt = cache_dir / f"{base}.tmp_cc.srt"
-            video_srt_pairs.append((v, srt))
-        if MergeService.merge_srts(video_srt_pairs, merged_srt):
-            console.print(f"[bold green]✔ Saved {merged_srt.name}[/bold green]")
+        if current_chunk:
+            chunks.append(current_chunk)
 
-        console.print("[cyan]Appending raw text transcripts...[/cyan]")
-        txt_files = [cache_dir / f"{v.name.replace('_slideshow', '').replace(v.suffix, '')}.txt" for v in slideshow_files]
-        if MergeService.merge_txts(txt_files, merged_txt):
-            console.print(f"[bold green]✔ Saved {merged_txt.name}[/bold green]")
+        is_multipart = len(chunks) > 1
+
+        print_header(f"Phase 4: Deep Native Merging ({len(chunks)} parts)")
+
+        merged_txts = []
+        for i, chunk in enumerate(chunks, 1):
+            if not chunk: continue
+            part_suffix = f"_Part{i}" if is_multipart else ""
+            merged_vid = target_dir / f"Course_Merged_Slideshow{part_suffix}.mp4"
+            merged_srt = target_dir / f"Course_Merged{part_suffix}.srt"
+            merged_txt = target_dir / f"Course_Merged{part_suffix}.txt"
+            merged_txts.append(merged_txt)
+
+            console.print(f"[cyan]Stitching videos losslessly{(' (Part ' + str(i) + ')') if is_multipart else ''}...[/cyan]")
+            if MergeService.merge_videos(chunk, merged_vid):
+                console.print(f"[bold green]✔ Saved {merged_vid.name}[/bold green]")
+
+            console.print(f"[cyan]Time-shifting and merging SRTs{(' (Part ' + str(i) + ')') if is_multipart else ''}...[/cyan]")
+            video_srt_pairs = []
+            for v in chunk:
+                base = v.name.replace("_slideshow", "").replace(v.suffix, "")
+                srt = cache_dir / f"{base}.srt"
+                if not srt.exists():
+                    srt = cache_dir / f"{base}.tmp_cc.srt"
+                video_srt_pairs.append((v, srt))
+            if MergeService.merge_srts(video_srt_pairs, merged_srt):
+                console.print(f"[bold green]✔ Saved {merged_srt.name}[/bold green]")
+
+            console.print(f"[cyan]Appending raw text transcripts{(' (Part ' + str(i) + ')') if is_multipart else ''}...[/cyan]")
+            txt_files = [cache_dir / f"{v.name.replace('_slideshow', '').replace(v.suffix, '')}.txt" for v in chunk]
+            if MergeService.merge_txts(txt_files, merged_txt):
+                console.print(f"[bold green]✔ Saved {merged_txt.name}[/bold green]")
 
         # ════════════════════════════════════════════════════════════════
         # PHASE 5: LM Studio 'No Fluff' Notes (hot-swap to bigger model)
         # ════════════════════════════════════════════════════════════════
         print_header("Phase 5: LM Studio 'No Fluff' Clean Transcription")
-        if merged_txt.exists():
-            if notes_llm:
-                try:
-                    console.print(f"[cyan]Hot-swapping to heavier model: '{notes_llm}'...[/cyan]")
-                    resolved_notes = resolve_dynamic_model(notes_llm)
-                    aicli_config.model_name = resolved_notes
-                    console.print(f"[green]✔ Loaded notes model: {resolved_notes}[/green]")
-                except Exception as e:
-                    console.print(f"[dim]Could not load notes model ({e}). Using current model.[/dim]")
-            console.print("[cyan]Streaming merged transcript through LM Studio...[/cyan]")
+        
+        # Load notes model once
+        notes_loaded = False
+        if merged_txts and notes_llm:
+            try:
+                console.print(f"[cyan]Hot-swapping to heavier model: '{notes_llm}'...[/cyan]")
+                resolved_notes = resolve_dynamic_model(notes_llm)
+                aicli_config.model_name = resolved_notes
+                console.print(f"[green]✔ Loaded notes model: {resolved_notes}[/green]")
+                notes_loaded = True
+            except Exception as e:
+                console.print(f"[dim]Could not load notes model ({e}). Using current model.[/dim]")
+                
+        for i, merged_txt in enumerate(merged_txts, 1):
+            if not merged_txt.exists(): continue
+            
+            part_suffix = f"_Part{i}" if is_multipart else ""
+            merged_md  = target_dir / f"Course_Merged_NoFluff{part_suffix}.md"
+            
+            console.print(f"[cyan]Streaming merged transcript{(' (Part ' + str(i) + ')') if is_multipart else ''} through LM Studio...[/cyan]")
             try:
                 full_text = merged_txt.read_text(encoding="utf-8")
                 notes_content = NotesService.generate_notes_from_text(full_text, style="clean")

@@ -52,7 +52,25 @@ def resolve_dynamic_model(preferred_string: str = None) -> str:
             # If nothing was explicitly loaded, force LM studio to load the first one
             if model_to_load:
                 load_url = config.lm_studio_base_url[:base_idx] + "/api/v1/models/load"
-                payload = json.dumps({"model": model_to_load}).encode('utf-8')
+                
+                payload_dict = {"model": model_to_load}
+                
+                # Auto-apply the EXACT LM Studio advanced overrides requested for the 26B model
+                if "26b" in model_to_load.lower():
+                    payload_dict.update({
+                        "context_length": 80549,
+                        "gpu_offload": 30,
+                        "cpu_thread_pool_size": 4,
+                        "evaluation_batch_size": 512,
+                        "max_concurrent_predictions": 4,
+                        "unified_kv_cache": True,
+                        "offload_kv_cache_to_gpu_memory": True,
+                        "keep_model_in_memory": True,
+                        "try_mmap": True,
+                        "num_experts": 8
+                    })
+                    
+                payload = json.dumps(payload_dict).encode('utf-8')
                 load_req = urllib.request.Request(
                     load_url, 
                     data=payload, 
