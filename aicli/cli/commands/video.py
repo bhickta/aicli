@@ -611,6 +611,16 @@ def process_course(
     renamed_files = []
     
     from aicli.services.video.transcriber import WhisperEngine
+    from aicli.config import resolve_dynamic_model, config as aicli_config
+    
+    try:
+        console.print(f"[cyan]Waking up LM Studio & Booting Language Model into VRAM...[/cyan]")
+        resolved_lm = resolve_dynamic_model()
+        aicli_config.model_name = resolved_lm
+        console.print(f"[green]✔ Auto-Connected to LM Studio: {resolved_lm}[/green]")
+    except Exception as e:
+        console.print(f"[dim]Note: Could not explicitly pre-load LM studio model ({e}). Continuing with JIT.[/dim]")
+        
     try:
         console.print(f"[cyan]Loading Whisper model on GPU ({whisper_model})...[/cyan]")
         model_instance = WhisperEngine.load_whisper(whisper_model, num_workers=min(workers, 2))

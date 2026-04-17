@@ -115,9 +115,8 @@ class NotesService:
         """Send a text chunk to LM Studio and return the compressed notes."""
         sys_prompt = CLEAN_SYSTEM_PROMPT if style == "clean" else NOTES_SYSTEM_PROMPT
 
-        from aicli.config import resolve_dynamic_model
         payload = json.dumps({
-            "model": resolve_dynamic_model(),
+            "model": config.model_name,
             "messages": [
                 {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": text_chunk},
