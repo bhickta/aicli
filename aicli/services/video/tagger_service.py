@@ -21,8 +21,12 @@ class VideoTaggerService:
             for c in clips
         )
 
-        system = """You are a lecture metadata extractor.
-Return ONLY valid JSON — no markdown, no extra text:
+        system = """You are a strict data-extraction engine. 
+CRITICAL RULES:
+1. DO NOT generate any "Thinking Process" or reasoning.
+2. DO NOT output any markdown blocks or conversational text.
+3. IMMEDIATELY output the raw JSON object starting with { and ending with }.
+
 {
   "title": "concise descriptive lecture title",
   "filename": "Title Case with Spaces max 60 chars",
@@ -38,8 +42,8 @@ Return ONLY valid JSON — no markdown, no extra text:
             "model": config.model_name,
             "system_prompt": system,
             "input": f"Folder: {path_hint}\n\n{transcript[:4000]}",
-            "temperature": 0.2,
-            "max_output_tokens": 1000,
+            "temperature": 0.1,
+            "max_output_tokens": 2048,
             "stream": False
         }).encode()
 
