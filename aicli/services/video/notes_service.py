@@ -117,28 +117,34 @@ class NotesService:
 
         payload = json.dumps({
             "model": config.model_name,
-            "messages": [
-                {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": text_chunk},
-            ],
-            "temperature": 0.15,
-            "max_tokens": 4096,
-        }).encode()
+            "system_prompt": sys_prompt,
+            "input": text_chunk,
+            "temperature": 0.2,
+            "max_output_tokens": 2048,
+            "stream": False
+        }).encode('utf-8')
 
-        endpoint = f"{config.lm_studio_base_url}/chat/completions"
+        base_idx = config.lm_studio_base_url.rfind('/v1')
+        endpoint = config.lm_studio_base_url[:base_idx] + "/api/v1/chat" if base_idx != -1 else f"{config.lm_studio_base_url}/chat"
+        
         req = urllib.request.Request(
             endpoint,
             data=payload,
             headers={
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {config.lm_studio_api_key}",
+                "Authorization": f"Bearer {config.lm_studio_api_key}"
             },
-            method="POST",
+            method="POST"
         )
+
         try:
             with urllib.request.urlopen(req, timeout=120) as resp:
-                body = json.loads(resp.read())
-                return body["choices"][0]["message"]["content"].strip()
+                data = json.loads(resp.read())
+                if "output" in data and len(data["output"]) > 0:
+                    text = data["output"][0].get("content", "").strip()
+                else:
+                    text = ""
+                return text
         except urllib.error.URLError as e:
             raise ConnectionError(f"LM Studio Error: {e}")
         except Exception as e:

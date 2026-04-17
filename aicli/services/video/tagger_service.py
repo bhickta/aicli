@@ -36,16 +36,17 @@ Return ONLY valid JSON — no markdown, no extra text:
 
         payload = json.dumps({
             "model": config.model_name,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user",   "content": f"Folder: {path_hint}\n\n{transcript[:4000]}"}
-            ],
+            "system_prompt": system,
+            "input": f"Folder: {path_hint}\n\n{transcript[:4000]}",
             "temperature": 0.2,
-            "max_tokens": 1000,
+            "max_output_tokens": 1000,
             "stream": False
         }).encode()
 
-        endpoint = f"{config.lm_studio_base_url}/chat/completions"
+        # Switch from legacy OpenAI endpoint to native LM Studio v1 REST API
+        base_idx = config.lm_studio_base_url.rfind('/v1')
+        endpoint = config.lm_studio_base_url[:base_idx] + "/api/v1/chat" if base_idx != -1 else f"{config.lm_studio_base_url}/chat"
+        
         req = urllib.request.Request(
             endpoint,
             data=payload,
@@ -60,7 +61,12 @@ Return ONLY valid JSON — no markdown, no extra text:
                 with urllib.request.urlopen(req, timeout=120) as resp:
                     raw_response = resp.read()
                     data = json.loads(raw_response)
-                    text = data["choices"][0]["message"]["content"].strip()
+                    
+                    # Native v1 API output parsing
+                    if "output" in data and len(data["output"]) > 0:
+                        text = data["output"][0].get("content", "").strip()
+                    else:
+                        text = ""
                     
                     # Resilient extraction of JSON block from conversational fluff
                     import re
@@ -75,5 +81,6 @@ Return ONLY valid JSON — no markdown, no extra text:
         except urllib.error.URLError as e:
             raise ConnectionError(f"LM Studio Error: {e}")
         except Exception as e:
+            raw = text if 'text' in locals() and text else "<EMPTY STRING>"
             # Capture the raw text in the exception to avoid blind debugging
-            raise ValueError(f"Failed to parse response. Error: {e}. Raw Text: '{text[:100]}...'")
+            raise ValueError(f"Failed to parse response. Error: {e}. Raw Text: '{raw[:200]}'")
