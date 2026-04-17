@@ -638,23 +638,61 @@ def process_course(
         BarColumn(), TaskProgressColumn(), TimeElapsedColumn(),
         console=console
     ) as progress:
-        task_id = progress.add_task("Transcribing and tagging...", total=len(raw_files))
-        executor = ThreadPoolExecutor(max_workers=min(workers, 2)) # Whisper is heavy, max 2
-        futures = {
-            executor.submit(
-                VideoBatchProcessor.process_isolated_video,
-                f, model_instance, write=True, no_rename=False, full_cc=True,
-                text_thumb=False, retranscribe=False, transcribe_only=False,
-                clip_every=0, clip_len=0, save_txt=True, progress=progress, task_id=task_id
+        task_id_p1 = progress.add_task("Phase 1: Transcribing...", total=len(raw_files))
+        executor_p1 = ThreadPoolExecutor(max_workers=min(workers, 2)) # Whisper is heavy, max 2
+        futures_p1 = {
+            executor_p1.submit(
+                VideoBatchProcessor.phase1_transcribe,
+                f, model_instance, write=True, full_cc=True,
+                retranscribe=False, transcribe_only=False,
+                clip_every=0, clip_len=0, save_txt=True, progress=progress, task_id=task_id_p1
             ): f for f in raw_files
         }
-        for future in as_completed(futures):
+        for future in as_completed(futures_p1):
+            path, err = future.result()
+            if err:
+                progress.console.print(f"[red]Error transcribing {futures_p1[future].name}: {err}[/red]")
+            progress.advance(task_id_p1)
+            
+    # CRITICAL VRAM PURGE: Whisper is no longer needed. We must destroy it to free up 6GB+ for LM Studio.
+    console.print("[cyan]Transcription complete. Purging Whisper from VRAM to make room for LM Studio...[/cyan]")
+    try:
+        del model_instance
+        import torch
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+    
+    print_header(f"Phase 2: Intelligent Tagging & Renaming")
+    with Progress(
+        SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+        BarColumn(), TaskProgressColumn(), TimeElapsedColumn(),
+        console=console
+    ) as progress:
+        task_id_p2 = progress.add_task("Tagging and Renaming...", total=len(raw_files))
+        
+        # LM Studio is running solo now! We can map 12 concurrent API calls safely.
+        tag_workers = 12 
+        executor_p2 = ThreadPoolExecutor(max_workers=tag_workers) 
+        futures_p2 = {
+            executor_p2.submit(
+                VideoBatchProcessor.phase2_tag_and_mux,
+                f, write=True, no_rename=False, text_thumb=False,
+                retranscribe=False, transcribe_only=False,
+                progress=progress, task_id=task_id_p2
+            ): f for f in raw_files
+        }
+        
+        for future in as_completed(futures_p2):
             new_path, _, err = future.result()
             if err:
-                progress.console.print(f"[red]Error on {futures[future].name}: {err}[/red]")
+                progress.console.print(f"[red]Error tagging {futures_p2[future].name}: {err}[/red]")
             else:
                 renamed_files.append(new_path)
-            progress.advance(task_id)
+            progress.advance(task_id_p2)
 
     # Sort files robustly using first found digits in the new intelligent filename
     def extract_number(path: Path) -> int:
@@ -663,7 +701,7 @@ def process_course(
         
     renamed_files.sort(key=extract_number)
     
-    print_header(f"Phase 2: Extremely Fast Slideshow Compression")
+    print_header(f"Phase 3: Extremely Fast Slideshow Compression")
     slideshow_files = []
     with Progress(
         SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
@@ -689,7 +727,7 @@ def process_course(
             
     slideshow_files.sort(key=extract_number)
 
-    print_header("Phase 3: Deep Native Merging")
+    print_header("Phase 4: Deep Native Merging")
     merged_vid = target_dir / "Course_Merged_Slideshow.mp4"
     merged_srt = target_dir / "Course_Merged.srt"
     merged_txt = target_dir / "Course_Merged.txt"
@@ -700,16 +738,23 @@ def process_course(
         console.print(f"[bold green]✔ Saved {merged_vid.name}[/bold green]")
         
     console.print("[cyan]Time-shifting and merging SRTs (Video track referenced for exact duration offset)...[/cyan]")
-    video_srt_pairs = [(v, v.parent / v.name.replace("_slideshow", "").replace(v.suffix, ".srt")) for v in slideshow_files]
+    cache_dir = target_dir / ".aicli_cache"
+    video_srt_pairs = []
+    for v in slideshow_files:
+        base_name = v.name.replace("_slideshow", "").replace(v.suffix, "")
+        srt_candidate = cache_dir / f"{base_name}.srt"
+        if not srt_candidate.exists():
+            srt_candidate = cache_dir / f"{base_name}.tmp_cc.srt"
+        video_srt_pairs.append((v, srt_candidate))
     if MergeService.merge_srts(video_srt_pairs, merged_srt):
         console.print(f"[bold green]✔ Saved {merged_srt.name}[/bold green]")
         
     console.print("[cyan]Appending raw text transcripts...[/cyan]")
-    txt_files = [v.parent / v.name.replace("_slideshow", "").replace(v.suffix, ".txt") for v in slideshow_files]
+    txt_files = [cache_dir / f"{v.name.replace('_slideshow', '').replace(v.suffix, '')}.txt" for v in slideshow_files]
     if MergeService.merge_txts(txt_files, merged_txt):
          console.print(f"[bold green]✔ Saved {merged_txt.name}[/bold green]")
          
-    print_header("Phase 4: LM Studio 'No Fluff' Clean Transcription")
+    print_header("Phase 5: LM Studio 'No Fluff' Clean Transcription")
     if merged_txt.exists():
         console.print("[cyan]Streaming giant merged transcript through LM Studio...[/cyan]")
         try:
@@ -721,13 +766,14 @@ def process_course(
              console.print(f"[red]Failed to generate merged notes: {e}[/red]")
              
     if cleanup == "trash":
-        print_header("Phase 5: Cleaning up individual components")
+        print_header("Phase 6: Cleaning up individual components")
         trash_dir = target_dir / "Trash"
         trash_dir.mkdir(exist_ok=True)
         count = 0
         for f in slideshow_files:
-            srt_f = f.parent / f.name.replace("_slideshow", "").replace(f.suffix, ".srt")
-            txt_f = f.parent / f.name.replace("_slideshow", "").replace(f.suffix, ".txt")
+            base_name = f.name.replace("_slideshow", "").replace(f.suffix, "")
+            srt_f = cache_dir / f"{base_name}.srt"
+            txt_f = cache_dir / f"{base_name}.txt"
             if f.exists(): shutil.move(str(f), str(trash_dir / f.name)); count+=1
             if srt_f.exists(): shutil.move(str(srt_f), str(trash_dir / srt_f.name)); count+=1
             if txt_f.exists(): shutil.move(str(txt_f), str(trash_dir / txt_f.name)); count+=1

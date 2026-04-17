@@ -35,6 +35,18 @@ class FFprobeClient:
         except Exception:
             return {}
 
+    @staticmethod
+    def has_subtitle_stream(video_path: Path) -> bool:
+        """Check if the video container already has an embedded subtitle stream."""
+        cmd = ["ffprobe", "-v", "quiet", "-print_format", "json",
+               "-show_streams", "-select_streams", "s", str(video_path)]
+        out = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            data = json.loads(out.stdout)
+            return len(data.get("streams", [])) > 0
+        except Exception:
+            return False
+
 
 class FFmpegClient:
     """Handles destructive or modifying video operations."""
