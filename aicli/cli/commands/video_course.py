@@ -118,8 +118,10 @@ def register(app: typer.Typer):
             if "original_filename" not in cache:
                 needs_rename += 1
             
-            slideshow_name = f.stem + "_slideshow.mp4"
-            if not (f.parent / slideshow_name).exists():
+            ai_tags = cache.get("ai", {})
+            target_name = ai_tags.get("filename", f.stem)
+            slideshow_name = f"{target_name}_slideshow.mp4"
+            if not (f.parent / ".aicli_cache" / "slideshows" / slideshow_name).exists():
                 needs_compress += 1
 
         # ── Display stats dashboard ──────────────────────────────────────
@@ -282,6 +284,12 @@ def register(app: typer.Typer):
                     slideshows_dir.mkdir(parents=True, exist_ok=True)
                     out_dest = slideshows_dir / f"{target_name}_slideshow.mp4"
                     
+                    if out_dest.exists() and CompressService.get_file_size_mb(out_dest) > 0.1:
+                        slideshow_files.append(out_dest)
+                        progress.console.print(f"[dim]Already compressed → {out_dest.name}[/dim]")
+                        progress.advance(task_p3)
+                        continue
+                    
                     fut = executor.submit(
                         CompressService.compress,
                         video_path=f,
@@ -304,7 +312,14 @@ def register(app: typer.Typer):
                     except Exception as e:
                         progress.console.print(f"[red]Compression failed: {e}[/red]")
                     progress.advance(task_p3)
-        slideshow_files.sort(key=extract_number)
+        # Reconstruct the exact slideshow ordering natively based on the LLM's sequence from Phase 2
+        slideshow_files = []
+        for f in renamed_files:
+            cache = MetadataBackupManager.load_cache(f)
+            target_name = cache.get("ai", {}).get("filename", f.stem)
+            out_dest = f.parent / ".aicli_cache" / "slideshows" / f"{target_name}_slideshow.mp4"
+            if out_dest.exists():
+                slideshow_files.append(out_dest)
 
         # ════════════════════════════════════════════════════════════════
         # PHASE 4: Deep Native Merging
