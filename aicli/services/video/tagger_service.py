@@ -31,8 +31,9 @@ Return ONLY valid JSON — no markdown, no extra text:
   "language": "3-letter ISO-639-2 lowercase code (e.g. hin, eng)"
 }"""
 
+        from aicli.config import resolve_dynamic_model
         payload = json.dumps({
-            "model": config.model_name,
+            "model": resolve_dynamic_model(),
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user",   "content": f"Folder: {path_hint}\n\n{transcript[:4000]}"}

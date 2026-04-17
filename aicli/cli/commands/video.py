@@ -610,6 +610,14 @@ def process_course(
     print_header(f"Phase 1: Transcribe & Intelligently Rename {len(raw_files)} files")
     renamed_files = []
     
+    from aicli.services.video.transcriber import WhisperEngine
+    try:
+        console.print(f"[cyan]Loading Whisper model on GPU ({whisper_model})...[/cyan]")
+        model_instance = WhisperEngine.load_whisper(whisper_model, num_workers=min(workers, 2))
+    except Exception as e:
+        console.print(f"[red]Failed to load Whisper model: {e}[/red]")
+        return
+    
     with Progress(
         SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
         BarColumn(), TaskProgressColumn(), TimeElapsedColumn(),
@@ -620,7 +628,7 @@ def process_course(
         futures = {
             executor.submit(
                 VideoBatchProcessor.process_isolated_video,
-                f, whisper_model, write=True, no_rename=False, full_cc=True,
+                f, model_instance, write=True, no_rename=False, full_cc=True,
                 text_thumb=False, retranscribe=False, transcribe_only=False,
                 clip_every=0, clip_len=0, save_txt=True, progress=progress, task_id=task_id
             ): f for f in raw_files
