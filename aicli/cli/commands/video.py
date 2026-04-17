@@ -576,6 +576,11 @@ def process_course(
         None,
         "--llm-model", "--llm",
         help="Search string for the local model you want to dynamically load (e.g. 'gemma', 'llama3')."
+    ),
+    notes_llm: str = typer.Option(
+        None,
+        "--notes-llm",
+        help="Search string for a BIGGER model to use for final notes generation (e.g. 'gemma-4-26b'). Uses --llm model if not set."
     )
 ):
     """
@@ -756,6 +761,15 @@ def process_course(
          
     print_header("Phase 5: LM Studio 'No Fluff' Clean Transcription")
     if merged_txt.exists():
+        # Hot-swap to the bigger model for notes if specified
+        if notes_llm:
+            try:
+                console.print(f"[cyan]Hot-swapping to heavier model for notes: '{notes_llm}'...[/cyan]")
+                resolved_notes_lm = resolve_dynamic_model(notes_llm)
+                aicli_config.model_name = resolved_notes_lm
+                console.print(f"[green]✔ Loaded notes model: {resolved_notes_lm}[/green]")
+            except Exception as e:
+                console.print(f"[dim]Note: Could not load notes model ({e}). Using current model.[/dim]")
         console.print("[cyan]Streaming giant merged transcript through LM Studio...[/cyan]")
         try:
             full_text = merged_txt.read_text(encoding="utf-8")
