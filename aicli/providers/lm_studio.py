@@ -58,7 +58,7 @@ class LMStudioProvider(ImageVisionProvider):
         ]}]
 
         kwargs = self._build_create_kwargs(messages, temperature, max_tokens)
-        return self._retry_completion(kwargs, max_retries, retry_backoff_base)
+        return self._retry_image_completion(kwargs, allow_reasoning, max_retries, retry_backoff_base)
 
     def complete_text(
         self,
@@ -143,13 +143,17 @@ class LMStudioProvider(ImageVisionProvider):
 
     # ── Private: Retry Logic ────────────────────────────────────────
 
-    def _retry_completion(self, kwargs: dict, max_retries: int, backoff_base: int) -> str:
-        """Simple retry loop for image completions."""
+    def _retry_image_completion(
+        self, kwargs: dict, allow_reasoning: bool, max_retries: int, backoff_base: int
+    ) -> str:
+        """Retry loop for image completions with reasoning control."""
         last_error = None
         for attempt in range(max_retries):
             try:
-                return self._call_and_extract(kwargs)
+                return self._call_with_reasoning(kwargs, allow_reasoning)
             except Exception as e:
+                if self._is_reasoning_rejection(e):
+                    return self._fallback_without_reasoning(kwargs)
                 last_error = e
                 self._backoff(attempt, max_retries, backoff_base)
         raise last_error
