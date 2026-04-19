@@ -130,8 +130,13 @@ class LMStudioProvider(ImageVisionProvider):
 
         last_error = None
         for attempt in range(max_retries):
+            # Attempt with reasoning control first
             try:
-                response = self.client.chat.completions.create(**create_kwargs)
+                # Add reasoning control to extra_body if provided
+                current_kwargs = create_kwargs.copy()
+                current_kwargs["extra_body"] = {"reasoning": allow_reasoning}
+                
+                response = self.client.chat.completions.create(**current_kwargs)
                 content = response.choices[0].message.content
                 if not content:
                     reason = response.choices[0].finish_reason
@@ -140,12 +145,20 @@ class LMStudioProvider(ImageVisionProvider):
                 # Sanitize: Strip thought/think blocks that might leak into content
                 import re
                 content = re.sub(r'<\|channel\|>thought.*?<\|channel\|>', '', content, flags=re.DOTALL)
-                content = re.sub(r'<\|channel\|>thought.*', '', content, flags=re.DOTALL) # Handle unclosed
+                content = re.sub(r'<\|channel\|>thought.*', '', content, flags=re.DOTALL)
                 content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
                 content = re.sub(r'<thought>.*?</thought>', '', content, flags=re.DOTALL)
                 
                 return content.strip()
             except Exception as e:
+                # If we get a 400 error, it might be the 'reasoning' parameter being rejected
+                # Fallback to standard call without extra_body
+                if "400" in str(e):
+                    try:
+                        response = self.client.chat.completions.create(**create_kwargs)
+                        content = response.choices[0].message.content
+                        if content: return content.strip()
+                    except: pass
                 last_error = e
                 if attempt < max_retries - 1:
                     wait = retry_backoff_base ** attempt
