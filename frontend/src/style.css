@@ -944,6 +944,9 @@ body {
   color: var(--text-muted);
   letter-spacing: 0.05em;
   margin-bottom: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .settings-grid {
@@ -1018,6 +1021,36 @@ body {
 
 .step-row.done .step-badge { background: var(--success-dim); color: var(--success); }
 .step-row.partial .step-badge { background: var(--warning-dim); color: var(--warning); }
+
+.reset-step-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.step-row:hover .reset-step-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.reset-step-btn:hover {
+  background: var(--danger-dim);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.reset-step-btn.disabled {
+  opacity: 0.3 !important;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 
 .console-panel {
   background: var(--bg-card);

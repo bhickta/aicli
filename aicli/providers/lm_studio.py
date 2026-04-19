@@ -87,7 +87,6 @@ class LMStudioProvider(ImageVisionProvider):
             "model": config.model_name,
             "messages": messages,
             "temperature": temperature,
-            "extra_body": {"reasoning": allow_reasoning},  # Explicitly control thinking
         }
         if max_tokens:
             create_kwargs["max_tokens"] = max_tokens
@@ -127,7 +126,6 @@ class LMStudioProvider(ImageVisionProvider):
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "extra_body": {"reasoning": allow_reasoning},
         }
 
         last_error = None
@@ -138,6 +136,14 @@ class LMStudioProvider(ImageVisionProvider):
                 if not content:
                     reason = response.choices[0].finish_reason
                     raise ValueError(f"LM Studio aborted generation (finish_reason: '{reason}').")
+                
+                # Sanitize: Strip thought/think blocks that might leak into content
+                import re
+                content = re.sub(r'<\|channel\|>thought.*?<\|channel\|>', '', content, flags=re.DOTALL)
+                content = re.sub(r'<\|channel\|>thought.*', '', content, flags=re.DOTALL) # Handle unclosed
+                content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
+                content = re.sub(r'<thought>.*?</thought>', '', content, flags=re.DOTALL)
+                
                 return content.strip()
             except Exception as e:
                 last_error = e

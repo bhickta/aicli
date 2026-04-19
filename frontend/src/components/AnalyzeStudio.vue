@@ -47,7 +47,6 @@
           <input type="file" multiple accept=".pdf" @change="uploadPdfs" hidden :disabled="pipelineRunning" />
         </label>
         <button class="btn btn-ghost btn-sm" @click="retryErrorPages" :disabled="pipelineRunning">🔄 Retry Error Pages</button>
-        <button class="btn btn-ghost btn-sm" @click="showResetModal = true" :disabled="pipelineRunning">⚠️ Reset Pipeline</button>
         <button class="btn btn-ghost btn-sm" @click="refreshAll">↻ Refresh</button>
       </div>
     </aside>
@@ -192,7 +191,12 @@
               </div>
 
               <div class="panel-section">
-                <h4>Pipeline Workflow</h4>
+                <h4>
+                  Pipeline Workflow
+                  <button class="btn btn-ghost btn-sm btn-danger" @click="confirmResetStep(1)" :disabled="pipelineRunning" style="font-size: 10px; padding: 2px 8px;">
+                    Reset All Data
+                  </button>
+                </h4>
                 <div class="form-group">
                   <div class="radio-group" style="display: flex; gap: 16px; margin-bottom: 8px;">
                     <label style="display: flex; align-items: center; gap: 8px;" :style="{ cursor: pipelineRunning ? 'not-allowed' : 'pointer' }">
@@ -213,6 +217,7 @@
                     >
                       <input type="checkbox" :checked="runConfig.target_steps.includes(step.id)" @click.stop :disabled="pipelineRunning" />
                       <span class="step-name">{{ step.id }}: {{ step.fullname }}</span>
+                      <button class="reset-step-btn" :class="{ disabled: pipelineRunning }" @click.stop="confirmResetStep(step.id)">↻ Reset</button>
                       <span class="step-badge" v-if="selectedPdf.progress">{{ selectedPdf.progress[step.id] }}</span>
                     </div>
                   </div>
@@ -345,26 +350,7 @@
       </div>
     </div>
 
-    <!-- Reset Modal -->
-    <div v-if="showResetModal" class="lightbox-overlay" @click.self="showResetModal = false">
-      <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; max-width: 400px; width: 90%;" @click.stop>
-        <h3 style="margin-bottom: 16px; font-size: 15px;">Reset Pipeline</h3>
-        <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 16px;">
-          Select a step to reset from. All data from that step onwards will be cleared.
-        </p>
-        <select v-model="resetStep" style="width: 100%; padding: 8px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius); font-family: inherit; font-size: 13px; margin-bottom: 16px;">
-          <option :value="2">Step 2: OCR Transcription</option>
-          <option :value="3">Step 3: Classification</option>
-          <option :value="4">Step 4: Segmentation</option>
-          <option :value="5">Step 5: Dimensions</option>
-          <option :value="6">Step 6: Aggregation</option>
-        </select>
-        <div style="display: flex; gap: 8px; justify-content: flex-end;">
-          <button class="btn btn-ghost btn-sm" @click="showResetModal = false">Cancel</button>
-          <button class="btn btn-danger btn-sm" @click="doReset">Reset</button>
-        </div>
-      </div>
-    </div>
+
   </div>
 </template>
 
@@ -398,9 +384,6 @@ export default {
       aggregations: [],
       activeTab: 'answers',
       expandedAnswers: new Set(),
-      lightboxImage: null,
-      showResetModal: false,
-      resetStep: 3,
       loading: false,
       
       // Runner State
@@ -634,11 +617,21 @@ export default {
         alert('Failed: ' + e.message)
       }
     },
-    async doReset() {
+    async confirmResetStep(stepId) {
+      if (this.pipelineRunning) return;
+      const step = this.pipelineSteps.find(s => s.id === stepId) || { fullname: 'Pipeline' };
+      const msg = stepId === 1 
+        ? "⚠️ Are you sure you want to RESET THE ENTIRE PIPELINE?\n\nThis will delete ALL page images, transcriptions, classifications, and answer analysis. This action CANNOT be undone."
+        : `⚠️ Reset from step "${step.id}: ${step.fullname}"?\n\nThis will also delete ALL data from subsequent steps (cascading). Continue?`;
+      
+      if (window.confirm(msg)) {
+        await this.doReset(stepId);
+      }
+    },
+    async doReset(stepId) {
       try {
-        await resetPipeline(this.resetStep)
-        this.showResetModal = false
-        alert(`Reset from step ${this.resetStep} successful.`)
+        await resetPipeline(stepId)
+        alert(`Reset from step ${stepId} successful.`)
         await this.refreshAll()
       } catch (e) {
         alert('Reset failed: ' + e.message)
