@@ -158,6 +158,12 @@ class AnalyzeDB:
         )
         conn.commit()
 
+    def get_page(self, page_id: int) -> dict | None:
+        """Get a single page record by ID."""
+        conn = self._get_conn()
+        row = conn.execute("SELECT * FROM pages WHERE id = ?", (page_id,)).fetchone()
+        return dict(row) if row else None
+
     def get_pdf_count(self) -> int:
         """Count distinct PDF files in the database."""
         conn = self._get_conn()
@@ -450,6 +456,26 @@ class AnalyzeDB:
             "INSERT INTO processing_log (pdf_file, step, status, timestamp) VALUES (?, ?, ?, ?)",
             (None, f"reset_from_{step_number}", "done", datetime.now(timezone.utc).isoformat()),
         )
+        conn.commit()
+
+    def delete_pdf_data(self, pdf_file: str):
+        """Permanently delete all data associated with a PDF file."""
+        conn = self._get_conn()
+        # 1. Delete dimension results for answers of this PDF
+        conn.execute("""
+            DELETE FROM answer_dimensions 
+            WHERE answer_id IN (SELECT id FROM answers WHERE pdf_file = ?)
+        """, (pdf_file,))
+        
+        # 2. Delete answers
+        conn.execute("DELETE FROM answers WHERE pdf_file = ?", (pdf_file,))
+        
+        # 3. Delete pages
+        conn.execute("DELETE FROM pages WHERE pdf_file = ?", (pdf_file,))
+        
+        # 4. Delete processing logs
+        conn.execute("DELETE FROM processing_log WHERE pdf_file = ?", (pdf_file,))
+        
         conn.commit()
 
     def close(self):

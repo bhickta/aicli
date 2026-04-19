@@ -210,6 +210,29 @@ def retry_errors():
         conn.commit()
     return {"ok": True, "cleared": cur.rowcount}
 
+@router.delete("/pdfs/{pdf_file:path}")
+def delete_pdf(pdf_file: str):
+    import shutil
+    db = get_db()
+    # Decode filename if encoded
+    pdf_file = urllib.parse.unquote(pdf_file)
+    
+    # 1. Delete from database
+    db.delete_pdf_data(pdf_file)
+    
+    # 2. Delete generated images
+    pdf_stem = Path(pdf_file).stem
+    image_dir = ServerState.cache_dir / pdf_stem
+    if image_dir.exists() and image_dir.is_dir():
+        shutil.rmtree(image_dir)
+        
+    # 3. Delete original PDF
+    pdf_path = ServerState.data_dir / pdf_file
+    if pdf_path.exists() and pdf_path.is_file():
+        pdf_path.unlink()
+        
+    return {"ok": True, "message": f"Deleted {pdf_file}"}
+
 # --- PIPELINE EXECUTION ---
 
 class RunRequest(BaseModel):
@@ -217,11 +240,20 @@ class RunRequest(BaseModel):
     dpi: int = 200
     llm_model: str = "gemma-4-26b-a4b"
     target_steps: list[int] | None = None
+    page_id: int | None = None
 
 # Use a singleton instance of BaseOrchestrator for analyze (or instantiate per pipeline if wanted, but singleton limits concurrency nicely here)
 analyze_orch = BaseOrchestrator()
 
-def _analyze_worker(orch: BaseOrchestrator, data_dir: Path, workers: int, dpi: int, llm_model: str, target_steps: list[int] | None = None):
+def _analyze_worker(
+    orch: BaseOrchestrator, 
+    data_dir: Path, 
+    workers: int, 
+    dpi: int, 
+    llm_model: str, 
+    target_steps: list[int] | None = None,
+    target_page_id: int | None = None
+):
     import aicli.server.pipelines.analyze as analyze_mod
     from aicli.server.pipelines.analyze import _get_db, _run_full_pipeline
 
@@ -245,7 +277,8 @@ def _analyze_worker(orch: BaseOrchestrator, data_dir: Path, workers: int, dpi: i
             dpi=dpi,
             pdf_files=None,
             llm_model=llm_model,
-            target_steps=target_steps
+            target_steps=target_steps,
+            target_page_id=target_page_id
         )
         db.close()
     finally:
@@ -264,7 +297,8 @@ def run_pipeline(req: RunRequest):
             workers=req.workers,
             dpi=req.dpi,
             llm_model=req.llm_model,
-            target_steps=req.target_steps
+            target_steps=req.target_steps,
+            target_page_id=req.page_id
         )
         return {"ok": True, "message": "Pipeline started"}
     except RuntimeError as e:

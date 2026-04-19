@@ -61,6 +61,13 @@ export function createStream() {
   return new EventSource(`${API_BASE}/api/analyze/stream`)
 }
 
+export async function deletePdf(pdfFile) {
+  const res = await fetch(`${API_BASE}/api/analyze/pdfs/${encodeURIComponent(pdfFile)}`, {
+    method: 'DELETE'
+  })
+  return res.json()
+}
+
 export function imageUrl(pdfFile, pageNumber) {
   const paddedPage = String(pageNumber).padStart(4, '0')
   // PDF file name is the directory name under images/

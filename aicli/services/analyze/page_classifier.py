@@ -78,6 +78,9 @@ class PageClassifierService:
         def _process_one(page_row):
             classification = self.classify_page(page_row)
             db.update_classification(page_row["id"], classification)
+            # Log success
+            if progress:
+                progress.console.print(f"[SUCCESS] [PAGE:{page_row['page_number']}] Classified as {classification}: {page_row['pdf_file']}")
             return page_row["id"], classification
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -94,12 +97,11 @@ class PageClassifierService:
                     db.log_processing(
                         page["pdf_file"], "classification", "error", str(e)
                     )
-                    # Surface the first error so the user sees what went wrong
-                    if not first_error_shown and progress:
+                    # Standardized error log
+                    if progress:
                         progress.console.print(
-                            f"[red]  ✖ Classification error: {str(e)[:200]}[/red]"
+                            f"[ERROR] [PAGE:{page['page_number']}] Classification failed: {str(e)[:100]}"
                         )
-                        first_error_shown = True
                     if progress and task_id is not None:
                         progress.advance(task_id)
 

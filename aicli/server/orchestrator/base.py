@@ -40,13 +40,19 @@ class SSEProgressContext:
         pass
 
 
+import re
+
 class ConsoleRedirect:
     """Redirects rich console prints to the SSE queue."""
     def __init__(self, event_queue: queue.Queue):
         self.queue = event_queue
+        # Regex to strip [bold magenta], [red], [dim], etc.
+        self.tag_re = re.compile(r"\[/?(?:[a-z ]+|#[0-9a-f]{6})\]")
         
     def print(self, msg: str, *args, **kwargs):
-        self.queue.put({"type": "log", "message": str(msg)})
+        # Convert to string and strip Rich tags
+        clean_msg = self.tag_re.sub("", str(msg))
+        self.queue.put({"type": "log", "message": clean_msg})
 
 
 class BaseOrchestrator:

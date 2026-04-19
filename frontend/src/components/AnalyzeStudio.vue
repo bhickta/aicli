@@ -34,6 +34,7 @@
             ></div>
           </div>
           <span class="page-count" v-if="pdf.page_count">({{ pdf.page_count }}p)</span>
+          <button class="delete-btn-mini" @click.stop="handleDeletePdf(pdf)" title="Delete PDF" :disabled="pipelineRunning">🗑️</button>
         </div>
         <div v-if="!pdfs.length" class="pdf-item" style="opacity: 0.4; cursor: default;">
           No PDFs found
@@ -41,12 +42,12 @@
       </div>
 
       <div class="sidebar-actions">
-        <label class="btn btn-ghost btn-sm upload-btn">
+        <label class="btn btn-ghost btn-sm upload-btn" :class="{ disabled: pipelineRunning }">
           📤 Upload PDFs
-          <input type="file" multiple accept=".pdf" @change="uploadPdfs" hidden />
+          <input type="file" multiple accept=".pdf" @change="uploadPdfs" hidden :disabled="pipelineRunning" />
         </label>
-        <button class="btn btn-ghost btn-sm" @click="retryErrorPages">🔄 Retry Error Pages</button>
-        <button class="btn btn-ghost btn-sm" @click="showResetModal = true">⚠️ Reset Pipeline</button>
+        <button class="btn btn-ghost btn-sm" @click="retryErrorPages" :disabled="pipelineRunning">🔄 Retry Error Pages</button>
+        <button class="btn btn-ghost btn-sm" @click="showResetModal = true" :disabled="pipelineRunning">⚠️ Reset Pipeline</button>
         <button class="btn btn-ghost btn-sm" @click="refreshAll">↻ Refresh</button>
       </div>
     </aside>
@@ -55,7 +56,12 @@
     <main class="main-content">
       <template v-if="selectedPdf">
         <div class="top-bar">
-          <h2>{{ selectedPdf.filename }}</h2>
+          <div class="top-bar-title">
+            <h2>{{ selectedPdf.filename }}</h2>
+            <button class="btn btn-ghost btn-sm btn-danger" @click="handleDeletePdf(selectedPdf)" :disabled="pipelineRunning">
+              🗑️ Delete PDF
+            </button>
+          </div>
           <div class="pdf-status-strip" v-if="selectedPdf.progress">
             <div v-for="step in pipelineSteps" :key="step.id" :class="['status-step', selectedPdf.progress[step.id]]">
               <div class="step-dot"></div>
@@ -93,7 +99,7 @@
                   <img
                     :src="getImageUrl(page)"
                     :alt="'Page ' + page.page_number"
-                    @click="openLightbox(page)"
+                    @click="openPageInspector(page)"
                     loading="lazy"
                   />
                 </div>
@@ -188,15 +194,15 @@
                 <div class="settings-grid">
                   <div class="form-group">
                     <label>Workers</label>
-                    <input type="number" v-model.number="runConfig.workers" min="1" max="16" />
+                    <input type="number" v-model.number="runConfig.workers" min="1" max="16" :disabled="pipelineRunning" />
                   </div>
                   <div class="form-group">
                     <label>DPI</label>
-                    <input type="number" v-model.number="runConfig.dpi" min="50" max="600" />
+                    <input type="number" v-model.number="runConfig.dpi" min="50" max="600" :disabled="pipelineRunning" />
                   </div>
                   <div class="form-group span-full" style="grid-column: span 2;">
                     <label>LLM Model ID</label>
-                    <input type="text" v-model="runConfig.llm_model" placeholder="Model for vision & reasoning" />
+                    <input type="text" v-model="runConfig.llm_model" placeholder="Model for vision & reasoning" :disabled="pipelineRunning" />
                   </div>
                 </div>
               </div>
@@ -205,11 +211,11 @@
                 <h4>Pipeline Workflow</h4>
                 <div class="form-group">
                   <div class="radio-group" style="display: flex; gap: 16px; margin-bottom: 8px;">
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                      <input type="radio" v-model="runConfig.mode" value="all" /> End-to-End
+                    <label style="display: flex; align-items: center; gap: 8px;" :style="{ cursor: pipelineRunning ? 'not-allowed' : 'pointer' }">
+                      <input type="radio" v-model="runConfig.mode" value="all" :disabled="pipelineRunning" /> End-to-End
                     </label>
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                      <input type="radio" v-model="runConfig.mode" value="custom" /> Custom Step Selection
+                    <label style="display: flex; align-items: center; gap: 8px;" :style="{ cursor: pipelineRunning ? 'not-allowed' : 'pointer' }">
+                      <input type="radio" v-model="runConfig.mode" value="custom" :disabled="pipelineRunning" /> Custom Step Selection
                     </label>
                   </div>
                   
@@ -218,10 +224,10 @@
                       v-for="step in pipelineSteps" 
                       :key="step.id" 
                       class="step-row"
-                      :class="selectedPdf.progress ? selectedPdf.progress[step.id] : ''"
-                      @click="toggleStep(step.id)"
+                      :class="[selectedPdf.progress ? selectedPdf.progress[step.id] : '', { disabled: pipelineRunning }]"
+                      @click="!pipelineRunning && toggleStep(step.id)"
                     >
-                      <input type="checkbox" :checked="runConfig.target_steps.includes(step.id)" @click.stop />
+                      <input type="checkbox" :checked="runConfig.target_steps.includes(step.id)" @click.stop :disabled="pipelineRunning" />
                       <span class="step-name">{{ step.id }}: {{ step.fullname }}</span>
                       <span class="step-badge" v-if="selectedPdf.progress">{{ selectedPdf.progress[step.id] }}</span>
                     </div>
@@ -237,7 +243,12 @@
             <div class="console-panel">
               <div class="console-header">
                 <h3>Live Execution Logs</h3>
-                <span v-if="pipelineRunning" class="pulse"></span>
+                <div class="console-controls">
+                  <label class="autoscroll-toggle">
+                    <input type="checkbox" v-model="autoscroll" /> Auto-scroll
+                  </label>
+                  <button class="clear-btn" @click="logs = []">🗑️ Clear</button>
+                </div>
               </div>
               
               <div class="tasks-overlay" v-if="Object.keys(tasks).length > 0">
@@ -253,7 +264,14 @@
               </div>
               
               <div class="terminal" ref="terminal">
-                <div v-for="(log, i) in logs" :key="i" class="log-line">{{ log }}</div>
+                <div v-for="(log, i) in parsedLogs" :key="i" :class="['log-line', log.level]">
+                  <span class="log-icon">{{ log.icon }}</span>
+                  <span class="log-text">{{ log.text }}</span>
+                  <span v-if="log.page" class="log-page-tag">Page {{ log.page }}</span>
+                </div>
+                <div v-if="!logs.length" class="empty-terminal">
+                  _ Waiting for pipeline execution...
+                </div>
               </div>
             </div>
           </div>
@@ -270,9 +288,77 @@
       </div>
     </main>
 
-    <!-- Lightbox -->
-    <div v-if="lightboxImage" class="lightbox-overlay" @click="lightboxImage = null">
-      <img :src="lightboxImage" />
+    <!-- Page Inspector -->
+    <div v-if="inspectedPage" class="page-inspector-overlay" @click.self="closePageInspector">
+      <div class="page-inspector">
+        <div class="inspector-header">
+          <div class="header-left">
+            <h3>Page {{ inspectedPage.page_number }}</h3>
+            <span :class="['classification-badge', badgeClass(inspectedPage.classification)]">
+              {{ inspectedPage.classification || 'pending' }}
+            </span>
+          </div>
+          <div class="header-center">
+            <div class="page-pills">
+              <button class="pill-btn" @click="runPageStep(2)" :disabled="pipelineRunning">Redo OCR</button>
+              <button class="pill-btn" @click="runPageStep(3)" :disabled="pipelineRunning">Redo Classify</button>
+              <button class="pill-btn" @click="runPageStep(4)" :disabled="pipelineRunning">Re-Segment</button>
+              <button class="pill-btn" @click="runPageStep(5)" :disabled="pipelineRunning">Re-Analyze</button>
+              <button class="pill-btn primary" @click="runPageStep(null)" title="Force all steps for this page" :disabled="pipelineRunning">Process All</button>
+            </div>
+          </div>
+          <div class="header-right">
+            <button class="btn btn-ghost btn-sm" @click="prevPage" :disabled="isFirstPage">← Prev</button>
+            <button class="btn btn-ghost btn-sm" @click="nextPage" :disabled="isLastPage">Next →</button>
+            <button class="btn btn-ghost btn-sm btn-icon" @click="closePageInspector">✕</button>
+          </div>
+        </div>
+        
+        <div class="inspector-body">
+          <div class="inspector-image-pane">
+            <img :src="getImageUrl(inspectedPage)" />
+          </div>
+          
+          <div class="inspector-data-pane">
+            <div class="inspector-tabs">
+              <button :class="['itab', { active: inspectorTab === 'transcribe' }]" @click="inspectorTab = 'transcribe'">Transcription</button>
+              <button :class="['itab', { active: inspectorTab === 'analysis' }]" @click="inspectorTab = 'analysis'">Analysis</button>
+            </div>
+            
+            <div class="inspector-tab-content">
+              <!-- Transcription Tab -->
+              <div v-if="inspectorTab === 'transcribe'" class="transcription-view">
+                <pre v-if="inspectedPage.transcription && !inspectedPage.transcription.startsWith('[TRANSCRIPTION_ERROR')">{{ inspectedPage.transcription }}</pre>
+                <div v-else-if="inspectedPage.transcription && inspectedPage.transcription.startsWith('[TRANSCRIPTION_ERROR')" class="error-text">
+                  {{ inspectedPage.transcription }}
+                </div>
+                <div v-else class="empty-state-text">No transcription available.</div>
+              </div>
+              
+              <!-- Analysis Tab -->
+              <div v-if="inspectorTab === 'analysis'" class="analysis-view">
+                <div v-if="!getAnswersForPage(inspectedPage.id).length" class="empty-state-text">
+                  No answer units identified on this page.
+                </div>
+                <div v-for="ans in getAnswersForPage(inspectedPage.id)" :key="ans.id" class="answer-unit-card">
+                  <div class="unit-header">
+                    <span class="unit-qnum">{{ ans.question_number || 'Unnumbered' }}</span>
+                    <span class="unit-range">Pages {{ JSON.parse(ans.page_ids).join(', ') }}</span>
+                  </div>
+                  <div class="unit-text highlight">{{ ans.question_text || 'Segmentation result...' }}</div>
+                  
+                  <div class="unit-dimensions" v-if="answerDimensions[ans.id]">
+                    <div v-for="(result, name) in answerDimensions[ans.id]" :key="name" class="dim-row">
+                      <span class="dim-name">{{ formatKey(name) }}</span>
+                      <span class="dim-value">{{ formatValue(result) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Reset Modal -->
@@ -310,6 +396,7 @@ import {
   runPipeline,
   retryErrors,
   imageUrl,
+  deletePdf,
 } from '../api.js'
 
 const API_BASE = 'http://127.0.0.1:8765/api'
@@ -349,10 +436,50 @@ export default {
         { id: '6', name: 'Aggregate', fullname: 'Cross-PDF Aggregation' },
         { id: '7', name: 'Report', fullname: 'Report Generation' }
       ],
+      // Page Inspector
+      inspectedPage: null,
+      inspectorTab: 'transcribe',
+      
       pipelineRunning: false,
       eventSource: null,
       logs: [],
       tasks: {},
+      autoscroll: true,
+    }
+  },
+  computed: {
+    isLastPage() {
+      if (!this.inspectedPage || !this.pages.length) return true
+      return this.pages[this.pages.length - 1].id === this.inspectedPage.id
+    },
+    parsedLogs() {
+      return this.logs.map(rawMsg => {
+        let level = 'info';
+        let icon = '⚙️';
+        let text = rawMsg;
+        let page = null;
+
+        if (rawMsg.includes('[SUCCESS]')) {
+          level = 'success';
+          icon = '✅';
+          text = rawMsg.replace('[SUCCESS]', '').trim();
+        } else if (rawMsg.includes('[ERROR]')) {
+          level = 'error';
+          icon = '❌';
+          text = rawMsg.replace('[ERROR]', '').trim();
+        } else if (rawMsg.includes('[PAGE:')) {
+          level = 'page';
+          icon = '📄';
+          const match = rawMsg.match(/\[PAGE:(\d+)\]/);
+          if (match) page = match[1];
+        } else if (rawMsg.includes('[SYSTEM]')) {
+          level = 'system';
+          icon = '🚀';
+          text = rawMsg.replace('[SYSTEM]', '').trim();
+        }
+
+        return { level, icon, text, page, raw: rawMsg };
+      });
     }
   },
   async mounted() {
@@ -454,8 +581,28 @@ export default {
       if (!this.selectedPdf) return '';
       return imageUrl(this.selectedPdf.filename, page.page_number)
     },
-    openLightbox(page) {
-      this.lightboxImage = this.getImageUrl(page)
+    openPageInspector(page) {
+      this.inspectedPage = page
+      this.inspectorTab = 'transcribe'
+    },
+    closePageInspector() {
+      this.inspectedPage = null
+    },
+    nextPage() {
+      const idx = this.pages.findIndex(p => p.id === this.inspectedPage.id)
+      if (idx < this.pages.length - 1) this.inspectedPage = this.pages[idx + 1]
+    },
+    prevPage() {
+      const idx = this.pages.findIndex(p => p.id === this.inspectedPage.id)
+      if (idx > 0) this.inspectedPage = this.pages[idx - 1]
+    },
+    getAnswersForPage(pageId) {
+      return this.answers.filter(a => {
+        try {
+          const ids = JSON.parse(a.page_ids)
+          return ids.includes(parseInt(pageId)) || ids.includes(String(pageId))
+        } catch(e) { return false }
+      })
     },
     badgeClass(classification) {
       if (!classification) return 'badge-pending'
@@ -499,6 +646,40 @@ export default {
     },
 
     // Runner Logic
+    async runPageStep(stepId) {
+      if (!this.inspectedPage) return
+      try {
+        this.pipelineRunning = true
+        this.logs = []
+        this.tasks = {}
+        
+        const config = {
+          ...this.runConfig,
+          target_steps: stepId ? [stepId] : null,
+          page_id: this.inspectedPage.id
+        }
+        await runPipeline(config)
+        // Refresh page data after a short delay (or wait for SSE)
+        setTimeout(() => this.loadPdfData(this.selectedPdf), 2000)
+      } catch (err) {
+        alert("Execution failed: " + err.message)
+        this.pipelineRunning = false
+      }
+    },
+    async handleDeletePdf(pdf) {
+      if (!window.confirm(`Permanently delete "${pdf.filename}" and ALL its AI analysis results?`)) {
+        return
+      }
+      try {
+        await deletePdf(pdf.filename)
+        if (this.selectedPdf && this.selectedPdf.filename === pdf.filename) {
+          this.selectedPdf = null
+        }
+        await this.refreshAll()
+      } catch (e) {
+        alert('Deletion failed: ' + e.message)
+      }
+    },
     async startPipeline() {
       try {
         this.pipelineRunning = true
@@ -567,11 +748,14 @@ export default {
           }
           else if (data.type === 'log') {
             this.logs.push(data.message)
-            this.$nextTick(() => {
-              if (this.$refs.terminal) {
-                this.$refs.terminal.scrollTop = this.$refs.terminal.scrollHeight
-              }
-            })
+            if (this.logs.length > 500) this.logs.shift()
+            
+            if (this.autoscroll) {
+              this.$nextTick(() => {
+                const term = this.$refs.terminal
+                if (term) term.scrollTop = term.scrollHeight
+              })
+            }
           }
         }
       })

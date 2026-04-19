@@ -7,52 +7,39 @@
 
 # --- LM Studio Settings ---
 lm_studio:
-  max_tokens: 2000
-  temperature: 0.1
+  max_tokens: 4096
+  temperature: 0.0
   max_retries: 3
   retry_backoff_base: 2
-  image_max_size: 1024   # Higher res for handwriting legibility
+  image_max_size: 2048   # Higher res for handwriting legibility
 
 # --- Step 2: OCR Transcription (Vision Model Only) ---
 transcription:
   prompt: |
     You are an expert OCR assistant specializing in Indian civil services (UPSC) exam answer sheets.
-    Transcribe ALL content from this image with maximum accuracy.
+    Your mission is to provide a COMPLETE, WORD-FOR-WORD transcription of the provided image.
 
-    This is a handwritten answer sheet — use the IMAGE as the sole ground truth.
+    ### CRITICAL INSTRUCTION:
+    - Transcribe EVERYTHING in valid reading order (Top-to-Bottom, Left-to-Right).
+    - NEVER skip handwriting. Handwritten content is the most important part of this document.
+    - If you see a printed header followed by handwriting, transcribe the header and then immediately start transcribing the handwriting.
+    - Capturing every single word is more important than formatting.
 
-    Content types present:
-    - Printed text in Hindi (Devanagari) and English
-    - Handwritten cursive English answers
-    - Hand-drawn diagrams with labels
-    - Boxed section headers
-    - Numbered lists with symbols (①②③) or decimal (1.1, 1.2)
-    - Underlined phrases
-    - Strikethrough words
+    ### Content to Capture:
+    - Handwritten cursive English (Answers are usually here)
+    - Printed English headers and questions
+    - Diagrams: Describe them briefly [DIAGRAM: labels, description]
+    - Margin notes or official stamps
 
-    Rules:
-    - Transcribe EXACTLY what is written — never correct spelling or grammar
-    - Misspelled words: transcribe as-is and add [sic]
-    - Unreadable words: write [unclear: your_best_guess]
-    - Below 80% confidence: write [unclear: your_best_guess]
-    - Never hallucinate or invent text
-    - Hindi/Devanagari: transcribe exactly, do NOT translate, if unclear write [Hindi: unclear]
-    - Handwriting: transcribe letter by letter, do not auto-correct
-    - Underlines: <u>exact underlined words only</u> — verify stroke by stroke
-    - Circled numbers: ① ② ③ — never convert to 1. 2. 3.
-    - Strikethroughs: ~~word~~
-    - Boxes: [BOX: text inside box]
-    - Margin text: [margin: standard exam instructions]
-    - Diagrams: describe spatial layout, all labels, arrow directions, caption
-    - Geographic shapes in diagrams: identify if it resembles a map
-    - Figure captions exactly as written
+    ### Rules:
+    - Transcribe EXACTLY what is written — never correct spelling or grammar.
+    - Unreadable words: write [?]
+    - Underlines: <u>underline these words</u>
+    - Boxes: [BOX: text]
+    - Numbered lists: Keep original numbering (1, 1.1, ①, etc.)
 
-    Output format:
-    ### Printed Text
-    ### Handwritten Answer
-    ### Diagrams
-    ### Additional Elements
-    ### Confidence Notes
+    OUTPUT FORMAT:
+    Simply provide the full text as it appears on the page. Use markdown headers (##) only if there is a very clear visual section break.
 
 # --- Step 3: Page Classification (Text-Based) ---
 classification:

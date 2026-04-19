@@ -92,6 +92,7 @@ def _run_full_pipeline(
     pdf_files: list[Path] | None = None,
     llm_model: str | None = None,
     target_steps: list[int] | None = None,
+    target_page_id: int | None = None,
 ):
     """Execute the full 7-step pipeline."""
     cache_dir = _get_cache_dir(data_dir)
@@ -128,17 +129,41 @@ def _run_full_pipeline(
     if target_steps is None or 2 in target_steps:
         console.print("\n[bold magenta]━━━ Step 2: OCR Transcription ━━━[/bold magenta]")
         transcriber = AnswerTranscriberService(provider, cfg)
-        untranscribed = db.get_untranscribed_pages()
+        
+        if target_page_id:
+            page = db.get_page(target_page_id)
+            untranscribed = [page] if page else []
+        else:
+            untranscribed = db.get_untranscribed_pages()
 
         if untranscribed:
             with _make_progress() as progress:
-                task = progress.add_task("Transcribing pages...", total=len(untranscribed))
-                transcribed, tr_errors = transcriber.transcribe_batch(db, workers, progress, task)
+                # Use a larger task description if targeting
+                desc = f"Transcribing page {target_page_id}..." if target_page_id else "Transcribing pages..."
+                task = progress.add_task(desc, total=len(untranscribed))
+                # If targeting, we must pass the specific list because transcribe_batch usually fetches its own
+                if target_page_id:
+                    transcribed = 0
+                    errors = 0
+                    for p in untranscribed:
+                        try:
+                            # Update directly
+                            txt = transcriber.transcribe_page(p)
+                            db.update_transcription(p["id"], txt)
+                            transcribed += 1
+                        except Exception as e:
+                            errors += 1
+                            db.update_transcription(p["id"], f"[TRANSCRIPTION_ERROR: {e}]")
+                        progress.advance(task)
+                    tr_errors = errors
+                else:
+                    transcribed, tr_errors = transcriber.transcribe_batch(db, workers, progress, task)
+            
             if tr_errors:
-                print_error(f"Transcription: {tr_errors} errors (see first error above)", ValueError(""))
+                print_error(f"Transcription: {tr_errors} errors", ValueError(""))
             print_success(f"Transcribed {transcribed} pages")
         else:
-            console.print("[dim]All pages already transcribed. Skipping.[/dim]")
+            console.print("[dim]No untranscribed pages. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
     # Step 3: Page Classification (Text-only — fast)
@@ -146,17 +171,38 @@ def _run_full_pipeline(
     if target_steps is None or 3 in target_steps:
         console.print("\n[bold magenta]━━━ Step 3: Page Classification ━━━[/bold magenta]")
         classifier = PageClassifierService(provider, cfg)
-        unclassified = db.get_unclassified_pages()
+        
+        if target_page_id:
+            page = db.get_page(target_page_id)
+            unclassified = [page] if page else []
+        else:
+            unclassified = db.get_unclassified_pages()
 
         if unclassified:
             with _make_progress() as progress:
-                task = progress.add_task("Classifying pages...", total=len(unclassified))
-                classified, cls_errors = classifier.classify_batch(db, workers, progress, task)
+                desc = f"Classifying page {target_page_id}..." if target_page_id else "Classifying pages..."
+                task = progress.add_task(desc, total=len(unclassified))
+                
+                if target_page_id:
+                    classified = 0
+                    errors = 0
+                    for p in unclassified:
+                        try:
+                            cls = classifier.classify_page(p)
+                            db.update_classification(p["id"], cls)
+                            classified += 1
+                        except Exception as e:
+                            errors += 1
+                        progress.advance(task)
+                    cls_errors = errors
+                else:
+                    classified, cls_errors = classifier.classify_batch(db, workers, progress, task)
+            
             if cls_errors:
-                print_error(f"Classification: {cls_errors} errors (see first error above)", ValueError(""))
+                print_error(f"Classification: {cls_errors} errors", ValueError(""))
             print_success(f"Classified {classified} pages")
         else:
-            console.print("[dim]All pages already classified. Skipping.[/dim]")
+            console.print("[dim]No unclassified pages. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
     # Step 4: Answer Segmentation
@@ -164,15 +210,22 @@ def _run_full_pipeline(
     if target_steps is None or 4 in target_steps:
         console.print("\n[bold magenta]━━━ Step 4: Answer Segmentation ━━━[/bold magenta]")
         segmenter = AnswerSegmenterService(provider, cfg)
-        unsegmented = db.get_unsegmented_pdfs()
+        
+        if target_page_id:
+            # Segmentation depends on the whole PDF. Find the PDF for this page.
+            page = db.get_page(target_page_id)
+            unsegmented = [Path(data_dir / page["pdf_file"])] if page else []
+        else:
+            unsegmented = db.get_unsegmented_pdfs()
 
         if unsegmented:
             with _make_progress() as progress:
                 task = progress.add_task("Segmenting answers...", total=len(unsegmented))
-                seg_count = segmenter.segment_all(db, progress, task)
-            print_success(f"Created {seg_count} answer units from {len(unsegmented)} PDFs")
+                # For single PDF, segment_all logic still works
+                seg_count = segmenter.segment_all(db, progress, task, pdf_paths=unsegmented if target_page_id else None)
+            print_success(f"Created {seg_count} answer units")
         else:
-            console.print("[dim]All PDFs already segmented. Skipping.[/dim]")
+            console.print("[dim]No unsegmented PDFs. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
     # Step 5: Dimension Analysis
@@ -183,15 +236,49 @@ def _run_full_pipeline(
         enabled_dims = cfg.enabled_dimensions
 
         for dim_name in enabled_dims:
-            unanalyzed = db.get_unanalyzed_answers(dim_name)
+            if target_page_id:
+                # Find answers associated with this page
+                # We can reuse part of get_unanalyzed_answers logic or filter it
+                all_un = db.get_unanalyzed_answers(dim_name)
+                # Filter client-side for simplicity since we have targeted the run
+                unanalyzed = []
+                for ans in all_un:
+                    try:
+                        ids = json.loads(ans["page_ids"])
+                        if target_page_id in ids or str(target_page_id) in ids:
+                            unanalyzed.append(ans)
+                    except: pass
+                # FORCE RERUN: If not in "unanalyzed", maybe it was already analyzed?
+                # For target_page_id, we should probably allow re-running even if analyzed.
+                if not unanalyzed:
+                    # Get ALL answers for that page
+                    rows = db._get_conn().execute("SELECT * FROM answers").fetchall()
+                    for r in rows:
+                        ans = dict(r)
+                        try:
+                            ids = json.loads(ans["page_ids"])
+                            if target_page_id in ids or str(target_page_id) in ids:
+                                unanalyzed.append(ans)
+                        except: pass
+            else:
+                unanalyzed = db.get_unanalyzed_answers(dim_name)
+
             if unanalyzed:
                 console.print(f"  [cyan]→ {dim_name}[/cyan]: {len(unanalyzed)} answers to analyze")
                 with _make_progress() as progress:
                     task = progress.add_task(f"Analyzing [{dim_name}]...", total=len(unanalyzed))
-                    count = analyzer.analyze_dimension(dim_name, db, workers, progress, task)
+                    if target_page_id:
+                        count = 0
+                        for ans in unanalyzed:
+                            analyzer.analyze_answer(ans, dim_name, db)
+                            count += 1
+                            progress.advance(task)
+                    else:
+                        count = analyzer.analyze_dimension(dim_name, db, workers, progress, task)
                 print_success(f"  {dim_name}: {count} answers analyzed")
             else:
-                console.print(f"  [dim]{dim_name}: already complete. Skipping.[/dim]")
+                if not target_page_id:
+                    console.print(f"  [dim]{dim_name}: already complete. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
     # Step 6: Aggregation

@@ -60,6 +60,9 @@ class AnswerTranscriberService:
         def _process_one(page_row):
             transcription = self.transcribe_page(page_row)
             db.update_transcription(page_row["id"], transcription)
+            # Log success
+            if progress:
+                progress.console.print(f"[SUCCESS] [PAGE:{page_row['page_number']}] OCR complete: {page_row['pdf_file']}")
             return page_row["id"]
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -77,12 +80,12 @@ class AnswerTranscriberService:
                     db.log_processing(
                         page["pdf_file"], "transcription", "error", str(e)
                     )
-                    # Surface the first error so the user sees what went wrong
-                    if not first_error_shown and progress:
+                    # Standardized error log
+                    if progress:
                         progress.console.print(
-                            f"[red]  ✖ Transcription error: {str(e)[:200]}[/red]"
+                            f"[ERROR] [PAGE:{page['page_number']}] Transcription failed: {str(e)[:100]}"
                         )
-                        first_error_shown = True
+                    
                     # Mark as needs_review by storing error transcription
                     try:
                         db.update_transcription(
