@@ -26,9 +26,9 @@ class PageClassifierService:
         result = self.provider.describe_image(
             image_path=page_row["image_path"],
             prompt=prompt,
-            max_size=self.config.image_max_size,
+            max_size=512,  # Classification only needs layout, not text detail
             temperature=self.config.temperature,
-            max_tokens=50,  # Classification is a single word
+            max_tokens=500,  # Reasoning models use thinking tokens within this budget
             max_retries=self.config.max_retries,
             retry_backoff_base=self.config.retry_backoff_base,
         )
@@ -54,17 +54,19 @@ class PageClassifierService:
         workers: int = 4,
         progress=None,
         task_id=None,
-    ) -> int:
+    ) -> tuple[int, int]:
         """Classify all unclassified pages in parallel.
 
         Returns:
-            Count of pages classified.
+            (success_count, error_count)
         """
         pages = db.get_unclassified_pages()
         if not pages:
-            return 0
+            return 0, 0
 
         count = 0
+        errors = 0
+        first_error_shown = False
 
         def _process_one(page_row):
             classification = self.classify_page(page_row)
@@ -81,10 +83,17 @@ class PageClassifierService:
                     if progress and task_id is not None:
                         progress.advance(task_id)
                 except Exception as e:
+                    errors += 1
                     db.log_processing(
                         page["pdf_file"], "classification", "error", str(e)
                     )
+                    # Surface the first error so the user sees what went wrong
+                    if not first_error_shown and progress:
+                        progress.console.print(
+                            f"[red]  ✖ Classification error: {str(e)[:200]}[/red]"
+                        )
+                        first_error_shown = True
                     if progress and task_id is not None:
                         progress.advance(task_id)
 
-        return count
+        return count, errors

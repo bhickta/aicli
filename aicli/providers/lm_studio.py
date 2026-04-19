@@ -96,10 +96,10 @@ class LMStudioProvider(ImageVisionProvider):
             try:
                 response = self.client.chat.completions.create(**create_kwargs)
                 content = response.choices[0].message.content
-                if not content:
-                    reason = response.choices[0].finish_reason
-                    raise ValueError(f"LM Studio aborted generation (finish_reason: '{reason}'). Image may be too complex, or context window exceeded.")
-                return content.strip()
+                if content:
+                    return content.strip()
+                reason = response.choices[0].finish_reason
+                raise ValueError(f"LM Studio returned empty content (finish_reason: '{reason}'). Context window may be exceeded.")
             except Exception as e:
                 last_error = e
                 if attempt < max_retries - 1:

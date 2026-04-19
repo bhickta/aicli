@@ -1,6 +1,6 @@
 [project]
 name = "aicli"
-version = "0.6.17"
+version = "0.6.23"
 description = "AI CLI - Power up your terminal with local AI (LM Studio)."
 readme = "README.md"
 requires-python = ">=3.10"

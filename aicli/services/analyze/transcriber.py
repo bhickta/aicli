@@ -43,17 +43,19 @@ class AnswerTranscriberService:
         workers: int = 4,
         progress=None,
         task_id=None,
-    ) -> int:
+    ) -> tuple[int, int]:
         """Transcribe all untranscribed answer/continuation pages in parallel.
 
         Returns:
-            Count of pages transcribed.
+            (success_count, error_count)
         """
         pages = db.get_untranscribed_pages()
         if not pages:
-            return 0
+            return 0, 0
 
         count = 0
+        errors = 0
+        first_error_shown = False
 
         def _process_one(page_row):
             transcription = self.transcribe_page(page_row)
@@ -70,10 +72,17 @@ class AnswerTranscriberService:
                     if progress and task_id is not None:
                         progress.advance(task_id)
                 except Exception as e:
+                    errors += 1
                     # Log error but continue with remaining pages
                     db.log_processing(
                         page["pdf_file"], "transcription", "error", str(e)
                     )
+                    # Surface the first error so the user sees what went wrong
+                    if not first_error_shown and progress:
+                        progress.console.print(
+                            f"[red]  ✖ Transcription error: {str(e)[:200]}[/red]"
+                        )
+                        first_error_shown = True
                     # Mark as needs_review by storing error transcription
                     try:
                         db.update_transcription(
@@ -84,4 +93,4 @@ class AnswerTranscriberService:
                     if progress and task_id is not None:
                         progress.advance(task_id)
 
-        return count
+        return count, errors

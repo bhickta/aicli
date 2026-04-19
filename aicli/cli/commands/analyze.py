@@ -74,29 +74,15 @@ def _make_progress() -> Progress:
     )
 
 
-def _boot_model(llm_model: str | None = None):
-    """Dynamically load the preferred LLM into VRAM, matching the video pipeline pattern."""
+def _ensure_model(llm_model: str | None = None):
+    """Load preferred model into LM Studio if --llm is specified."""
+    if not llm_model:
+        return
     from aicli.config import resolve_dynamic_model, config as aicli_config
-
-    try:
-        console.print("[cyan]Booting Language Model into VRAM...[/cyan]")
-        resolved = resolve_dynamic_model(llm_model)
-        aicli_config.model_name = resolved
-        console.print(f"[green]✔ LM Studio ready: {resolved}[/green]")
-    except Exception as e:
-        console.print(f"[dim]Note: Could not load LM Studio model ({e}). Continuing with default.[/dim]")
-
-
-def _unload_models():
-    """Flush all models from VRAM when done."""
-    from aicli.config import unload_all_models
-
-    console.print("[cyan]Flushing models from VRAM...[/cyan]")
-    try:
-        unload_all_models()
-    except Exception:
-        pass
-
+    console.print(f"[cyan]Loading model matching '{llm_model}'...[/cyan]")
+    resolved = resolve_dynamic_model(llm_model)
+    aicli_config.model_name = resolved
+    console.print(f"[green]✔ Model ready: {resolved}[/green]")
 
 def _run_full_pipeline(
     data_dir: Path,
@@ -106,21 +92,10 @@ def _run_full_pipeline(
     pdf_files: list[Path] | None = None,
     llm_model: str | None = None,
 ):
-    """Execute the full 7-step pipeline.
-
-    Args:
-        data_dir: Root data directory containing PDFs.
-        db: Database instance.
-        workers: Number of concurrent workers.
-        dpi: PDF rendering DPI.
-        pdf_files: If provided, only process these PDFs. Otherwise all in data_dir.
-        llm_model: Preferred model search string (e.g. 'gemma', 'qwen').
-    """
+    """Execute the full 7-step pipeline."""
     cache_dir = _get_cache_dir(data_dir)
     cfg = AnalyzeConfig()
-
-    # Boot the preferred model into VRAM before any LM Studio calls
-    _boot_model(llm_model)
+    _ensure_model(llm_model)
     provider = LMStudioProvider()
 
     start_t = time.time()
@@ -155,7 +130,9 @@ def _run_full_pipeline(
     if unclassified:
         with _make_progress() as progress:
             task = progress.add_task("Classifying pages...", total=len(unclassified))
-            classified = classifier.classify_batch(db, workers, progress, task)
+            classified, cls_errors = classifier.classify_batch(db, workers, progress, task)
+        if cls_errors:
+            print_error(f"Classification: {cls_errors} errors (see first error above)", ValueError(""))
         print_success(f"Classified {classified} pages")
     else:
         console.print("[dim]All pages already classified. Skipping.[/dim]")
@@ -170,7 +147,9 @@ def _run_full_pipeline(
     if untranscribed:
         with _make_progress() as progress:
             task = progress.add_task("Transcribing pages...", total=len(untranscribed))
-            transcribed = transcriber.transcribe_batch(db, workers, progress, task)
+            transcribed, tr_errors = transcriber.transcribe_batch(db, workers, progress, task)
+        if tr_errors:
+            print_error(f"Transcription: {tr_errors} errors (see first error above)", ValueError(""))
         print_success(f"Transcribed {transcribed} pages")
     else:
         console.print("[dim]All pages already transcribed. Skipping.[/dim]")
@@ -228,8 +207,6 @@ def _run_full_pipeline(
     print_success(f"Report: {md_path}")
     print_success(f"JSON:   {json_path}")
 
-    # Flush models from VRAM
-    _unload_models()
 
     elapsed = time.time() - start_t
     console.print(f"\n[bold green]✔ Full pipeline completed in {elapsed:.1f}s[/bold green]")
@@ -250,10 +227,7 @@ def analyze_pdfs(
     ),
     workers: int = typer.Option(4, "--workers", "-w", help="Number of concurrent workers."),
     dpi: int = typer.Option(200, "--dpi", help="PDF rendering DPI (200 recommended for handwriting)."),
-    llm_model: str = typer.Option(
-        None, "--llm",
-        help="Search string for the local model to dynamically load (e.g. 'gemma', 'qwen').",
-    ),
+    llm_model: str = typer.Option(None, "--llm", help="Model to load (e.g. 'gemma-4-26b-a4b')."),
 ):
     """Run full pipeline on all PDFs in a directory."""
     pdf_files = sorted(data_dir.glob("*.pdf"))
@@ -282,10 +256,7 @@ def analyze_pdf(
     ),
     workers: int = typer.Option(4, "--workers", "-w", help="Number of concurrent workers."),
     dpi: int = typer.Option(200, "--dpi", help="PDF rendering DPI."),
-    llm_model: str = typer.Option(
-        None, "--llm",
-        help="Search string for the local model to dynamically load (e.g. 'gemma', 'qwen').",
-    ),
+    llm_model: str = typer.Option(None, "--llm", help="Model to load (e.g. 'gemma-4-26b-a4b')."),
 ):
     """Run full pipeline on a single PDF."""
     data_dir = _get_data_dir(pdf_path)
@@ -374,10 +345,6 @@ def run_dimension(
         help="Data directory.",
     ),
     workers: int = typer.Option(4, "--workers", "-w", help="Number of concurrent workers."),
-    llm_model: str = typer.Option(
-        None, "--llm",
-        help="Search string for the local model to dynamically load.",
-    ),
 ):
     """Run or re-run a single dimension analysis."""
     db = _get_db(data_dir)
@@ -391,7 +358,6 @@ def run_dimension(
         )
         raise typer.Exit(1)
 
-    _boot_model(llm_model)
     provider = LMStudioProvider()
 
     try:
@@ -411,7 +377,6 @@ def run_dimension(
 
         print_success(f"Analyzed {count} answers for [{name}]")
     finally:
-        _unload_models()
         db.close()
 
 
@@ -425,16 +390,10 @@ def run_aggregate(
         dir_okay=True,
         help="Data directory.",
     ),
-    llm_model: str = typer.Option(
-        None, "--llm",
-        help="Search string for the local model to dynamically load.",
-    ),
 ):
     """Run step 6 aggregation across all analyzed answers."""
     db = _get_db(data_dir)
     cfg = AnalyzeConfig()
-
-    _boot_model(llm_model)
     provider = LMStudioProvider()
 
     try:
@@ -450,7 +409,6 @@ def run_aggregate(
 
         print_success(f"Aggregated {count} dimensions")
     finally:
-        _unload_models()
         db.close()
 
 

@@ -37,7 +37,7 @@ def resolve_dynamic_model(preferred_string: str = None) -> str:
                         models = sorted(models, key=lambda x: 0 if preferred_string.lower() in x.get("key", "").lower() else 1)
                         
                     for m in models:
-                        if m.get("type", "llm") == "llm":
+                        if m.get("type", "llm") in ("llm", "vlm"):
                             # If it's already loaded, just return it! (Unless user prefers something else and it's not the top choice yet)
                             if len(m.get("loaded_instances", [])) > 0:
                                 if not preferred_string or preferred_string.lower() in m.get("key", "").lower():
@@ -53,35 +53,15 @@ def resolve_dynamic_model(preferred_string: str = None) -> str:
             if model_to_load:
                 load_url = config.lm_studio_base_url[:base_idx] + "/api/v1/models/load"
                 
-                payload_dict = {"model": model_to_load}
-                
-                # Auto-apply the EXACT LM Studio advanced overrides requested for the 26B model
-                if "26b" in model_to_load.lower():
-                    payload_dict.update({
-                        "context_length": 80549,
-                        "gpu_offload": 30,
-                        "cpu_thread_pool_size": 4,
-                        "evaluation_batch_size": 512,
-                        "max_concurrent_predictions": 4,
-                        "unified_kv_cache": True,
-                        "offload_kv_cache_to_gpu_memory": True,
-                        "keep_model_in_memory": True,
-                        "try_mmap": True,
-                        "num_experts": 8
-                    })
-                    
-                payload = json.dumps(payload_dict).encode('utf-8')
+                payload = json.dumps({"model": model_to_load}).encode('utf-8')
                 load_req = urllib.request.Request(
                     load_url, 
                     data=payload, 
                     method="POST", 
                     headers={"Content-Type": "application/json"}
                 )
-                try:
-                    # Heavy models (like 26B) take a long time to boot into VRAM, give it up to 3 minutes
-                    urllib.request.urlopen(load_req, timeout=180) 
-                except Exception:
-                    pass # Proceed anyway and hope JIT catches it, or let the user see the 404
+                # Heavy models take a while to boot into VRAM
+                urllib.request.urlopen(load_req, timeout=300)
                 return model_to_load
                 
     except Exception:
