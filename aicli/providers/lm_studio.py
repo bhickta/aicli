@@ -137,7 +137,7 @@ class LMStudioProvider(ImageVisionProvider):
     @staticmethod
     def _build_create_kwargs(messages: list, temperature: float, max_tokens: Optional[int]) -> dict:
         kwargs = {"model": config.model_name, "messages": messages, "temperature": temperature}
-        if max_tokens:
+        if max_tokens and max_tokens > 0:
             kwargs["max_tokens"] = max_tokens
         return kwargs
 
