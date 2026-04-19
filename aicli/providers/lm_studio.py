@@ -87,6 +87,7 @@ class LMStudioProvider(ImageVisionProvider):
             "model": config.model_name,
             "messages": messages,
             "temperature": temperature,
+            "extra_body": {"reasoning": False},  # Disable thinking for vision — saves tokens
         }
         if max_tokens:
             create_kwargs["max_tokens"] = max_tokens
