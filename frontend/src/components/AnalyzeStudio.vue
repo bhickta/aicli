@@ -182,10 +182,10 @@
                   </div>
                   <div class="form-group span-full" style="grid-column: span 2; display: flex; align-items: center; gap: 12px; margin-top: 8px;">
                     <label class="toggle-control" style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
-                      <input type="checkbox" v-model="runConfig.allow_reasoning" :disabled="pipelineRunning" style="width: 18px; height: 18px;" />
-                      <span style="font-weight: 500; font-size: 0.9em;">Enable Model Reasoning (Deep Thinking)</span>
+                      <input type="checkbox" :checked="runConfig.allow_reasoning" @change="runConfig.allow_reasoning = $event.target.checked" :disabled="pipelineRunning" style="width: 18px; height: 18px;" />
+                      <span style="font-weight: 500; font-size: 0.9em;">Model Reasoning (Master Toggle)</span>
                     </label>
-                    <div class="info-tip" title="Turn OFF for faster, direct answers. Turn ON for higher accuracy on complex logic (requires high token limit).">ⓘ</div>
+                    <div class="info-tip" title="Master switch for Deep Thinking. If OFF, reasoning is disabled for all steps. If ON, follows per-step settings below.">ⓘ</div>
                   </div>
                 </div>
               </div>
@@ -217,6 +217,18 @@
                     >
                       <input type="checkbox" :checked="runConfig.target_steps.includes(step.id)" @click.stop :disabled="pipelineRunning" />
                       <span class="step-name">{{ step.id }}: {{ step.fullname }}</span>
+                      
+                      <!-- Reasoning Toggle (Steps 2-7 only) -->
+                      <div 
+                        v-if="step.id > 1"
+                        class="reasoning-toggle" 
+                        :class="{ active: runConfig.stepReasoning[step.id], disabled: !runConfig.allow_reasoning || pipelineRunning }" 
+                        @click.stop="toggleStepReasoning(step.id)"
+                        :title="runConfig.stepReasoning[step.id] ? 'Reasoning ENABLED for this step' : 'Reasoning DISABLED for this step'"
+                      >
+                        🧠
+                      </div>
+                      
                       <button class="reset-step-btn" :class="{ disabled: pipelineRunning }" @click.stop="confirmResetStep(step.id)">↻ Reset</button>
                       <span class="step-badge" v-if="selectedPdf.progress">{{ selectedPdf.progress[step.id] }}</span>
                     </div>
@@ -393,7 +405,10 @@ export default {
         llm_model: 'gemma-4-26b-a4b',
         allow_reasoning: true,
         mode: 'all',
-        target_steps: []
+        target_steps: [],
+        stepReasoning: {
+          2: false, 3: false, 4: false, 5: true, 6: true, 7: true
+        }
       },
       pipelineSteps: [
         { id: 1, name: 'Images', fullname: 'PDF → Page Images' },
@@ -685,7 +700,8 @@ export default {
           dpi: this.runConfig.dpi,
           llm_model: this.runConfig.llm_model,
           allow_reasoning: this.runConfig.allow_reasoning,
-          target_steps: this.runConfig.mode === 'all' ? null : this.runConfig.target_steps
+          target_steps: this.runConfig.mode === 'all' ? null : this.runConfig.target_steps,
+          step_reasoning: this.runConfig.stepReasoning
         }
         
         await runPipeline(finalConfig)
@@ -695,14 +711,14 @@ export default {
       }
     },
     toggleStep(stepId) {
-      const id = parseInt(stepId);
-      const idx = this.runConfig.target_steps.indexOf(id);
-      if (idx > -1) {
-        this.runConfig.target_steps.splice(idx, 1);
-      } else {
-        this.runConfig.target_steps.push(id);
-        this.runConfig.target_steps.sort((a,b) => a - b);
-      }
+      const idx = this.runConfig.target_steps.indexOf(stepId)
+      if (idx > -1) this.runConfig.target_steps.splice(idx, 1)
+      else this.runConfig.target_steps.push(stepId)
+      this.runConfig.target_steps.sort((a,b) => a - b)
+    },
+    toggleStepReasoning(stepId) {
+      if (this.pipelineRunning || !this.runConfig.allow_reasoning) return;
+      this.runConfig.stepReasoning[stepId] = !this.runConfig.stepReasoning[stepId];
     },
     connectStream() {
       import('../api.js').then(({ createStream }) => {

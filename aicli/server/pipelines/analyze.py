@@ -180,7 +180,7 @@ def _run_full_pipeline(
                 else:
                     transcribed, tr_errors = transcriber.transcribe_batch(
                         db, workers, progress, task, 
-                        allow_reasoning=allow_reasoning
+                        allow_reasoning=_step_think(2)
                     )
             
             if tr_errors:
