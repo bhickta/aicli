@@ -588,6 +588,7 @@ curl -X POST http://localhost:8765/api/analyze/run \
   -H 'Content-Type: application/json' \
   -d '{"llm_model": "gemma-4-26b-a4b", "workers": 4}'
 ```
+**Note:** When the pipeline runs (either via CLI or `/api/analyze/run`), it natively intercepts the request and automatically forces LM Studio to load the requested model into VRAM via `/api/v1/models/load` before any background worker begins. Heavy MoE models are booted using parallelized configurations natively.
 
 ### Adding a new AI provider
 

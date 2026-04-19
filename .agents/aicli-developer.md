@@ -265,14 +265,21 @@ await startPipeline('run', { required_field: 'value' })
    a pipeline is running raises `RuntimeError` (returns HTTP 409).
 
 4. **LM Studio model auto-detection:** `resolve_dynamic_model()` calls LM
-   Studio's native API at `/api/v1/models`. If LM Studio isn't running, the
-   error message is misleading.
+   Studio's native API at `/api/v1/models` (note: not standard `/v1/models`). If
+   LM Studio isn't running, the error message is misleading. If it returns 0 models,
+   the user may not have downloaded any.
 
-5. **Image size for vision:** Images sent to the vision LLM are resized to
+5. **Hot-reloading backend workers:** Uvicorn's `--reload` flag generally restarts
+   the web process upon file saves. However, long-running background threads spawned by
+   the `BaseOrchestrator` might execute stale code or block the reload if they don't terminate.
+   If deploying fixes to `analyze_pipeline_service.py` or workers, a full server restart
+   (Ctrl+C) is highly recommended.
+
+6. **Image size for vision:** Images sent to the vision LLM are resized to
    `image_max_size` (default 2048px). If you get OOM errors, reduce this in
    `prompts.yaml`.
 
-6. **`page_ids` is a JSON string**, not a native list. Always use
+7. **`page_ids` is a JSON string**, not a native list. Always use
    `json.dumps()` when writing and `json.loads()` when reading.
 
 ### Frontend

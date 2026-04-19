@@ -314,10 +314,11 @@ App.vue (workspace switcher)
 
 ### Dynamic Model Resolution
 
-`config.py:resolve_dynamic_model()` queries LM Studio's native API (`/api/v1/models`) to:
+`config.py:resolve_dynamic_model()` queries LM Studio's native internal API (`/api/v1/models` - not the OpenAI compatible one) to:
 1. Find already-loaded models (prefer those)
-2. Auto-load the first available model if none are loaded
-3. Apply optimized settings for large MoE models (26B+)
+2. Auto-load the dynamically requested model (or the first available) into LM Studio's VRAM directly using `/api/v1/models/load`
+3. Apply optimized settings for large MoE models (26B+) before VRAM loads.
+*Both CLI and Web API pipelines proactively call this prior to starting daemon workers.*
 
 ### Analysis Prompts
 
