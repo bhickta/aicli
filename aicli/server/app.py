@@ -33,6 +33,10 @@ app.include_router(news_router, prefix="/api/news", tags=["News"])
 app.include_router(image_router, prefix="/api/image", tags=["Image"])
 app.include_router(settings_router, prefix="/api/settings", tags=["Settings"])
 
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok"}
+
 # Let's dynamically find the frontend/dist folder relative to this file
 import os
 BASE_DIR = Path(__file__).parent.parent.parent
@@ -54,7 +58,3 @@ if DIST_DIR.exists():
         return FileResponse(DIST_DIR / "index.html")
 else:
     print(f"Warning: Frontend dist directory {DIST_DIR} not found. UI will not be available.")
-
-@app.get("/api/health")
-def health_check():
-    return {"status": "ok"}
