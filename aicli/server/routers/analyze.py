@@ -241,6 +241,7 @@ class RunRequest(BaseModel):
     llm_model: str = "gemma-4-26b-a4b"
     allow_reasoning: bool = True
     target_steps: list[int] | None = None
+    step_reasoning: dict[int, bool] | None = None
     page_id: int | None = None
 
 # Use a singleton instance of BaseOrchestrator for analyze (or instantiate per pipeline if wanted, but singleton limits concurrency nicely here)
@@ -302,7 +303,8 @@ def run_pipeline(req: RunRequest):
             llm_model=req.llm_model,
             allow_reasoning=req.allow_reasoning,
             target_steps=req.target_steps,
-            target_page_id=req.page_id
+            step_reasoning=req.step_reasoning,
+            target_page_id=req.page_id,
         )
         return {"ok": True, "message": "Pipeline started"}
     except RuntimeError as e:

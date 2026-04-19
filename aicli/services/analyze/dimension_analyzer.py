@@ -18,7 +18,7 @@ class DimensionAnalyzerService:
         self.provider = provider
         self.config = config
 
-    def analyze_answer(self, answer: dict, dimension_name: str) -> dict:
+    def analyze_answer(self, answer: dict, dimension_name: str, allow_reasoning: bool = True) -> dict:
         """Analyze one answer for one dimension.
 
         Args:
@@ -37,6 +37,7 @@ class DimensionAnalyzerService:
             max_tokens=self.config.max_tokens,
             max_retries=self.config.max_retries,
             retry_backoff_base=self.config.retry_backoff_base,
+            allow_reasoning=allow_reasoning,
         )
 
         return result
@@ -48,6 +49,7 @@ class DimensionAnalyzerService:
         workers: int = 4,
         progress=None,
         task_id=None,
+        allow_reasoning: bool = True,
     ) -> int:
         """Run a single dimension across all unanalyzed answers.
 
@@ -61,7 +63,7 @@ class DimensionAnalyzerService:
         count = 0
 
         def _process_one(answer):
-            result = self.analyze_answer(answer, dimension_name)
+            result = self.analyze_answer(answer, dimension_name, allow_reasoning=allow_reasoning)
             db.insert_dimension_result(
                 answer_id=answer["id"],
                 dimension_name=dimension_name,

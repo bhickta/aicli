@@ -17,7 +17,7 @@ class AggregationService:
         self.provider = provider
         self.config = config
 
-    def aggregate_dimension(self, dimension_name: str, db: AnalyzeDB) -> dict:
+    def aggregate_dimension(self, dimension_name: str, db: AnalyzeDB, allow_reasoning: bool = True) -> dict:
         """Aggregate all results for one dimension.
 
         Returns:
@@ -68,15 +68,16 @@ class AggregationService:
         max_prompt_chars = 24000
         if len(prompt) > max_prompt_chars:
             aggregation = self._chunked_aggregation(
-                dimension_name, valid_results, candidates, db
+                dimension_name, valid_results, candidates, db, allow_reasoning=allow_reasoning
             )
         else:
             aggregation = self.provider.complete_text_json(
                 prompt=prompt,
                 temperature=self.config.temperature,
-                max_tokens=4000,  # Aggregation outputs are larger
+                max_tokens=4000,
                 max_retries=self.config.max_retries,
                 retry_backoff_base=self.config.retry_backoff_base,
+                allow_reasoning=allow_reasoning,
             )
 
         # Store in DB
@@ -89,7 +90,7 @@ class AggregationService:
 
         return aggregation
 
-    def aggregate_all(self, db: AnalyzeDB, progress=None, task_id=None) -> int:
+    def aggregate_all(self, db: AnalyzeDB, progress=None, task_id=None, allow_reasoning: bool = True) -> int:
         """Run aggregation for all enabled dimensions.
 
         Returns:
@@ -99,7 +100,7 @@ class AggregationService:
         for dim_name in self.config.enabled_dimensions:
             results = db.get_dimension_results(dim_name)
             if results:
-                self.aggregate_dimension(dim_name, db)
+                self.aggregate_dimension(dim_name, db, allow_reasoning=allow_reasoning)
                 count += 1
                 if progress and task_id is not None:
                     progress.advance(task_id)
@@ -112,6 +113,7 @@ class AggregationService:
         all_results: list[dict],
         candidates: set,
         db: AnalyzeDB,
+        allow_reasoning: bool = True,
     ) -> dict:
         """Handle large datasets by aggregating in chunks and then merging.
 
@@ -140,6 +142,7 @@ class AggregationService:
                     max_tokens=4000,
                     max_retries=self.config.max_retries,
                     retry_backoff_base=self.config.retry_backoff_base,
+                    allow_reasoning=allow_reasoning,
                 )
                 chunk_summaries.append(summary)
             except Exception:
@@ -167,6 +170,7 @@ class AggregationService:
             max_tokens=4000,
             max_retries=self.config.max_retries,
             retry_backoff_base=self.config.retry_backoff_base,
+            allow_reasoning=allow_reasoning,
         )
 
         return merged

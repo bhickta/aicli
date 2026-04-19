@@ -93,6 +93,7 @@ def _run_full_pipeline(
     llm_model: str = "gemma-4-26b-a4b",
     allow_reasoning: bool = True,
     target_steps: list[int] | None = None,
+    step_reasoning: dict[int, bool] | None = None,
     target_page_id: int | None = None,
 ) -> float:
     """Execute the full 7-step pipeline."""
@@ -106,6 +107,19 @@ def _run_full_pipeline(
     # Defensive type-casting for target_steps
     if target_steps is not None:
         target_steps = [int(s) for s in target_steps]
+
+    # Smart Reasoning Logic: Default to OFF for extraction, ON for analysis
+    # User can override per-step, OR disable reasoning globally by turning OFF master switch.
+    RECOM_REASONING = {2: False, 3: False, 4: False, 5: True, 6: True, 7: True}
+    
+    def _step_think(step_id: int) -> bool:
+        if not allow_reasoning:
+            return False # Global Master Switch is OFF
+        if step_reasoning and str(step_id) in step_reasoning:
+            return bool(step_reasoning[str(step_id)])
+        if step_reasoning and step_id in step_reasoning:
+            return bool(step_reasoning[step_id])
+        return RECOM_REASONING.get(step_id, False)
 
     # ------------------------------------------------------------------
     # Step 1: PDF → Images
@@ -155,7 +169,7 @@ def _run_full_pipeline(
                     for p in untranscribed:
                         try:
                             # Update directly
-                            txt = transcriber.transcribe_page(p, allow_reasoning=allow_reasoning)
+                            txt = transcriber.transcribe_page(p, allow_reasoning=_step_think(2))
                             db.update_transcription(p["id"], txt)
                             transcribed += 1
                         except Exception as e:
@@ -185,37 +199,17 @@ def _run_full_pipeline(
         if target_page_id:
             page = db.get_page(target_page_id)
             unclassified = [page] if page else []
+            if page:
+                classifier.classify_page(page, allow_reasoning=_step_think(3))
+                print_success(f"Classified page {target_page_id}")
         else:
             unclassified = db.get_unclassified_pages()
-
-        if unclassified:
-            with _make_progress() as progress:
-                desc = f"Classifying page {target_page_id}..." if target_page_id else "Classifying pages..."
-                task = progress.add_task(desc, total=len(unclassified))
-                
-                if target_page_id:
-                    classified = 0
-                    errors = 0
-                    for p in unclassified:
-                        try:
-                            cls = classifier.classify_page(p, allow_reasoning=allow_reasoning)
-                            db.update_classification(p["id"], cls)
-                            classified += 1
-                        except Exception as e:
-                            errors += 1
-                        progress.advance(task)
-                    cls_errors = errors
-                else:
-                    classified, cls_errors = classifier.classify_batch(
-                        db, workers, progress, task,
-                        allow_reasoning=allow_reasoning
-                    )
-            
-            if cls_errors:
-                print_error(f"Classification: {cls_errors} errors", ValueError(""))
-            print_success(f"Classified {classified} pages")
-        else:
-            console.print("[dim]Step 3: No unclassified pages. Skipping.[/dim]")
+            if unclassified:
+                with _make_progress() as progress:
+                    task = progress.add_task("Classifying pages...", total=len(unclassified))
+                    classifier.classify_all(db, progress, task, allow_reasoning=_step_think(3))
+            else:
+                console.print("[dim]Step 3: No unclassified pages. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
     # Step 4: Answer Segmentation
@@ -226,18 +220,18 @@ def _run_full_pipeline(
         
         if target_page_id:
             page = db.get_page(target_page_id)
-            unsegmented = [Path(data_dir / page["pdf_file"])] if page else []
+            if page:
+                pdf_path = Path(data_dir / page["pdf_file"])
+                segmenter.segment_pdf(pdf_path, db, allow_reasoning=_step_think(4))
+                print_success(f"Segmented {pdf_path.name}")
         else:
             unsegmented = db.get_unsegmented_pdfs()
-
-        if unsegmented:
-            with _make_progress() as progress:
-                task = progress.add_task("Segmenting answers...", total=len(unsegmented))
-                # For single PDF, segment_all logic still works
-                seg_count = segmenter.segment_all(db, progress, task, pdf_paths=unsegmented if target_page_id else None)
-            print_success(f"Created {seg_count} answer units")
-        else:
-            console.print("[dim]No unsegmented PDFs. Skipping.[/dim]")
+            if unsegmented:
+                with _make_progress() as progress:
+                    task = progress.add_task("Segmenting PDFs...", total=len(unsegmented))
+                    segmenter.segment_all(db, progress, task, allow_reasoning=_step_think(4))
+            else:
+                console.print("[dim]No unsegmented PDFs. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
     # Step 5: Dimension Analysis
@@ -282,11 +276,11 @@ def _run_full_pipeline(
                     if target_page_id:
                         count = 0
                         for ans in unanalyzed:
-                            analyzer.analyze_answer(ans, dim_name, db)
+                            analyzer.analyze_answer(ans, dim_name, db, allow_reasoning=_step_think(5))
                             count += 1
                             progress.advance(task)
                     else:
-                        count = analyzer.analyze_dimension(dim_name, db, workers, progress, task)
+                        count = analyzer.analyze_dimension(dim_name, db, workers, progress, task, allow_reasoning=_step_think(5))
                 print_success(f"  {dim_name}: {count} answers analyzed")
             else:
                 if not target_page_id:
@@ -301,7 +295,7 @@ def _run_full_pipeline(
 
         with _make_progress() as progress:
             task = progress.add_task("Aggregating patterns...", total=len(enabled_dims))
-            agg_count = aggregator.aggregate_all(db, progress, task)
+            agg_count = aggregator.aggregate_all(db, progress, task, allow_reasoning=_step_think(6))
         print_success(f"Aggregated {agg_count} dimensions")
 
     # ------------------------------------------------------------------
