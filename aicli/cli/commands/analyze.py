@@ -121,26 +121,9 @@ def _run_full_pipeline(
         console.print("[dim]All PDFs already converted. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
-    # Step 2: Page Classification
+    # Step 2: OCR Transcription (Vision Model — all pages)
     # ------------------------------------------------------------------
-    console.print("\n[bold magenta]━━━ Step 2: Page Classification ━━━[/bold magenta]")
-    classifier = PageClassifierService(provider, cfg)
-    unclassified = db.get_unclassified_pages()
-
-    if unclassified:
-        with _make_progress() as progress:
-            task = progress.add_task("Classifying pages...", total=len(unclassified))
-            classified, cls_errors = classifier.classify_batch(db, workers, progress, task)
-        if cls_errors:
-            print_error(f"Classification: {cls_errors} errors (see first error above)", ValueError(""))
-        print_success(f"Classified {classified} pages")
-    else:
-        console.print("[dim]All pages already classified. Skipping.[/dim]")
-
-    # ------------------------------------------------------------------
-    # Step 3: OCR Transcription (Vision Model)
-    # ------------------------------------------------------------------
-    console.print("\n[bold magenta]━━━ Step 3: OCR Transcription ━━━[/bold magenta]")
+    console.print("\n[bold magenta]━━━ Step 2: OCR Transcription ━━━[/bold magenta]")
     transcriber = AnswerTranscriberService(provider, cfg)
     untranscribed = db.get_untranscribed_pages()
 
@@ -153,6 +136,23 @@ def _run_full_pipeline(
         print_success(f"Transcribed {transcribed} pages")
     else:
         console.print("[dim]All pages already transcribed. Skipping.[/dim]")
+
+    # ------------------------------------------------------------------
+    # Step 3: Page Classification (Text-only — fast)
+    # ------------------------------------------------------------------
+    console.print("\n[bold magenta]━━━ Step 3: Page Classification ━━━[/bold magenta]")
+    classifier = PageClassifierService(provider, cfg)
+    unclassified = db.get_unclassified_pages()
+
+    if unclassified:
+        with _make_progress() as progress:
+            task = progress.add_task("Classifying pages...", total=len(unclassified))
+            classified, cls_errors = classifier.classify_batch(db, workers, progress, task)
+        if cls_errors:
+            print_error(f"Classification: {cls_errors} errors (see first error above)", ValueError(""))
+        print_success(f"Classified {classified} pages")
+    else:
+        console.print("[dim]All pages already classified. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
     # Step 4: Answer Segmentation

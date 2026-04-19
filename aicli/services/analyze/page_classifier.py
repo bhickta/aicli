@@ -1,6 +1,7 @@
-"""Step 2: Classify each page image via LM Studio vision model.
+"""Step 3: Classify each page from its OCR transcription text.
 
 Classifications: cover, evaluation, answer, continuation, blank.
+Uses text-only LLM calls (fast) since OCR is already done in Step 2.
 Parallel-safe — each call is independent.
 """
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,21 +15,27 @@ VALID_CLASSIFICATIONS = {"cover", "evaluation", "answer", "continuation", "blank
 
 
 class PageClassifierService:
-    """Classify page images using vision model."""
+    """Classify pages using their OCR'd text (text-only LLM calls)."""
 
     def __init__(self, provider: LMStudioProvider, config: AnalyzeConfig):
         self.provider = provider
         self.config = config
 
     def classify_page(self, page_row: dict) -> str:
-        """Classify a single page image. Returns classification string."""
+        """Classify a single page from its transcription text. Returns classification string."""
         prompt = self.config.classification_prompt
-        result = self.provider.describe_image(
-            image_path=page_row["image_path"],
-            prompt=prompt,
-            max_size=512,  # Classification only needs layout, not text detail
+        transcription = page_row.get("transcription") or ""
+
+        # If transcription is empty or error, it's likely blank
+        if not transcription.strip() or transcription.startswith("[TRANSCRIPTION_ERROR"):
+            return "blank"
+
+        # Text-only classification — much faster than vision
+        full_prompt = f"{prompt}\n\n---\nPAGE TEXT:\n{transcription}"
+        result = self.provider.complete_text(
+            prompt=full_prompt,
             temperature=self.config.temperature,
-            max_tokens=500,  # Reasoning models use thinking tokens within this budget
+            max_tokens=500,  # Reasoning models use thinking tokens
             max_retries=self.config.max_retries,
             retry_backoff_base=self.config.retry_backoff_base,
         )
@@ -55,7 +62,7 @@ class PageClassifierService:
         progress=None,
         task_id=None,
     ) -> tuple[int, int]:
-        """Classify all unclassified pages in parallel.
+        """Classify all unclassified pages in parallel (text-only).
 
         Returns:
             (success_count, error_count)

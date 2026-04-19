@@ -139,11 +139,10 @@ class AnalyzeDB:
         conn.commit()
 
     def get_untranscribed_pages(self) -> list[dict]:
-        """Get answer/continuation pages that haven't been transcribed yet."""
+        """Get ALL pages that haven't been transcribed yet (for OCR-first pipeline)."""
         conn = self._get_conn()
         rows = conn.execute(
-            "SELECT * FROM pages WHERE classification IN ('answer', 'continuation') "
-            "AND transcription IS NULL ORDER BY pdf_file, page_number"
+            "SELECT * FROM pages WHERE transcription IS NULL ORDER BY pdf_file, page_number"
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -373,7 +372,7 @@ class AnalyzeDB:
     def reset_from_step(self, step_number: int):
         """Reset all data from a given step onwards.
 
-        Steps: 1=images, 2=classification, 3=transcription,
+        Steps: 1=images, 2=transcription, 3=classification,
                4=segmentation, 5=dimensions, 6=aggregation
         """
         conn = self._get_conn()
@@ -385,9 +384,9 @@ class AnalyzeDB:
         if step_number <= 4:
             conn.execute("DELETE FROM answers")
         if step_number <= 3:
-            conn.execute("UPDATE pages SET transcription = NULL, processed = 0")
-        if step_number <= 2:
             conn.execute("UPDATE pages SET classification = NULL")
+        if step_number <= 2:
+            conn.execute("UPDATE pages SET transcription = NULL, processed = 0")
         if step_number <= 1:
             conn.execute("DELETE FROM pages")
 

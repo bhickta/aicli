@@ -13,27 +13,7 @@ lm_studio:
   retry_backoff_base: 2
   image_max_size: 1024   # Higher res for handwriting legibility
 
-# --- Step 2: Page Classification ---
-classification:
-  prompt: |
-    You are an expert at classifying pages from Indian UPSC civil services exam answer sheets.
-
-    Classify this page image into EXACTLY ONE of these categories:
-    - "cover" — Cover page with candidate name, registration number, test code, or exam instructions
-    - "evaluation" — Evaluation/marks sheet with examiner markings, scores grid, or official stamps
-    - "answer" — A page that starts a NEW answer to a question (has a printed question or clearly begins a new answer)
-    - "continuation" — A page that continues an answer from the previous page (no new question header, writing continues from previous page)
-    - "blank" — Empty page or page with only margin text/instructions, no handwritten content
-
-    Rules:
-    - If the page has a printed question number (e.g., Q.1, Q.2) followed by handwritten answer text, classify as "answer"
-    - If the page has only handwritten text continuing from a previous page with no new question header, classify as "continuation"
-    - If you see evaluation marks, scoring grids, or examiner signatures, classify as "evaluation"
-    - If the page is mostly empty with only pre-printed instructions, classify as "blank"
-
-    Respond with ONLY the category word, nothing else. No explanation, no quotes.
-
-# --- Step 3: OCR Transcription (Vision Model Only) ---
+# --- Step 2: OCR Transcription (Vision Model Only) ---
 transcription:
   prompt: |
     You are an expert OCR assistant specializing in Indian civil services (UPSC) exam answer sheets.
@@ -73,6 +53,28 @@ transcription:
     ### Diagrams
     ### Additional Elements
     ### Confidence Notes
+
+# --- Step 3: Page Classification (Text-Based) ---
+classification:
+  prompt: |
+    You are an expert at classifying pages from Indian UPSC civil services exam answer sheets.
+    You will receive the OCR-transcribed text from a page.
+
+    Classify this page into EXACTLY ONE of these categories:
+    - "cover" — Cover page with candidate name, registration number, test code, or exam instructions
+    - "evaluation" — Evaluation/marks sheet with examiner markings, scores grid, or official stamps
+    - "answer" — A page that starts a NEW answer to a question (has a printed question or clearly begins a new answer)
+    - "continuation" — A page that continues an answer from the previous page (no new question header, writing continues)
+    - "blank" — Empty page or page with only margin text/instructions, no substantive content
+
+    Rules:
+    - If the text contains a printed question number (e.g., Q.1, Q.2) followed by answer text, classify as "answer"
+    - If the text has only answer content continuing from a previous page with no new question header, classify as "continuation"
+    - If you see evaluation marks, scoring grids, or examiner notes, classify as "evaluation"
+    - If the text is mostly empty or only contains pre-printed instructions, classify as "blank"
+    - If you see candidate name, roll number, or test/paper codes, classify as "cover"
+
+    Respond with ONLY the category word, nothing else. No explanation, no quotes.
 
 # --- Step 4: Answer Segmentation ---
 segmentation:

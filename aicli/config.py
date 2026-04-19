@@ -53,7 +53,18 @@ def resolve_dynamic_model(preferred_string: str = None) -> str:
             if model_to_load:
                 load_url = config.lm_studio_base_url[:base_idx] + "/api/v1/models/load"
                 
-                payload = json.dumps({"model": model_to_load}).encode('utf-8')
+                payload_dict = {"model": model_to_load}
+                
+                # Apply optimized settings for large MoE models
+                if "26b" in model_to_load.lower() or "a4b" in model_to_load.lower():
+                    payload_dict.update({
+                        "context_length": 78077,
+                        "eval_batch_size": 512,
+                        "parallel": 4,
+                        "num_experts": 8,
+                    })
+                
+                payload = json.dumps(payload_dict).encode('utf-8')
                 load_req = urllib.request.Request(
                     load_url, 
                     data=payload, 
