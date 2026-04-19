@@ -208,6 +208,13 @@
                   </div>
                   
                   <div v-if="runConfig.mode === 'custom'" class="steps-list">
+                    <div 
+                      v-for="step in pipelineSteps" 
+                      :key="step.id" 
+                      class="step-row"
+                      :class="[selectedPdf.progress ? selectedPdf.progress[step.id] : '', { disabled: pipelineRunning }]"
+                      @click="!pipelineRunning && toggleStep(step.id)"
+                    >
                       <input type="checkbox" :checked="runConfig.target_steps.includes(step.id)" @click.stop :disabled="pipelineRunning" />
                       <span class="step-name">{{ step.id }}: {{ step.fullname }}</span>
                       
