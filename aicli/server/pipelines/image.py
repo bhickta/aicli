@@ -1,97 +1,35 @@
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich.table import Table
 
 from aicli.providers.lm_studio import LMStudioProvider
 from aicli.services.image_renamer import ImageRenamerService
 from aicli.cli.tui import print_header, print_success, print_error, confirm_action, console
+from aicli.server.services.image_pipeline_service import ImagePipelineService
+
 
 def _fetch_suggestion(img_path: Path, service: ImageRenamerService, trash_junk: bool = False) -> tuple[Path, str, Exception]:
-    """Helper to be run in a separate thread. Just fetches the name."""
     try:
         suggested_name = service.generate_new_name(str(img_path), trash_junk=trash_junk)
-        if not suggested_name:
-            return img_path, None, ValueError("AI did not return a valid name.")
+        if not suggested_name: return img_path, None, ValueError("AI did not return a valid name.")
         return img_path, suggested_name, None
-    except Exception as e:
-        return img_path, None, e
-
-def _sync_file_references(working_dir: Path, old_name: str, new_name: str):
-    """Scans all .md and .json files in the directory and replaces occurrences of old_name with new_name."""
-    if not working_dir or not working_dir.is_dir():
-        return
-        
-    extensions = {".md", ".json"}
-    for file_path in working_dir.iterdir():
-        if file_path.is_file() and file_path.suffix.lower() in extensions:
-            try:
-                content = file_path.read_text(encoding="utf-8")
-                if old_name in content:
-                    new_content = content.replace(old_name, new_name)
-                    file_path.write_text(new_content, encoding="utf-8")
-                    console.print(f"[dim]Synced references in {file_path.name}[/dim]")
-            except Exception as e:
-                console.print(f"[yellow]Failed to sync refs in {file_path.name}: {e}[/yellow]")
+    except Exception as e: return img_path, None, e
 
 def _apply_rename_safe(img_path: Path, suggested_name: str, service: ImageRenamerService, sync_refs: bool = False, working_dir: Path = None) -> str:
-    """Renames file silently and prints error if fails. Returns the new path if successful."""
     try:
         new_path_str = service.apply_rename(str(img_path), suggested_name)
         if new_path_str and sync_refs and working_dir:
-            _sync_file_references(working_dir, img_path.name, Path(new_path_str).name)
+            ImagePipelineService.sync_file_references(working_dir, img_path.name, Path(new_path_str).name)
         return new_path_str
     except Exception as e:
         console.print(f"[red]Failed to rename {img_path.name}: {str(e)}[/red]")
         return ""
 
-
-def _apply_trash_safe(img_path: Path, sync_refs: bool = False, working_dir: Path = None) -> str:
-    """Moves the image to a .trash folder and removes all file references if requested."""
-    try:
-        trash_dir = img_path.parent / ".trash"
-        trash_dir.mkdir(exist_ok=True)
-        new_path = trash_dir / img_path.name
-        
-        counter = 1
-        while new_path.exists():
-            new_path = trash_dir / f"{img_path.stem}-{counter}{img_path.suffix}"
-            counter += 1
-            
-        import shutil
-        shutil.move(str(img_path), str(new_path))
-        
-        if sync_refs and working_dir:
-            import re
-            extensions = {".md", ".json"}
-            for file_path in working_dir.iterdir():
-                if file_path.is_file() and file_path.suffix.lower() in extensions:
-                    try:
-                        content = file_path.read_text(encoding="utf-8")
-                        if img_path.name in content:
-                            new_content = re.sub(rf'!\[.*?\]\({re.escape(img_path.name)}\)\n?', '', content)
-                            new_content = re.sub(rf'<<{re.escape(img_path.name)}>>\n?', '', new_content)
-                            new_content = new_content.replace(img_path.name, "")
-                            file_path.write_text(new_content, encoding="utf-8")
-                            console.print(f"[dim]Removed trash references from {file_path.name}[/dim]")
-                    except Exception:
-                        pass
-        return str(new_path)
-    except Exception as e:
-        console.print(f"[red]Failed to move {img_path.name} to trash: {str(e)}[/red]")
-        return ""
-
 def _process_single_image(image_path: Path, service: ImageRenamerService, auto_rename: bool, sync_refs: bool, trash_junk: bool):
-    """Processes a single image sequentially."""
     print_header(f"Inspecting {image_path.name}")
-    suggested_name = None
-    
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        transient=True,
-        console=console
-    ) as progress:
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True, console=console) as progress:
         progress.add_task(description="Asking LM Studio for a name...", total=None)
         _, suggested_name, err = _fetch_suggestion(image_path, service, trash_junk=trash_junk)
             
@@ -101,425 +39,165 @@ def _process_single_image(image_path: Path, service: ImageRenamerService, auto_r
         
     if suggested_name == "TRASH":
         console.print(f"[bold dark_orange]AI flagged {image_path.name} as JUNK.[/bold dark_orange]")
-        if not auto_rename:
-            if not confirm_action(f"Do you want to throw [cyan]{image_path.name}[/cyan] into the `.trash` folder?"):
-                console.print("[yellow]Trash cancelled by user.[/yellow]\n")
-                return
-        _apply_trash_safe(image_path, sync_refs=sync_refs, working_dir=image_path.parent)
-        print_success(f"File moved to .trash!\n")
+        if not auto_rename and not confirm_action(f"Trash [cyan]{image_path.name}[/cyan] into `.trash`?"): return
+        ImagePipelineService.apply_trash_safe(image_path, sync_refs=sync_refs, working_dir=image_path.parent)
+        print_success("File moved to .trash!\n")
         return
         
     full_new_name = f"{suggested_name}{image_path.suffix}"
     console.print(f"AI suggested name: [bold yellow]{full_new_name}[/bold yellow]")
     
-    if not auto_rename:
-        if not confirm_action(f"Do you want to rename [cyan]{image_path.name}[/cyan] to [green]{full_new_name}[/green]?"):
-            console.print("[yellow]Rename cancelled by user.[/yellow]\n")
-            return
+    if not auto_rename and not confirm_action(f"Rename [cyan]{image_path.name}[/cyan] to [green]{full_new_name}[/green]?"): return
 
     try:
         new_path = service.apply_rename(str(image_path), suggested_name)
-        if sync_refs:
-            _sync_file_references(image_path.parent, image_path.name, Path(new_path).name)
+        if sync_refs: ImagePipelineService.sync_file_references(image_path.parent, image_path.name, Path(new_path).name)
         print_success(f"File successfully renamed to: [bold underline]{Path(new_path).name}[/bold underline]\n")
     except Exception as e:
         print_error(f"Failed to rename file {image_path.name}", e)
 
 
-def rename_image(
-    target_path: Path,
-    auto_rename: bool = False,
-    workers: int = 4,
-    sync_refs: bool = False,
-    trash_junk: bool = False
-):
-    """
-    Uses LM Studio Vision to scan an image (or a folder of images) and intelligently rename them.
-    Can use multiple parallel workers to speed up directory processing.
-    """
+def rename_image(target_path: Path, auto_rename: bool = False, workers: int = 4, sync_refs: bool = False, trash_junk: bool = False):
     try:
-        provider = LMStudioProvider()
-        service = ImageRenamerService(provider)
-    except Exception as e:
-        print_error("Failed to initialize AI Provider", e)
-        return
+        service = ImageRenamerService(LMStudioProvider())
+    except Exception as e: return print_error("Failed to initialize AI Provider", e)
 
-    if target_path.is_file():
-        _process_single_image(target_path, service, auto_rename, sync_refs, trash_junk)
-        return
+    if target_path.is_file(): return _process_single_image(target_path, service, auto_rename, sync_refs, trash_junk)
 
-    # Directory processing via ThreadPool
     console.print(f"[bold cyan]Scanning directory {target_path} for images...[/bold cyan]")
-    valid_extensions = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-    images = [p for p in target_path.iterdir() if p.is_file() and p.suffix.lower() in valid_extensions]
-    
-    if not images:
-        console.print("[yellow]No supported images found in the directory.[/yellow]")
-        return
+    images = [p for p in target_path.iterdir() if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".gif"}]
+    if not images: return console.print("[yellow]No supported images found in the directory.[/yellow]")
         
     console.print(f"[bold green]Found {len(images)} images to process using {workers} parallel workers.[/bold green]\n")
-    
-    # Store results: list of dicts
     results = []
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        console=console
-    ) as progress:
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), TaskProgressColumn(), console=console) as progress:
         task_id = progress.add_task(f"Inspecting via LM Studio...", total=len(images))
-        
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = [executor.submit(_fetch_suggestion, img, service, trash_junk) for img in images]
-            
             for future in as_completed(futures):
                 img_path, suggested_name, err = future.result()
-                
-                if err:
-                    progress.console.print(f"[{img_path.name}] [red]API Error: {str(err)}[/red]")
+                if err: progress.console.print(f"[{img_path.name}] [red]API Error: {str(err)}[/red]")
                 elif suggested_name == "TRASH":
                     if auto_rename:
-                        _apply_trash_safe(img_path, sync_refs=sync_refs, working_dir=target_path)
+                        ImagePipelineService.apply_trash_safe(img_path, sync_refs=sync_refs, working_dir=target_path)
                         progress.console.print(f"[dark_orange]🗑 Moved to trash: {img_path.name}[/dark_orange]")
-                    else:
-                        progress.console.print(f"[dark_orange]🏷 Flagged as junk: {img_path.name}[/dark_orange]")
+                    else: progress.console.print(f"[dark_orange]🏷 Flagged as junk: {img_path.name}[/dark_orange]")
                 elif suggested_name:
-                    # If auto rename is checked, we rename it immediately right now
                     if auto_rename:
                         new_path = _apply_rename_safe(img_path, suggested_name, service, sync_refs=sync_refs, working_dir=target_path)
-                        if new_path:
-                            progress.console.print(f"[green]✔ Renamed: {img_path.name} → {Path(new_path).name}[/green]")
-                    else:
-                        progress.console.print(f"[blue]✨ Evaluated: {img_path.name} → {suggested_name}{img_path.suffix}[/blue]")
+                        if new_path: progress.console.print(f"[green]✔ Renamed: {img_path.name} → {Path(new_path).name}[/green]")
+                    else: progress.console.print(f"[blue]✨ Evaluated: {img_path.name} → {suggested_name}{img_path.suffix}[/blue]")
                 
                 results.append((img_path, suggested_name, err))
                 progress.advance(task_id)
 
-    # Calculate summaries
     successful = [r for r in results if not r[2]]
     failures = [r for r in results if r[2]]
 
-    if failures:
-        console.print(f"[bold red]Failed to process {len(failures)} images based on API errors.[/bold red]")
+    if failures: console.print(f"[bold red]Failed to process {len(failures)} images based on API errors.[/bold red]")
+    if auto_rename: return print_success(f"Successfully auto-renamed {len(successful)} images!")
+    if not successful: return console.print("[yellow]No valid suggestions generated to be renamed.[/yellow]")
 
-    # If --auto was enabled, we're basically done!
-    if auto_rename:
-        print_success(f"Successfully auto-renamed {len(successful)} images!")
-        return
-
-    # If --auto is NOT enabled, we must ask the user for confirmation bulk style
-    if not successful:
-        console.print("[yellow]No valid suggestions generated to be renamed.[/yellow]")
-        return
-
-    # Draw table
     table = Table(title="AI Rename Suggestions", show_lines=True)
     table.add_column("Original Filename", style="cyan", no_wrap=True)
     table.add_column("Suggested Rename", style="green")
-
-    for img_path, suggested_name, err in successful:
-        table.add_row(img_path.name, f"{suggested_name}{img_path.suffix}")
+    for img_path, suggested_name, err in successful: table.add_row(img_path.name, f"{suggested_name}{img_path.suffix}")
 
     console.print(table)
-    console.print(f"\n[bold green]Ready to apply {len(successful)} renames![/bold green]")
-    
     if confirm_action("Do you want to apply all these renames bulk?"):
         for img_path, suggested_name, _ in successful:
-            if suggested_name == "TRASH":
-                _apply_trash_safe(img_path, sync_refs=sync_refs, working_dir=target_path)
-            else:
-                _apply_rename_safe(img_path, suggested_name, service, sync_refs=sync_refs, working_dir=target_path)
+            if suggested_name == "TRASH": ImagePipelineService.apply_trash_safe(img_path, sync_refs=sync_refs, working_dir=target_path)
+            else: _apply_rename_safe(img_path, suggested_name, service, sync_refs=sync_refs, working_dir=target_path)
         print_success("Bulk operation complete!")
-    else:
-        console.print("[yellow]Action cancelled. No files were renamed.[/yellow]")
 
-    return
 
 def _fetch_junk_status(img_path: Path, service: ImageRenamerService, strict: bool = False) -> tuple[Path, bool, Exception]:
-    """Helper to be run in a separate thread. Just fetches the junk boolean."""
-    try:
-        is_junk = service.identify_junk(str(img_path), strict=strict)
-        return img_path, is_junk, None
-    except Exception as e:
-        return img_path, False, e
+    try: return img_path, service.identify_junk(str(img_path), strict=strict), None
+    except Exception as e: return img_path, False, e
 
-def clean_images(
-    target_path: Path,
-    auto_trash: bool = False,
-    strict: bool = False,
-    sync_refs: bool = False,
-    workers: int = 4
-):
-    """
-    Scans a directory using AI. Throws any cosmetic icons, logos, or useless graphics into a .trash folder. Leaves useful images completely untouched.
-    """
-    try:
-        provider = LMStudioProvider()
-        service = ImageRenamerService(provider)
-    except Exception as e:
-        print_error("Failed to initialize AI Provider", e)
-        return
+def clean_images(target_path: Path, auto_trash: bool = False, strict: bool = False, sync_refs: bool = False, workers: int = 4):
+    try: service = ImageRenamerService(LMStudioProvider())
+    except Exception as e: return print_error("Failed to initialize AI Provider", e)
         
     console.print(f"[bold cyan]Scanning directory {target_path} for junk images...[/bold cyan]")
-    valid_extensions = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-    images = [p for p in target_path.iterdir() if p.is_file() and p.suffix.lower() in valid_extensions]
-    
-    if not images:
-        console.print("[yellow]No supported images found in the directory.[/yellow]")
-        return
+    images = [p for p in target_path.iterdir() if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".gif"}]
+    if not images: return console.print("[yellow]No supported images found.[/yellow]")
         
-    console.print(f"[bold green]Scanning {len(images)} images rapidly using {workers} parallel workers.[/bold green]\n")
-    
     results = []
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        console=console
-    ) as progress:
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), TaskProgressColumn(), console=console) as progress:
         task_id = progress.add_task("Inspecting via LM Studio...", total=len(images))
-        
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = [executor.submit(_fetch_junk_status, img, service, strict) for img in images]
-            
-            for future in as_completed(futures):
+            for future in as_completed([executor.submit(_fetch_junk_status, img, service, strict) for img in images]):
                 img_path, is_junk, err = future.result()
-                
-                if err:
-                    progress.console.print(f"[{img_path.name}] [red]API Error: {str(err)}[/red]")
+                if err: progress.console.print(f"[{img_path.name}] [red]API Error: {str(err)}[/red]")
                 elif is_junk:
                     if auto_trash:
-                        _apply_trash_safe(img_path, sync_refs=sync_refs, working_dir=target_path)
+                        ImagePipelineService.apply_trash_safe(img_path, sync_refs=sync_refs, working_dir=target_path)
                         progress.console.print(f"[dark_orange]🗑 Moved to trash: {img_path.name}[/dark_orange]")
-                    else:
-                        progress.console.print(f"[dark_orange]🏷 Flagged as junk: {img_path.name}[/dark_orange]")
-                else:
-                    progress.console.print(f"[dim]✓ Keep: {img_path.name}[/dim]")
-                
+                    else: progress.console.print(f"[dark_orange]🏷 Flagged as junk: {img_path.name}[/dark_orange]")
+                else: progress.console.print(f"[dim]✓ Keep: {img_path.name}[/dim]")
                 results.append((img_path, is_junk, err))
                 progress.advance(task_id)
 
     junk_items = [r for r in results if r[1] and not r[2]]
-    failures = [r for r in results if r[2]]
+    if not junk_items: return print_success("No junk images detected in this directory!")
+    if auto_trash: return print_success(f"Successfully cleaned up {len(junk_items)} junk images!")
 
-    if failures:
-        console.print(f"[bold red]Failed to process {len(failures)} images based on API errors.[/bold red]")
-
-    if not junk_items:
-        print_success("No junk images detected in this directory!")
-        return
-
-    if auto_trash:
-        print_success(f"Successfully cleaned up {len(junk_items)} junk images!")
-        return
-
-    # Manual confirmation flow
     console.print(f"\n[bold yellow]Found {len(junk_items)} purely cosmetic/useless images.[/bold yellow]")
-    if confirm_action("Do you want to move all flagged images to .trash bulk?"):
-        for img_path, _, _ in junk_items:
-            _apply_trash_safe(img_path, sync_refs=sync_refs, working_dir=target_path)
+    if confirm_action("Move all flagged images to .trash bulk?"):
+        for img_path, _, _ in junk_items: ImagePipelineService.apply_trash_safe(img_path, sync_refs=sync_refs, working_dir=target_path)
         print_success("Bulk wipe complete!")
-    else:
-        console.print("[yellow]Action cancelled. No files were trashed.[/yellow]")
-    return
 
-def _apply_digitize_safe(img_path: Path, markdown_text: str, sync_refs: bool = False, working_dir: Path = None) -> str:
-    """Moves the image to .trash/converted/ and replaces file references with text."""
-    try:
-        trash_dir = img_path.parent / ".trash" / "converted"
-        trash_dir.mkdir(parents=True, exist_ok=True)
-        new_path = trash_dir / img_path.name
-        
-        counter = 1
-        while new_path.exists():
-            new_path = trash_dir / f"{img_path.stem}-{counter}{img_path.suffix}"
-            counter += 1
-            
-        import shutil
-        shutil.move(str(img_path), str(new_path))
-        
-        if sync_refs and working_dir:
-            import re
-            extensions = {".md", ".json"}
-            for file_path in working_dir.iterdir():
-                if file_path.is_file() and file_path.suffix.lower() in extensions:
-                    try:
-                        content = file_path.read_text(encoding="utf-8")
-                        if img_path.name in content:
-                            # Replace markdown image ![](_page...) or <<_page...>> with \n{markdown_text}\n
-                            new_content = re.sub(rf'!\[.*?\]\({re.escape(img_path.name)}\)\n?', f"\n{markdown_text}\n\n", content)
-                            new_content = re.sub(rf'<<{re.escape(img_path.name)}>>\n?', f"\n{markdown_text}\n\n", new_content)
-                            if img_path.name in new_content:
-                                new_content = new_content.replace(img_path.name, markdown_text)
-                            file_path.write_text(new_content, encoding="utf-8")
-                            console.print(f"[dim]Injected Markdown into {file_path.name}[/dim]")
-                    except Exception:
-                        pass
-        return str(new_path)
-    except Exception as e:
-        console.print(f"[red]Failed to digitize {img_path.name}: {str(e)}[/red]")
-        return ""
 
 def _fetch_ocr_text(img_path: Path, service: ImageRenamerService) -> tuple[Path, str, Exception]:
-    """Helper to fetch transcription from the model."""
-    try:
-        text_out = service.convert_to_markdown(str(img_path))
-        return img_path, text_out, None
-    except Exception as e:
-        return img_path, "", e
+    try: return img_path, service.convert_to_markdown(str(img_path)), None
+    except Exception as e: return img_path, "", e
 
-def digitize_images(
-    target_path: Path,
-    auto_replace: bool = False,
-    sync_refs: bool = False,
-    workers: int = 2
-):
-    """
-    Intelligently extracts completely text-based images into Markdown data, deleting the original screenshot.
-    """
-    try:
-        provider = LMStudioProvider()
-        service = ImageRenamerService(provider)
-    except Exception as e:
-        print_error("Failed to initialize AI Provider", e)
-        return
+def digitize_images(target_path: Path, auto_replace: bool = False, sync_refs: bool = False, workers: int = 2):
+    try: service = ImageRenamerService(LMStudioProvider())
+    except Exception as e: return print_error("Failed to initialize AI Provider", e)
         
     console.print(f"[bold cyan]Scanning directory {target_path} for text images...[/bold cyan]")
-    valid_extensions = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-    images = [p for p in target_path.iterdir() if p.is_file() and p.suffix.lower() in valid_extensions]
-    
-    if not images:
-        console.print("[yellow]No supported images found in the directory.[/yellow]")
-        return
+    images = [p for p in target_path.iterdir() if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".gif"}]
+    if not images: return console.print("[yellow]No supported images found.[/yellow]")
         
-    console.print(f"[bold green]Generating Markdown for {len(images)} images using {workers} parallel workers.[/bold green]\n")
-    
     results = []
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        console=console
-    ) as progress:
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), TaskProgressColumn(), console=console) as progress:
         task_id = progress.add_task("Inspecting via LM Studio...", total=len(images))
-        
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = [executor.submit(_fetch_ocr_text, img, service) for img in images]
-            
-            for future in as_completed(futures):
+            for future in as_completed([executor.submit(_fetch_ocr_text, img, service) for img in images]):
                 img_path, raw_text, err = future.result()
-                
                 is_text = False
                 clean_markdown = ""
                 
-                if err:
-                    progress.console.print(f"[{img_path.name}] [red]API Error: {str(err)}[/red]")
-                elif raw_text == "KEEP":
-                    progress.console.print(f"[dim]✓ Keep as Graphic: {img_path.name}[/dim]")
+                if err: progress.console.print(f"[{img_path.name}] [red]API Error: {str(err)}[/red]")
+                elif raw_text == "KEEP": progress.console.print(f"[dim]✓ Keep as Graphic: {img_path.name}[/dim]")
                 else: 
-                    # If it didn't explicitly say KEEP, see if it prefixed TEXT:
                     clean_markdown = raw_text
                     if clean_markdown.upper().startswith("TEXT:"):
                         clean_markdown = clean_markdown[5:].strip()
                         is_text = True
-                    # Model fallback handling: if it just started generating markdown anyway
-                    elif len(clean_markdown) > 10:
-                        is_text = True
+                    elif len(clean_markdown) > 10: is_text = True
                         
                     if is_text:
                         if auto_replace:
-                            _apply_digitize_safe(img_path, clean_markdown, sync_refs=sync_refs, working_dir=target_path)
+                            ImagePipelineService.apply_digitize_safe(img_path, clean_markdown, sync_refs=sync_refs, working_dir=target_path)
                             progress.console.print(f"[bold magenta]✍ Injected markdown for: {img_path.name}[/bold magenta]")
-                        else:
-                            progress.console.print(f"[bold magenta]📝 Scanned markdown for: {img_path.name} ({len(clean_markdown)} chars)[/bold magenta]")
+                        else: progress.console.print(f"[bold magenta]📝 Scanned markdown for: {img_path.name} ({len(clean_markdown)} chars)[/bold magenta]")
 
                 results.append((img_path, is_text, clean_markdown, err))
                 progress.advance(task_id)
 
     ocr_items = [r for r in results if r[1] and not r[3]]
-    failures = [r for r in results if r[3]]
+    if not ocr_items: return print_success("No pure text images suitable for conversion detected!")
+    if auto_replace: return print_success(f"Successfully digitized and replaced {len(ocr_items)} images!")
 
-    if failures:
-        console.print(f"[bold red]Failed to process {len(failures)} images based on API errors.[/bold red]")
-
-    if not ocr_items:
-        print_success("No pure text images suitable for conversion detected!")
-        return
-
-    if auto_replace:
-        print_success(f"Successfully digitized and replaced {len(ocr_items)} images!")
-        return
-
-    # Manual confirmation flow
     console.print(f"\n[bold yellow]Found {len(ocr_items)} text-heavy images capable of being fully digitized.[/bold yellow]")
     if confirm_action("Do you want to convert these to text and delete the images?"):
-        for img_path, _, markdown, _ in ocr_items:
-            _apply_digitize_safe(img_path, markdown, sync_refs=sync_refs, working_dir=target_path)
+        for img_path, _, markdown, _ in ocr_items: ImagePipelineService.apply_digitize_safe(img_path, markdown, sync_refs=sync_refs, working_dir=target_path)
         print_success("Bulk conversion complete!")
-    else:
-        console.print("[yellow]Action cancelled. No text was injected.[/yellow]")
-    return
+
 
 def prune_refs(target_path: Path):
-    """
-    Rapidly scans .md and .json files to strip out image references to files that no longer exist on disk.
-    """
-    console.print(f"[bold cyan]Scanning directory {target_path} for broken links...[/bold cyan]")
-    
-    import re
-    extensions = {".md", ".json"}
-    target_files = [p for p in target_path.iterdir() if p.is_file() and p.suffix.lower() in extensions]
-    
-    if not target_files:
-        console.print("[yellow]No .md or .json files found in the directory.[/yellow]")
-        return
-        
-    broken_links_removed = 0
-    modified_files = 0
-    
-    # Regex to find ![alt](filename.ext) OR <<filename.ext>>
-    pattern = re.compile(r'!\[.*?\]\(([^)]+\.(?:jpg|jpeg|png|webp|gif|svg))\)|<<([^>]+\.(?:jpg|jpeg|png|webp|gif|svg))>>', re.IGNORECASE)
-    
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console
-    ) as progress:
-        progress.add_task("Sweeping for broken references...", total=None)
-        
-        for file_path in target_files:
-            try:
-                original_content = file_path.read_text(encoding="utf-8")
-                
-                def replacer(match):
-                    nonlocal broken_links_removed
-                    # Extract whichever group matched
-                    img_name = match.group(1) or match.group(2)
-                    if not img_name:
-                        return match.group(0)
-                        
-                    img_name = img_name.strip()
-                    
-                    # If it DOES NOT exist physically in the root folder, kill the link
-                    if not (target_path / img_name).exists():
-                        broken_links_removed += 1
-                        return ""
-                    return match.group(0)
-                    
-                new_content = pattern.sub(replacer, original_content)
-                
-                if new_content != original_content:
-                    file_path.write_text(new_content, encoding="utf-8")
-                    modified_files += 1
-                    console.print(f"[dim]Cleaned broken links in {file_path.name}[/dim]")
-            except Exception as e:
-                console.print(f"[red]Failed to process {file_path.name}: {e}[/red]")
-            
-    print_success(f"Removed {broken_links_removed} broken references across {modified_files} files!")
-    return
+    ImagePipelineService.prune_refs(target_path)

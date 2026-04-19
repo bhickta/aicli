@@ -132,3 +132,20 @@ class MergeService:
                 current_offset += timedelta(seconds=dur_sec)
 
         return True
+
+    @staticmethod
+    def embed_srt_natively(video_path: Path, srt_path: Path, output_path: Path) -> bool:
+        """Native FFmpeg hard muxing of SRT directly into output container."""
+        cmd = [
+            "ffmpeg", "-y", "-v", "quiet",
+            "-i", str(video_path),
+            "-i", str(srt_path),
+            "-map", "0:v:0", "-map", "0:a?", "-map", "1:s:0",
+            "-c", "copy", "-c:s", "mov_text",
+            str(output_path)
+        ]
+        res = subprocess.run(cmd, capture_output=True)
+        if output_path.exists():
+            video_path.unlink(missing_ok=True)
+            return True
+        return False
