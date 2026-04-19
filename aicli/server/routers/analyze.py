@@ -153,7 +153,6 @@ def run_pipeline(
     try:
         analyze_orch.dispatch(
             _analyze_worker,
-            orch=analyze_orch,
             service=service,
             req=req
         )
