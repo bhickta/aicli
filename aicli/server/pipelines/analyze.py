@@ -207,7 +207,7 @@ def _run_full_pipeline(
             if unclassified:
                 with _make_progress() as progress:
                     task = progress.add_task("Classifying pages...", total=len(unclassified))
-                    classifier.classify_all(db, progress, task, allow_reasoning=_step_think(3))
+                    classifier.classify_batch(db, workers, progress, task, allow_reasoning=_step_think(3))
             else:
                 console.print("[dim]Step 3: No unclassified pages. Skipping.[/dim]")
 
@@ -221,9 +221,9 @@ def _run_full_pipeline(
         if target_page_id:
             page = db.get_page(target_page_id)
             if page:
-                pdf_path = Path(data_dir / page["pdf_file"])
-                segmenter.segment_pdf(pdf_path, db, allow_reasoning=_step_think(4))
-                print_success(f"Segmented {pdf_path.name}")
+                pdf_filename = page["pdf_file"]
+                segmenter.segment_pdf(pdf_filename, db, allow_reasoning=_step_think(4))
+                print_success(f"Segmented {pdf_filename}")
         else:
             unsegmented = db.get_unsegmented_pdfs()
             if unsegmented:

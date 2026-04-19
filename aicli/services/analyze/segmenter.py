@@ -18,7 +18,7 @@ class AnswerSegmenterService:
         self.provider = provider
         self.config = config
 
-    def segment_pdf(self, pdf_file: str, db: AnalyzeDB) -> int:
+    def segment_pdf(self, pdf_file: str, db: AnalyzeDB, allow_reasoning: bool = True) -> int:
         """Segment all pages of a PDF into answer units.
 
         Args:
