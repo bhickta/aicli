@@ -110,6 +110,13 @@ class BaseOrchestrator:
                 if event.get("type") == "status" and event.get("status") in ("completed", "error"):
                     break
             except queue.Empty:
+                # If we've just connected and the orchestrator isn't running yet,
+                # wait a bit before giving up, as the 'run' POST might be arriving.
                 if not self.is_running:
-                    break
+                    # Small grace period (e.g. 5 seconds) could be handled with a counter
+                    # but for now, we'll just check if it's been empty for a while.
+                    # As a simpler fix: don't break immediately if we've just started.
+                    await asyncio.sleep(1.0)
+                    if not self.is_running:
+                        break
                 await asyncio.sleep(0.5)

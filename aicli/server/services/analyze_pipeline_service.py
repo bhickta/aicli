@@ -57,6 +57,14 @@ class AnalyzePipelineService:
         """Execute the pipeline steps."""
         start_t = time.time()
         
+        self._log(log_callback, "🚀 [SYSTEM] Industrializing UPSC Analyze Pipeline...")
+        self._log(log_callback, f"⚙️ Config: model={llm_model}, workers={workers}, reasoning={allow_reasoning}")
+        
+        if target_steps:
+            self._log(log_callback, f"🎯 Targeted execution: Steps {target_steps}")
+        else:
+            self._log(log_callback, "🔄 Full end-to-end execution selected.")
+        
         # Helper to determine if a step should use "Deep Thinking"
         def should_think(step_id: int) -> bool:
             if not allow_reasoning:
