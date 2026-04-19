@@ -1,132 +1,101 @@
-import urllib.parse
+"""FastAPI router for Image pipelines (Rename, Clean, Digitize)."""
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import EventSourceResponse
-from pydantic import BaseModel
 
-from aicli.server.orchestrator.base import BaseOrchestrator, SSEProgressContext, ConsoleRedirect
+from aicli.server.orchestrator.base import BaseOrchestrator
+from aicli.server.orchestrator.console_patcher import ConsolePatcher
+from aicli.server.dependencies import ServerState
+from aicli.server.schemas.image_schemas import (
+    ImageRenameRequestDTO,
+    ImageCleanRequestDTO,
+    ImageDigitizeRequestDTO,
+)
 
 router = APIRouter()
-
-# Share ServerState
-from aicli.server.routers.analyze import ServerState
-
 image_orch = BaseOrchestrator()
 
-class ImageRenameRequest(BaseModel):
-    target_path: str
-    auto_rename: bool = False
-    workers: int = 4
-    sync_refs: bool = False
-    trash_junk: bool = False
 
-def _img_rename_worker(orch: BaseOrchestrator, req: ImageRenameRequest):
+# ── Workers ─────────────────────────────────────────────────────────
+
+def _img_rename_worker(orch: BaseOrchestrator, req: ImageRenameRequestDTO) -> None:
     import aicli.server.pipelines.image as img_mod
-    orig_console = getattr(img_mod, "console", None)
-    orig_print_success = getattr(img_mod, "print_success", None)
-    try:
-        img_mod.console = ConsoleRedirect(orch.queue)
-        img_mod.print_success = lambda msg: orch.queue.put({"type": "log", "message": f"[SUCCESS] {msg}"})
-        
-        target = Path(req.target_path)
-        if not target.is_absolute():
-            target = ServerState.data_dir / req.target_path
 
+    target = _resolve_path(req.target_path)
+    with ConsolePatcher(img_mod, orch.queue):
         img_mod.rename_image(
             target_path=target,
             auto_rename=req.auto_rename,
             workers=req.workers,
             sync_refs=req.sync_refs,
-            trash_junk=req.trash_junk
+            trash_junk=req.trash_junk,
         )
-    finally:
-        if orig_console: img_mod.console = orig_console
-        if orig_print_success: img_mod.print_success = orig_print_success
 
 
-@router.post("/rename")
-def run_img_rename(req: ImageRenameRequest):
-    try:
-        image_orch.dispatch(_img_rename_worker, req=req)
-        return {"ok": True, "message": "Image Rename Pipeline started"}
-    except RuntimeError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-
-@router.get("/stream")
-async def stream_image():
-    return EventSourceResponse(image_orch.stream_events())
-
-class ImageCleanRequest(BaseModel):
-    target_path: str
-    auto_trash: bool = False
-    strict: bool = False
-    sync_refs: bool = False
-    workers: int = 4
-
-def _img_clean_worker(orch: BaseOrchestrator, req: ImageCleanRequest):
+def _img_clean_worker(orch: BaseOrchestrator, req: ImageCleanRequestDTO) -> None:
     import aicli.server.pipelines.image as img_mod
-    orig_console = getattr(img_mod, "console", None)
-    orig_print_success = getattr(img_mod, "print_success", None)
-    try:
-        img_mod.console = ConsoleRedirect(orch.queue)
-        img_mod.print_success = lambda msg: orch.queue.put({"type": "log", "message": f"[SUCCESS] {msg}"})
-        
-        target = Path(req.target_path)
-        if not target.is_absolute():
-            target = ServerState.data_dir / req.target_path
 
+    target = _resolve_path(req.target_path)
+    with ConsolePatcher(img_mod, orch.queue):
         img_mod.clean_images(
             target_path=target,
             auto_trash=req.auto_trash,
             strict=req.strict,
             sync_refs=req.sync_refs,
-            workers=req.workers
+            workers=req.workers,
         )
-    finally:
-        if orig_console: img_mod.console = orig_console
-        if orig_print_success: img_mod.print_success = orig_print_success
 
-@router.post("/clean")
-def run_img_clean(req: ImageCleanRequest):
-    try:
-        image_orch.dispatch(_img_clean_worker, req=req)
-        return {"ok": True, "message": "Image Cleaner Pipeline started"}
-    except RuntimeError as e:
-        raise HTTPException(status_code=409, detail=str(e))
 
-class ImageDigitizeRequest(BaseModel):
-    target_path: str
-    auto_replace: bool = False
-    sync_refs: bool = False
-    workers: int = 2
-
-def _img_digitize_worker(orch: BaseOrchestrator, req: ImageDigitizeRequest):
+def _img_digitize_worker(orch: BaseOrchestrator, req: ImageDigitizeRequestDTO) -> None:
     import aicli.server.pipelines.image as img_mod
-    orig_console = getattr(img_mod, "console", None)
-    orig_print_success = getattr(img_mod, "print_success", None)
-    try:
-        img_mod.console = ConsoleRedirect(orch.queue)
-        img_mod.print_success = lambda msg: orch.queue.put({"type": "log", "message": f"[SUCCESS] {msg}"})
-        
-        target = Path(req.target_path)
-        if not target.is_absolute():
-            target = ServerState.data_dir / req.target_path
 
+    target = _resolve_path(req.target_path)
+    with ConsolePatcher(img_mod, orch.queue):
         img_mod.digitize_images(
             target_path=target,
             auto_replace=req.auto_replace,
             sync_refs=req.sync_refs,
-            workers=req.workers
+            workers=req.workers,
         )
-    finally:
-        if orig_console: img_mod.console = orig_console
-        if orig_print_success: img_mod.print_success = orig_print_success
+
+
+# ── Endpoints ───────────────────────────────────────────────────────
+
+@router.post("/rename")
+def run_img_rename(req: ImageRenameRequestDTO):
+    return _dispatch(image_orch, _img_rename_worker, "Image Rename Pipeline", req=req)
+
+
+@router.post("/clean")
+def run_img_clean(req: ImageCleanRequestDTO):
+    return _dispatch(image_orch, _img_clean_worker, "Image Cleaner Pipeline", req=req)
+
 
 @router.post("/digitize")
-def run_img_digitize(req: ImageDigitizeRequest):
+def run_img_digitize(req: ImageDigitizeRequestDTO):
+    return _dispatch(image_orch, _img_digitize_worker, "Image Digitize Pipeline", req=req)
+
+
+@router.get("/stream")
+async def stream_image():
+    return EventSourceResponse(image_orch.stream_events())
+
+
+# ── Helpers ─────────────────────────────────────────────────────────
+
+def _resolve_path(raw_path: str) -> Path:
+    """Resolve a path, making relative paths relative to data_dir."""
+    target = Path(raw_path)
+    if not target.is_absolute():
+        target = ServerState.data_dir / raw_path
+    return target
+
+
+def _dispatch(orch: BaseOrchestrator, worker, pipeline_name: str, **kwargs):
+    """Common dispatch-and-respond pattern for all pipeline endpoints."""
     try:
-        image_orch.dispatch(_img_digitize_worker, req=req)
-        return {"ok": True, "message": "Image Digitize Pipeline started"}
+        orch.dispatch(worker, **kwargs)
+        return {"ok": True, "message": f"{pipeline_name} started"}
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))

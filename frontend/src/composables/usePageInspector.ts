@@ -1,17 +1,17 @@
-import { ref, computed } from 'vue'
+import { ref, computed, type Ref } from 'vue'
 
-export function usePageInspector(pages: any[]) {
+export function usePageInspector(pages: Ref<any[]>) {
   const inspectedPage = ref<any>(null)
   const inspectorTab = ref('transcribe')
 
   const isFirstPage = computed(() => {
-    if (!inspectedPage.value || !pages.length) return true
-    return pages[0].id === inspectedPage.value.id
+    if (!inspectedPage.value || !pages.value.length) return true
+    return pages.value[0].id === inspectedPage.value.id
   })
 
   const isLastPage = computed(() => {
-    if (!inspectedPage.value || !pages.length) return true
-    return pages[pages.length - 1].id === inspectedPage.value.id
+    if (!inspectedPage.value || !pages.value.length) return true
+    return pages.value[pages.value.length - 1].id === inspectedPage.value.id
   })
 
   function openPageInspector(page: any) {
@@ -25,14 +25,14 @@ export function usePageInspector(pages: any[]) {
 
   function nextPage() {
     if (!inspectedPage.value) return
-    const idx = pages.findIndex(p => p.id === inspectedPage.value.id)
-    if (idx < pages.length - 1) inspectedPage.value = pages[idx + 1]
+    const idx = pages.value.findIndex(p => p.id === inspectedPage.value.id)
+    if (idx < pages.value.length - 1) inspectedPage.value = pages.value[idx + 1]
   }
 
   function prevPage() {
     if (!inspectedPage.value) return
-    const idx = pages.findIndex(p => p.id === inspectedPage.value.id)
-    if (idx > 0) inspectedPage.value = pages[idx - 1]
+    const idx = pages.value.findIndex(p => p.id === inspectedPage.value.id)
+    if (idx > 0) inspectedPage.value = pages.value[idx - 1]
   }
 
   return {

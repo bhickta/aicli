@@ -55,46 +55,37 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref, onMounted, onUnmounted } from 'vue'
+import { API_BASE } from './constants/api.constants'
 import AnalyzeStudio from './components/AnalyzeStudio.vue'
 import VideoStudio from './components/VideoStudio.vue'
 import NewsStudio from './components/NewsStudio.vue'
 import ImageStudio from './components/ImageStudio.vue'
 import SettingsStudio from './components/SettingsStudio.vue'
 
-export default {
-  name: 'App',
-  components: {
-    AnalyzeStudio,
-    VideoStudio,
-    NewsStudio,
-    ImageStudio,
-    SettingsStudio
-  },
-  data() {
-    return {
-      workspace: 'analyze',
-      healthStatus: 'disconnected'
-    }
-  },
-  mounted() {
-    this.checkHealth()
-    setInterval(this.checkHealth, 30000)
-  },
-  methods: {
-    async checkHealth() {
-      try {
-        const res = await fetch('http://127.0.0.1:8765/api/health')
-        const data = await res.json()
-        if (data.status === 'ok') {
-          this.healthStatus = 'connected'
-        }
-      } catch (e) {
-        this.healthStatus = 'disconnected'
-      }
-    }
+const workspace = ref('analyze')
+const healthStatus = ref('disconnected')
+let healthInterval = null
+
+async function checkHealth() {
+  try {
+    const res = await fetch(`${API_BASE}/api/health`)
+    const data = await res.json()
+    healthStatus.value = data.status === 'ok' ? 'connected' : 'disconnected'
+  } catch {
+    healthStatus.value = 'disconnected'
   }
 }
+
+onMounted(() => {
+  checkHealth()
+  healthInterval = setInterval(checkHealth, 30000)
+})
+
+onUnmounted(() => {
+  if (healthInterval) clearInterval(healthInterval)
+})
 </script>
 
 <style>

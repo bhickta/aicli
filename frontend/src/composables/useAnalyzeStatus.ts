@@ -1,5 +1,5 @@
 import { ref, onMounted, onUnmounted } from 'vue'
-import { fetchStatus, fetchPdfs } from '../api.js'
+import { analyzeApi } from '../api/AnalyzeApiClient'
 
 export function useAnalyzeStatus() {
   const status = ref<any>(null)
@@ -9,7 +9,7 @@ export function useAnalyzeStatus() {
 
   async function refreshStatus() {
     try {
-      status.value = await fetchStatus()
+      status.value = await analyzeApi.fetchStatus()
     } catch (e: any) {
       console.warn('API not reachable:', e.message)
     }
@@ -17,7 +17,7 @@ export function useAnalyzeStatus() {
 
   async function loadPdfs() {
     try {
-      pdfs.value = await fetchPdfs()
+      pdfs.value = await analyzeApi.fetchPdfs()
     } catch (e) {
       pdfs.value = []
     }

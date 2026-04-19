@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { analyzeApi } from '../../api/AnalyzeApiClient';
+import { formatKey, formatValue } from '../../utils/format.utils';
 
 const props = defineProps<{
   page: any;
@@ -21,10 +23,7 @@ const emit = defineEmits<{
 }>();
 
 function getImageUrl(page: any) {
-  // Logic from AnalyzeStudio.vue
-  const paddedPage = String(page.page_number).padStart(4, '0');
-  const pdfName = page.pdf_file.replace(/\.pdf$/i, '');
-  return `http://localhost:8765/api/analyze/images/${encodeURIComponent(pdfName)}/page_${paddedPage}.png`;
+  return analyzeApi.imageUrl(page.pdf_file, page.page_number);
 }
 
 function getAnswersForPage(pageId: number) {
@@ -46,18 +45,6 @@ function badgeClass(classification: string) {
     blank: 'badge-blank',
   };
   return map[classification] || 'badge-pending';
-}
-
-function formatKey(key: string) {
-  return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-}
-
-function formatValue(value: any) {
-  if (value === null || value === undefined) return '—';
-  if (typeof value === 'boolean') return value ? '✓' : '✗';
-  if (Array.isArray(value)) return value.length ? value.join(', ') : '—';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
 }
 </script>
 

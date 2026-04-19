@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, watch } from 'vue';
+import { PIPELINE_STEPS, DEFAULT_STEP_REASONING } from '../../constants/pipeline.constants';
 
 const props = defineProps<{
   pipelineRunning: boolean;
@@ -22,20 +23,8 @@ const runConfig = ref({
   allow_reasoning: true,
   mode: 'all',
   target_steps: [] as number[],
-  stepReasoning: {
-    2: false, 3: false, 4: false, 5: true, 6: true, 7: true
-  } as Record<number, boolean>
+  stepReasoning: { ...DEFAULT_STEP_REASONING } as Record<number, boolean>
 });
-
-const pipelineSteps = [
-  { id: 1, name: 'Images', fullname: 'PDF → Page Images' },
-  { id: 2, name: 'OCR', fullname: 'OCR Transcription' },
-  { id: 3, name: 'Classify', fullname: 'Page Classification' },
-  { id: 4, name: 'Segment', fullname: 'Answer Segmentation' },
-  { id: 5, name: 'Analyze', fullname: 'Dimension Analysis' },
-  { id: 6, name: 'Aggregate', fullname: 'Cross-PDF Aggregation' },
-  { id: 7, name: 'Report', fullname: 'Report Generation' }
-];
 
 const terminalRef = ref<HTMLElement | null>(null);
 
@@ -117,7 +106,7 @@ watch(() => props.parsedLogs.length, () => {
           
           <div v-if="runConfig.mode === 'custom'" class="steps-list">
             <div 
-              v-for="step in pipelineSteps" 
+              v-for="step in PIPELINE_STEPS" 
               :key="step.id" 
               class="step-row"
               :class="[selectedPdf.progress ? selectedPdf.progress[step.id] : '', { disabled: pipelineRunning }]"

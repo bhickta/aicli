@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { PIPELINE_STEPS } from '../../constants/pipeline.constants';
+
 const props = defineProps<{
   selectedPdf: any;
   activeTab: string;
@@ -10,16 +12,6 @@ defineEmits<{
   'update:activeTab': [tab: string];
   'delete-pdf': [pdf: any];
 }>();
-
-const pipelineSteps = [
-  { id: 1, name: 'Images' },
-  { id: 2, name: 'OCR' },
-  { id: 3, name: 'Classify' },
-  { id: 4, name: 'Segment' },
-  { id: 5, name: 'Analyze' },
-  { id: 6, name: 'Aggregate' },
-  { id: 7, name: 'Report' }
-];
 </script>
 
 <template>
@@ -32,7 +24,7 @@ const pipelineSteps = [
     </div>
     
     <div class="pdf-status-strip" v-if="selectedPdf.progress">
-      <div v-for="step in pipelineSteps" :key="step.id" :class="['status-step', selectedPdf.progress[step.id]]">
+      <div v-for="step in PIPELINE_STEPS" :key="step.id" :class="['status-step', selectedPdf.progress[step.id]]">
         <div class="step-dot"></div>
         <span>{{ step.name }}</span>
       </div>

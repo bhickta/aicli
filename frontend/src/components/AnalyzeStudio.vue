@@ -3,16 +3,7 @@ import { ref, watch } from 'vue';
 import { useAnalyzeStatus } from '../composables/useAnalyzeStatus';
 import { useAnalyzePipeline } from '../composables/useAnalyzePipeline';
 import { usePageInspector } from '../composables/usePageInspector';
-import { 
-  fetchPages, 
-  fetchAnswers, 
-  fetchAggregations, 
-  fetchDimensions, 
-  retryErrors, 
-  resetPipeline,
-  deletePdf,
-  runPipeline 
-} from '../api.js';
+import { analyzeApi } from '../api/AnalyzeApiClient';
 
 import AnalyzeSidebar from './AnalyzeStudio/AnalyzeSidebar.vue';
 import AnalyzeBanner from './AnalyzeStudio/AnalyzeBanner.vue';
@@ -55,7 +46,7 @@ const {
   closePageInspector, 
   nextPage, 
   prevPage 
-} = usePageInspector(pages.value);
+} = usePageInspector(pages);
 
 // 4. Methods
 async function selectPdf(pdf: any) {
@@ -69,9 +60,9 @@ async function loadPdfData(pdf: any) {
   loading.value = true;
   try {
     const [p, a, agg] = await Promise.all([
-      fetchPages(pdf),
-      fetchAnswers(pdf),
-      fetchAggregations(),
+      analyzeApi.fetchPages(pdf),
+      analyzeApi.fetchAnswers(pdf),
+      analyzeApi.fetchAggregations(),
     ]);
     pages.value = p;
     answers.value = a;
@@ -80,7 +71,7 @@ async function loadPdfData(pdf: any) {
     // Load dimensions for expanded
     for (const answerId of expandedAnswers.value) {
       if (!answerDimensions.value[answerId]) {
-        answerDimensions.value[answerId] = await fetchDimensions(answerId);
+        answerDimensions.value[answerId] = await analyzeApi.fetchDimensions(answerId);
       }
     }
   } finally {
@@ -94,7 +85,7 @@ async function toggleAnswer(answerId: number) {
   } else {
     expandedAnswers.value.add(answerId);
     if (!answerDimensions.value[answerId]) {
-      answerDimensions.value[answerId] = await fetchDimensions(answerId);
+      answerDimensions.value[answerId] = await analyzeApi.fetchDimensions(answerId);
     }
   }
   expandedAnswers.value = new Set(expandedAnswers.value);
@@ -103,15 +94,9 @@ async function toggleAnswer(answerId: number) {
 async function uploadPdfs(event: any) {
   const files = event.target.files;
   if (!files.length) return;
-  const formData = new FormData();
-  for (let i = 0; i < files.length; i++) formData.append('files', files[i]);
 
   try {
-    const res = await fetch('http://localhost:8765/api/analyze/upload', {
-      method: 'POST',
-      body: formData
-    });
-    if (!res.ok) throw new Error("Upload failed");
+    await analyzeApi.uploadPdfs(files);
     alert("Upload successful! Go to Runner tab to process.");
     await refreshAll();
   } catch (err: any) {
@@ -123,7 +108,7 @@ async function uploadPdfs(event: any) {
 
 async function handleRetryErrors() {
   try {
-    const result = await retryErrors();
+    const result = await analyzeApi.retryErrors();
     alert(`Cleared ${result.cleared} errors. Re-run pipeline to retry.`);
     await refreshAll();
   } catch (e: any) {
@@ -135,7 +120,7 @@ async function handleResetStep(stepId: number) {
   if (pipelineRunning.value) return;
   if (window.confirm(`⚠️ Reset from step ${stepId}? This will delete subsequent data.`)) {
     try {
-      await resetPipeline(stepId);
+      await analyzeApi.resetPipeline(stepId);
       alert('Reset successful.');
       await refreshAll();
       if (selectedPdf.value) loadPdfData(selectedPdf.value);
@@ -148,7 +133,7 @@ async function handleResetStep(stepId: number) {
 async function handleDeletePdf(pdf: any) {
   if (!window.confirm(`Permanently delete "${pdf.filename}"?`)) return;
   try {
-    await deletePdf(pdf.filename);
+    await analyzeApi.deletePdf(pdf.filename);
     if (selectedPdf.value && selectedPdf.value.filename === pdf.filename) {
       selectedPdf.value = null;
     }
@@ -168,7 +153,7 @@ async function runPageStep(stepId: number | null) {
       target_steps: stepId ? [stepId] : null,
       page_id: inspectedPage.value.id
     };
-    await runPipeline(config);
+    await analyzeApi.runPipeline(config);
     setTimeout(() => { if (selectedPdf.value) loadPdfData(selectedPdf.value); }, 2000);
   } catch (err: any) {
     alert("Execution failed: " + err.message);
@@ -180,12 +165,6 @@ function openInspectorByPageNum(pageNum: number) {
   const page = pages.value.find(p => p.page_number === pageNum);
   if (page) openPageInspector(page);
 }
-
-// Watchers
-watch(pages, (newPages) => {
-  // Update the pages list in the inspector composable if needed
-  // This is handled by reactivity since we pass pages.value or the ref itself if we refactored the composable to take a ref
-});
 </script>
 
 <template>

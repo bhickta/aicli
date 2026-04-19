@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -37,8 +38,7 @@ app.include_router(settings_router, prefix="/api/settings", tags=["Settings"])
 def health_check():
     return {"status": "ok"}
 
-# Let's dynamically find the frontend/dist folder relative to this file
-import os
+# Frontend dist folder relative to this file
 BASE_DIR = Path(__file__).parent.parent.parent
 DIST_DIR = BASE_DIR / "frontend" / "dist"
 

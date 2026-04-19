@@ -1,5 +1,5 @@
 import { ref, computed, onUnmounted } from 'vue'
-import { runPipeline, createStream } from '../api.js'
+import { analyzeApi } from '../api/AnalyzeApiClient'
 
 export function useAnalyzePipeline(onCompleted?: () => void) {
   const pipelineRunning = ref(false)
@@ -40,7 +40,7 @@ export function useAnalyzePipeline(onCompleted?: () => void) {
 
   function connectStream() {
     if (eventSource) eventSource.close()
-    eventSource = createStream()
+    eventSource = analyzeApi.createStream()
     
     eventSource.onmessage = (e) => {
       const data = JSON.parse(e.data)
@@ -83,7 +83,7 @@ export function useAnalyzePipeline(onCompleted?: () => void) {
       logs.value = []
       tasks.value = {}
       connectStream()
-      await runPipeline(config)
+      await analyzeApi.runPipeline(config)
     } catch (e: any) {
       alert("Could not start pipeline: " + e.message)
       pipelineRunning.value = false
