@@ -123,13 +123,19 @@ class AnswerSegmenterService:
         db.log_processing(pdf_file, "segmentation", "done")
         return count
 
-    def segment_all(self, db: AnalyzeDB, progress=None, task_id=None, allow_reasoning: bool = True) -> int:
-        """Segment all unsegmented PDFs.
+    def segment_all(self, db: AnalyzeDB, progress=None, task_id=None, 
+                    allow_reasoning: bool = True, pdf_paths: list[Path] | None = None) -> int:
+        """Segment unsegmented PDFs or specific paths.
 
         Returns:
             Total answer units created.
         """
-        pdfs = db.get_unsegmented_pdfs()
+        if pdf_paths:
+            # pdf_paths are local paths, we need filenames for the DB
+            pdfs = [p.name for p in pdf_paths]
+        else:
+            pdfs = db.get_unsegmented_pdfs()
+            
         total = 0
 
         for pdf_file in pdfs:
@@ -140,7 +146,7 @@ class AnswerSegmenterService:
 
         return total
 
-    def _extract_candidate_name(self, pages: list[dict], db: AnalyzeDB) -> str | None:
+    def _extract_candidate_name(self, pages: list[dict], db: AnalyzeDB, allow_reasoning: bool = True) -> str | None:
         """Try to extract candidate name from the cover page."""
         cover_pages = [p for p in pages if p.get("classification") == "cover"]
         if not cover_pages:
@@ -158,6 +164,7 @@ class AnswerSegmenterService:
                     temperature=0.1,
                     max_tokens=100,
                     max_retries=2,
+                    allow_reasoning=allow_reasoning,
                 )
                 return result.strip() if result else None
             except Exception:
