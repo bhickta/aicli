@@ -180,12 +180,12 @@
                     <label>LLM Model ID</label>
                     <input type="text" v-model="runConfig.llm_model" placeholder="Model for vision & reasoning" :disabled="pipelineRunning" />
                   </div>
-                  <div class="form-group span-full" style="grid-column: span 2; display: flex; align-items: center; gap: 12px; margin-top: 8px;">
-                    <label class="toggle-control" style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
-                      <input type="checkbox" :checked="runConfig.allow_reasoning" @change="runConfig.allow_reasoning = $event.target.checked" :disabled="pipelineRunning" style="width: 18px; height: 18px;" />
-                      <span style="font-weight: 500; font-size: 0.9em;">Model Reasoning (Master Toggle)</span>
+                  <div class="form-group span-full" style="grid-column: span 2; display: flex; align-items: center; justify-content: center; padding: 12px; background: var(--bg-input); border-radius: var(--radius); margin-top: 8px;">
+                    <label class="toggle-control" style="display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none;">
+                      <input type="checkbox" :checked="runConfig.allow_reasoning" @change="runConfig.allow_reasoning = $event.target.checked" :disabled="pipelineRunning" style="width: 20px; height: 20px;" />
+                      <span style="font-weight: 600; font-size: 13px; color: var(--text-primary);">Model Reasoning (Master Toggle)</span>
                     </label>
-                    <div class="info-tip" title="Master switch for Deep Thinking. If OFF, reasoning is disabled for all steps. If ON, follows per-step settings below.">ⓘ</div>
+                    <div class="info-tip" style="margin-left: 8px;" title="Master switch for Deep Thinking. If OFF, reasoning is disabled for all steps. If ON, follows per-step settings below.">ⓘ</div>
                   </div>
                 </div>
               </div>
@@ -208,29 +208,25 @@
                   </div>
                   
                   <div v-if="runConfig.mode === 'custom'" class="steps-list">
-                    <div 
-                      v-for="step in pipelineSteps" 
-                      :key="step.id" 
-                      class="step-row"
-                      :class="[selectedPdf.progress ? selectedPdf.progress[step.id] : '', { disabled: pipelineRunning }]"
-                      @click="!pipelineRunning && toggleStep(step.id)"
-                    >
                       <input type="checkbox" :checked="runConfig.target_steps.includes(step.id)" @click.stop :disabled="pipelineRunning" />
                       <span class="step-name">{{ step.id }}: {{ step.fullname }}</span>
                       
-                      <!-- Reasoning Toggle (Steps 2-7 only) -->
-                      <div 
-                        v-if="step.id > 1"
-                        class="reasoning-toggle" 
-                        :class="{ active: runConfig.stepReasoning[step.id], disabled: !runConfig.allow_reasoning || pipelineRunning }" 
-                        @click.stop="toggleStepReasoning(step.id)"
-                        :title="runConfig.stepReasoning[step.id] ? 'Reasoning ENABLED for this step' : 'Reasoning DISABLED for this step'"
-                      >
-                        🧠
+                      <!-- Action Group (Right Aligned) -->
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <!-- Reasoning Toggle (Steps 2-7 only) -->
+                        <div 
+                          v-if="step.id > 1"
+                          class="reasoning-toggle" 
+                          :class="{ active: runConfig.stepReasoning[step.id], disabled: !runConfig.allow_reasoning || pipelineRunning }" 
+                          @click.stop="toggleStepReasoning(step.id)"
+                          :title="runConfig.stepReasoning[step.id] ? 'Reasoning ENABLED for this step' : 'Reasoning DISABLED for this step'"
+                        >
+                          🧠
+                        </div>
+                        
+                        <button class="reset-step-btn" :class="{ disabled: pipelineRunning }" @click.stop="confirmResetStep(step.id)">↻ Reset</button>
+                        <span class="step-badge" v-if="selectedPdf.progress">{{ selectedPdf.progress[step.id] }}</span>
                       </div>
-                      
-                      <button class="reset-step-btn" :class="{ disabled: pipelineRunning }" @click.stop="confirmResetStep(step.id)">↻ Reset</button>
-                      <span class="step-badge" v-if="selectedPdf.progress">{{ selectedPdf.progress[step.id] }}</span>
                     </div>
                   </div>
                 </div>

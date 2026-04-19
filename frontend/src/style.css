@@ -985,13 +985,21 @@ body {
 .step-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 8px 12px;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   cursor: pointer;
-  transition: var(--transition);
+  transition: all 0.2s;
+  min-height: 44px;
+}
+
+.step-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
 }
 
 .step-row:hover {
@@ -1040,44 +1048,63 @@ body {
   pointer-events: auto;
 }
 
-.reset-step-btn:hover {
-  background: var(--bg-card);
-  color: var(--danger);
-  border-color: var(--danger);
-}
-
 .reasoning-toggle {
-  margin-left: auto;
-  margin-right: 8px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  font-size: 16px;
   cursor: pointer;
   transition: all 0.2s;
   opacity: 0.3;
   filter: grayscale(1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   border: 1px solid transparent;
+  background: transparent;
 }
 
 .reasoning-toggle:hover {
-  opacity: 1;
-  background: var(--bg-input);
+  opacity: 0.8;
+  background: var(--bg-card);
   border-color: var(--border);
 }
 
 .reasoning-toggle.active {
-  opacity: 1;
-  filter: none;
-  background: rgba(139, 92, 246, 0.1);
-  border-color: rgba(139, 92, 246, 0.3);
+  opacity: 1 !important;
+  filter: none !important;
+  background: rgba(139, 92, 246, 0.15) !important;
+  border-color: rgba(139, 92, 246, 0.4) !important;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.1);
 }
 
 .reasoning-toggle.disabled {
   pointer-events: none;
-  opacity: 0.1 !important;
+  opacity: 0.05 !important;
+}
+
+.reset-step-btn {
+  opacity: 0;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.step-row:hover .reset-step-btn {
+  opacity: 0.8;
+}
+
+.reset-step-btn:hover {
+  opacity: 1 !important;
+  background: var(--bg-card) !important;
+  color: var(--danger) !important;
+  border-color: var(--danger) !important;
 }
 
 .reset-step-btn.disabled {
