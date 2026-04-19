@@ -1,0 +1,30 @@
+/* ─── Shared Config Card Styles ─── */
+/* Used by all pipeline config components (ProcessFeed, ExcelDedupe, CourseBuilder, etc.) */
+
+.config-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+}
+
+.config-card .description {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.config-grid--3col {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.config-grid .span-full {
+  grid-column: 1 / -1;
+}

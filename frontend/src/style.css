@@ -6,3 +6,6 @@
 @import './styles/analyze-content.css';
 @import './styles/inspector.css';
 @import './styles/runner.css';
+
+/* ─── Shared Config Card ─── */
+@import './styles/config-card.css';

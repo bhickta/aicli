@@ -100,7 +100,6 @@ export function useAnalyzePipeline(onCompleted?: () => void) {
     parsedLogs,
     tasks,
     autoscroll,
-    startPipeline,
-    connectStream
+    startPipeline
   }
 }

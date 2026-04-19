@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+
 import { analyzeApi } from '../../api/AnalyzeApiClient';
 import { formatKey, formatValue } from '../../utils/format.utils';
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref } from 'vue';
 import { useAnalyzeStatus } from '../composables/useAnalyzeStatus';
 import { useAnalyzePipeline } from '../composables/useAnalyzePipeline';
 import { usePageInspector } from '../composables/usePageInspector';
@@ -22,7 +22,7 @@ const answerDimensions = ref<Record<number, any[]>>({});
 const aggregations = ref<any[]>([]);
 const activeTab = ref('answers');
 const expandedAnswers = ref(new Set<number>());
-const loading = ref(false);
+
 
 // 3. Composables
 const { 
@@ -57,7 +57,6 @@ async function selectPdf(pdf: any) {
 
 async function loadPdfData(pdf: any) {
   if (!pdf.page_count) return;
-  loading.value = true;
   try {
     const [p, a, agg] = await Promise.all([
       analyzeApi.fetchPages(pdf),
@@ -74,9 +73,7 @@ async function loadPdfData(pdf: any) {
         answerDimensions.value[answerId] = await analyzeApi.fetchDimensions(answerId);
       }
     }
-  } finally {
-    loading.value = false;
-  }
+  } finally {}
 }
 
 async function toggleAnswer(answerId: number) {

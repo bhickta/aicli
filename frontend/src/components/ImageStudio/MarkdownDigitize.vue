@@ -1,12 +1,12 @@
 <template>
-  <div class="card">
+  <div class="config-card">
     <h3 style="margin-bottom: 8px;">Markdown Digitize</h3>
     <p class="description">
       Extracts pure-text images into markdown data and replaces file references in your notes natively.
     </p>
 
     <div class="config-grid">
-      <div class="form-group span-2">
+      <div class="form-group span-full">
         <label>Target Directory (Absolute Path)</label>
         <input type="text" v-model="config.target_path" placeholder="/home/bhickta/Screenshots/" />
       </div>
@@ -38,9 +38,3 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: any): void, (e: 'star
 const config = ref(props.modelValue)
 </script>
 
-<style scoped>
-.description { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin-bottom: 24px; }
-.card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; }
-.config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.span-2 { grid-column: span 1; }
-</style>

@@ -2,7 +2,6 @@
   <div class="console-panel" style="margin-top: 24px;" v-if="logs.length > 0 || pipelineRunning">
     <div class="console-header">
       <h3>Live Execution Logs</h3>
-      <span v-if="pipelineRunning" class="pulse"></span>
     </div>
     
     <div class="tasks-overlay" v-if="Object.keys(tasks).length > 0">

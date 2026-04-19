@@ -31,6 +31,12 @@
   --transition: all 0.2s ease;
   --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
   --bg-surface: var(--bg-primary);
+
+  /* ─── Semantic Aliases (used by inspector / runner) ─── */
+  --primary: var(--accent);
+  --primary-light: var(--accent-hover);
+  --bg-body: var(--bg-primary);
+  --bg-main: var(--bg-secondary);
 }
 
 * {
@@ -191,5 +197,3 @@ body {
 .tab:hover { color: var(--text-secondary); background: var(--bg-card); }
 .tab.active { color: var(--accent); background: var(--accent-dim); }
 
-/* Lightbox fallback/legacy cleanup */
-.lightbox-overlay { display: none; }

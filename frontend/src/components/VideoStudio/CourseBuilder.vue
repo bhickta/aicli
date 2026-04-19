@@ -1,12 +1,12 @@
 <template>
-  <div class="card">
+  <div class="config-card">
     <h3 style="margin-bottom: 8px;">End-to-End Course Pipeline</h3>
     <p class="description">
       Turns a folder of raw videos into a single merged course pack. Extracts text, uses Whisper for subtitles, generates slideshows, and merges everything into a master video container with embedded CC.
     </p>
 
-    <div class="config-grid">
-      <div class="form-group span-2">
+    <div class="config-grid config-grid--3col">
+      <div class="form-group span-full">
         <label>Target Directory (Absolute Path)</label>
         <input type="text" v-model="config.target_dir" placeholder="/home/bhickta/Videos/RawCourse" />
       </div>
@@ -51,9 +51,3 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: any): void, (e: 'star
 const config = ref(props.modelValue)
 </script>
 
-<style scoped>
-.description { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin-bottom: 24px; }
-.card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; }
-.config-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
-.span-2 { grid-column: span 3; }
-</style>
