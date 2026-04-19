@@ -17,6 +17,8 @@ class AnswerMixin:
         self,
         pdf_file: str,
         candidate_name: str | None,
+        upsc_id: str | None,
+        test_code: str | None,
         question_number: str | None,
         question_text: str | None,
         question_directive: str | None,
@@ -26,12 +28,14 @@ class AnswerMixin:
     ) -> int:
         conn = self._get_conn()
         cur = conn.execute(
-            "INSERT INTO answers (pdf_file, candidate_name, question_number, "
+            "INSERT INTO answers (pdf_file, candidate_name, upsc_id, test_code, question_number, "
             "question_text, question_directive, word_limit, raw_text, page_ids, segmentation_done) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
             (
                 pdf_file,
                 candidate_name,
+                upsc_id,
+                test_code,
                 question_number,
                 question_text,
                 question_directive,

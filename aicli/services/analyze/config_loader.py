@@ -71,6 +71,10 @@ class AnalyzeConfig:
     def aggregation_prompt_template(self) -> str:
         return self._data["aggregation"]["prompt"]
 
+    @property
+    def metadata_prompt(self) -> str:
+        return self._data["metadata"]["prompt"]
+
     # ------------------------------------------------------------------
     # Dimensions
     # ------------------------------------------------------------------

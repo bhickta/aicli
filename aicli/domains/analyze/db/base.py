@@ -36,6 +36,8 @@ class BaseSQLite:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 pdf_file TEXT NOT NULL,
                 candidate_name TEXT,
+                upsc_id TEXT,
+                test_code TEXT,
                 question_number TEXT,
                 question_text TEXT,
                 question_directive TEXT,

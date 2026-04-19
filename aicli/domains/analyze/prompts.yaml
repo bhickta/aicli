@@ -66,37 +66,63 @@ classification:
 # --- Step 4: Answer Segmentation ---
 segmentation:
   prompt: |
-    You are analyzing transcribed pages from a UPSC answer booklet.
+    You are an expert at segmenting UPSC answer sheets into distinct questions.
     Below are the transcribed pages in order. Each page is marked with its page number.
 
     {pages_text}
 
-    Your task: identify EACH distinct answer (question-answer pair) and which pages it spans.
+    Your task:
+    1. Identify EACH distinct answer (question-answer pair) and which pages it spans.
+    2. Extract a CLEANED version of the answer text for each segment.
 
-    For each answer, extract:
-    - question_number: the question number as written (e.g., "Q.1", "1(a)", "Q.5(b)")
-    - question_text: the full printed question text (if visible)
-    - question_directive: the verb/instruction (e.g., "Discuss", "Examine", "Critically analyze")
-    - word_limit: the word limit if specified (e.g., 150, 250)
-    - start_page: the page number where this answer begins
-    - end_page: the page number where this answer ends (same as start_page if single-page)
+    ### Cleaning Rules for 'cleaned_answer_text':
+    - REMOVE all boilerplate instructions (e.g., "(Please do not write anything...", "Candidates must not write on this margin", "Answer Questions NOT MORE THAN...", "Content of the Question is more important...", etc.)
+    - REMOVE page markers (e.g., "Page | 1", "- Page 2 -", "amBlitz", "UPSC")
+    - REMOVE printed headers that repeat on every page.
+    - KEEP ONLY the actual question text and the candidate's handwritten answer text.
+    - Ensure the text flows logically across page boundaries without repetition.
+
+    For each answer, return:
+    - question_number: e.g., "Q.1", "1(a)"
+    - question_text: the full printed question text
+    - question_directive: the verb (e.g., "Discuss", "Comment")
+    - word_limit: if specified (e.g., 150)
+    - start_page: start page number
+    - end_page: end page number
+    - cleaned_answer_text: the substantive text of the answer with ALL margin boilerplate and repeats removed.
 
     Return strict JSON array:
     [
       {
-        "question_number": "Q.1(a)",
-        "question_text": "Discuss the role of...",
-        "question_directive": "Discuss",
+        "question_number": "Q.1",
+        "question_text": "...",
+        "question_directive": "...",
         "word_limit": 150,
-        "start_page": 3,
-        "end_page": 4
+        "start_page": 1,
+        "end_page": 2,
+        "cleaned_answer_text": "..."
       }
     ]
 
-    Rules:
-    - If a question spans multiple pages, set end_page accordingly
-    - If the question text is not visible (continuation only), set question_text to null
-    - Return ONLY valid JSON, no other text
+    Return ONLY valid JSON, no other text.
+
+# --- Metadata Extraction ---
+metadata:
+  prompt: |
+    Extract candidate metadata from this UPSC cover page transcription.
+    Identify:
+    - candidate_name: The name of the student.
+    - test_code: The test/paper code (e.g., 1864).
+    - upsc_id: The UPSC ID number (e.g., 883478).
+
+    Return strict JSON:
+    {
+      "candidate_name": null,
+      "test_code": null,
+      "upsc_id": null
+    }
+
+    Return ONLY valid JSON, no other text.
 
 # --- Step 5: Analysis Dimensions ---
 # Each dimension is independent. To add a new one, just add an entry here.

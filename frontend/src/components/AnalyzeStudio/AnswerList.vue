@@ -44,6 +44,23 @@ function imageUrl(pdfFile: string, pageNum: number) {
         <div class="icon">📝</div>
         <p>No answers segmented yet.<br>Run Step 4 (Segmentation) first.</p>
       </div>
+
+      <!-- Metadata Header -->
+      <div v-if="answers.length && (answers[0].candidate_name || answers[0].upsc_id || answers[0].test_code)" class="candidate-meta-bar">
+        <div class="meta-item" v-if="answers[0].candidate_name">
+          <span class="label">Candidate</span>
+          <span class="value">{{ answers[0].candidate_name }}</span>
+        </div>
+        <div class="meta-item" v-if="answers[0].test_code">
+          <span class="label">Test Code</span>
+          <span class="value">{{ answers[0].test_code }}</span>
+        </div>
+        <div class="meta-item" v-if="answers[0].upsc_id">
+          <span class="label">UPSC ID</span>
+          <span class="value">{{ answers[0].upsc_id }}</span>
+        </div>
+      </div>
+
       <div v-for="answer in answers" :key="answer.id" class="answer-card">
         <div class="answer-card-header" @click="$emit('toggle-answer', answer.id)">
           <span class="answer-q-num">{{ answer.question_number || 'Q?' }}</span>

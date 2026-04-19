@@ -25,6 +25,10 @@ class PageDTO(BaseModel):
 
 class AnswerDTO(BaseModel):
     id: int
+    pdf_file: str
+    candidate_name: Optional[str] = None
+    upsc_id: Optional[str] = None
+    test_code: Optional[str] = None
     question_number: Optional[str] = None
     question_directive: Optional[str] = None
     question_text: Optional[str] = None

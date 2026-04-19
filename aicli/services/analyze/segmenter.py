@@ -81,8 +81,11 @@ class AnswerSegmenterService:
         if not isinstance(segments, list):
             segments = [segments]
 
-        # Extract candidate name from cover page if available
-        candidate_name = self._extract_candidate_name(pages, db)
+        # Extract metadata from cover page if available
+        metadata = self._extract_metadata(pages, db, allow_reasoning=allow_reasoning)
+        candidate_name = metadata.get("candidate_name")
+        upsc_id = metadata.get("upsc_id")
+        test_code = metadata.get("test_code")
 
         # Create answer records
         count = 0
@@ -96,7 +99,7 @@ class AnswerSegmenterService:
             if start_page is None:
                 continue
 
-            # Collect page IDs and concatenate transcriptions
+            # Collect page IDs and concatenate transcriptions (fallback)
             answer_page_ids = []
             raw_text_parts = []
             for p in content_pages:
@@ -107,11 +110,16 @@ class AnswerSegmenterService:
             if not raw_text_parts:
                 continue
 
-            raw_text = "\n\n".join(raw_text_parts)
+            # Use cleaned text from LLM if provided, else fallback to raw
+            raw_text = seg.get("cleaned_answer_text")
+            if not raw_text:
+                raw_text = "\n\n".join(raw_text_parts)
 
             db.insert_answer(
                 pdf_file=pdf_file,
                 candidate_name=candidate_name,
+                upsc_id=upsc_id,
+                test_code=test_code,
                 question_number=seg.get("question_number"),
                 question_text=seg.get("question_text"),
                 question_directive=seg.get("question_directive"),
@@ -147,31 +155,45 @@ class AnswerSegmenterService:
 
         return total
 
-    def _extract_candidate_name(self, pages: list[dict], db: AnalyzeDB, allow_reasoning: bool = True) -> str | None:
-        """Try to extract candidate name from the cover page."""
+    def _extract_metadata(self, pages: list[dict], db: AnalyzeDB, allow_reasoning: bool = True) -> dict:
+        """Try to extract candidate metadata from the cover page."""
         cover_pages = [p for p in pages if p.get("classification") == "cover"]
         if not cover_pages:
-            return None
+            return {}
 
-        # If cover page has a transcription, try to parse the name
+        # If cover page has a transcription, try to parse metadata
         cover = cover_pages[0]
-        if not cover.get("transcription"):
-            # Transcribe the cover page for name extraction
-            try:
+        text_to_scan = cover.get("transcription")
+        
+        # If no transcription yet, describe image with metadata prompt
+        try:
+            if not text_to_scan:
                 result = self.provider.describe_image(
                     image_path=cover["image_path"],
-                    prompt="Extract ONLY the candidate's name from this UPSC cover page. Return just the name, nothing else.",
+                    prompt=self.config.metadata_prompt,
                     max_size=self.config.image_max_size,
-                    temperature=0.1,
-                    max_tokens=100,
+                    temperature=0.0,
+                    max_tokens=500,
                     max_retries=2,
                     allow_reasoning=allow_reasoning,
                 )
-                return result.strip() if result else None
-            except Exception:
-                return None
-
-        return None
+            else:
+                result = self.provider.complete_text_json(
+                    prompt=self.config.metadata_prompt + f"\n\nText:\n{text_to_scan}",
+                    temperature=0.0,
+                    max_tokens=500,
+                    allow_reasoning=allow_reasoning,
+                )
+            
+            if isinstance(result, str):
+                try:
+                    import json
+                    return json.loads(result)
+                except:
+                    return {}
+            return result if isinstance(result, dict) else {}
+        except Exception:
+            return {}
 
     def _fallback_segmentation(self, content_pages: list[dict]) -> list[dict]:
         """Fallback: treat each 'answer' page as starting a new answer,
