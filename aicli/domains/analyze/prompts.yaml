@@ -55,11 +55,11 @@ classification:
     - "blank" — Empty page or page with only margin text/instructions, no substantive content
 
     Rules:
-    - If the text contains a printed question number (e.g., Q.1, Q.2) followed by answer text, classify as "answer"
-    - If the text has only answer content continuing from a previous page with no new question header, classify as "continuation"
-    - If you see evaluation marks, scoring grids, or examiner notes, classify as "evaluation"
-    - If the text is mostly empty or only contains pre-printed instructions, classify as "blank"
-    - If you see candidate name, roll number, or test/paper codes, classify as "cover"
+    - If you see candidate name, roll number, or test/paper codes (e.g., Name:, Test Code:, UPSC ID:), classify as "cover" IMMEDIATELY. This takes priority over all other rules.
+    - If the text contains a printed question number (e.g., Q.1, Q.2) followed by answer text (and NO candidate metadata), classify as "answer".
+    - If the text has only answer content continuing from a previous page with no new question header, classify as "continuation".
+    - If you see evaluation marks, scoring grids, or examiner notes, classify as "evaluation".
+    - If the text is mostly empty or only contains pre-printed instructions, classify as "blank".
 
     Respond with ONLY the category word, nothing else. No explanation, no quotes.
 
