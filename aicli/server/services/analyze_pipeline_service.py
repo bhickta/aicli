@@ -58,6 +58,17 @@ class AnalyzePipelineService:
         self._log(log_callback, f"⚙️ Config: model={llm_model}, workers={workers}, reasoning={allow_reasoning}")
         self._log_target_info(log_callback, target_steps)
 
+        if llm_model:
+            from aicli.config import resolve_dynamic_model, config as aicli_config
+            self._log(log_callback, f"🔄 Loading/Verifying model: {llm_model}...")
+            try:
+                resolved = resolve_dynamic_model(llm_model)
+                aicli_config.model_name = resolved
+                self._log(log_callback, f"✔ Model ready: {resolved}")
+            except Exception as e:
+                self._log(log_callback, f"⚠️ Warning: Model loading may have failed ({e})")
+
+
         ctx = _PipelineContext(
             data_dir=data_dir, cache_dir=cache_dir, workers=workers, dpi=dpi,
             db=db, resolver=resolver, target_page_id=target_page_id,
