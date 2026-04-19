@@ -201,6 +201,12 @@ The `ReasoningResolver` determines whether each step uses deep reasoning:
 2. If caller provides per-step override → use it
 3. Otherwise → use defaults from `RECOMMENDED_REASONING`
 
+**LM Studio Implementation:**
+Reasoning is controlled via the `extra_body` parameter in the OpenAI SDK.
+- Use **string values** `"on"` or `"off"` (booleans often fail on newer versions).
+- Redundant flags (`thinking: bool`, `include_reasoning: bool`) should be sent for compatibility.
+- Thought blocks (`<think>...</think>`) are stripped from the final content by the provider.
+
 Defaults: Steps 2-4 = false (speed), Steps 5-7 = true (quality)
 
 ---
@@ -264,7 +270,11 @@ await startPipeline('run', { required_field: 'value' })
 3. **Only one pipeline at a time per orchestrator.** Calling `dispatch()` while
    a pipeline is running raises `RuntimeError` (returns HTTP 409).
 
-4. **LM Studio model auto-detection:** `resolve_dynamic_model()` calls LM
+4. **Aborting a pipeline:** The `BaseOrchestrator` has an `abort_event`. Workers MUST
+   check `orch.abort_event.is_set()` in their inner loops and raise `PipelineAbortedError`.
+   Failure to do this creates "zombie" threads that consume VRAM even after stopping.
+
+5. **LM Studio model auto-detection:** `resolve_dynamic_model()` calls LM
    Studio's native API at `/api/v1/models` (note: not standard `/v1/models`). If
    LM Studio isn't running, the error message is misleading. If it returns 0 models,
    the user may not have downloaded any.

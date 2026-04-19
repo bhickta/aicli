@@ -605,3 +605,16 @@ curl -X POST http://localhost:8765/api/analyze/run \
            ...
    ```
 2. Update `server/dependencies.py` to inject the new provider instead of `LMStudioProvider`
+
+### Reasoning Control Gotcha
+If your model supports deep reasoning (like Gemma 4), ensure your provider sends the `reasoning` parameter as a **string** (`"on"` or `"off"`) rather than a boolean. Many local servers fail to parse boolean values for this specific field.
+
+```python
+# Example extra_body for reasoning control
+extra = {
+    "reasoning": "off",
+    "thinking": False,  # Redundant fallback
+    "include_reasoning": False  # Redundant fallback
+}
+response = client.chat.completions.create(..., extra_body=extra)
+```

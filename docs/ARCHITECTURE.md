@@ -195,9 +195,9 @@ Simple config read/write for LM Studio connection details.
 | `GET` | `/api/analyze/images/{pdf}/{img}` | analyze | Serve cached images |
 | `GET` | `/api/analyze/aggregate` | analyze | Cross-PDF aggregations |
 | `POST` | `/api/analyze/upload` | analyze | Upload PDFs |
-| `POST` | `/api/analyze/run` | analyze | Start pipeline |
-| `POST` | `/api/analyze/reset` | analyze | Reset from step N |
 | `POST` | `/api/analyze/retry-errors` | analyze | Clear transcription errors |
+| `POST` | `/api/analyze/stop` | analyze | Abort running pipeline |
+| `GET` | `/api/analyze/orchestrator-status` | analyze | Current run status |
 | `DELETE` | `/api/analyze/pdfs/{file}` | analyze | Delete PDF + data |
 | `GET` | `/api/analyze/stream` | analyze | SSE progress stream |
 | `POST` | `/api/video/course/run` | video | Start course pipeline |
@@ -228,7 +228,12 @@ All long-running pipelines use the same pattern:
 4. Worker pushes events to a thread-safe queue
 5. Frontend connects to /api/{domain}/stream (SSE)
 6. Orchestrator yields queued events as server-sent events
+7. (New) Frontend can POST /api/{domain}/stop to set an `abort_event`
+8. (New) Global `PipelineAbortedError` is raised in the worker thread to stop execution gracefully
 ```
+
+**Stopping a Pipeline:**
+The `BaseOrchestrator` provides a `threading.Event` called `abort_event`. Long-running loops in services (like processing pages/answers) must check `orch.abort_event.is_set()` and raise `PipelineAbortedError` if true. This ensures threads are not orphaned.
 
 **Event types:**
 - `{"type": "status", "status": "started|completed|error"}`
