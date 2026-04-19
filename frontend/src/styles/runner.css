@@ -287,56 +287,71 @@
 .log-line.system .log-text { color: #d2a8ff; font-weight: 600; }
 .log-line.page .log-text { color: #8b949e; }
 
-/* ─── Action Buttons Grid ─── */
-.action-buttons {
-  display: grid;
-  grid-template-columns: 1fr;
+/* ─── Action Buttons V2 (High Visibility) ─── */
+.action-buttons-v2 {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
 }
 
-.action-buttons.is-running {
-  grid-template-columns: 1fr 120px;
-}
-
-.action-buttons .btn {
-  height: 48px;
-  font-size: 14px;
-  justify-content: center;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
-}
-
-.start-btn {
+.start-btn-lg {
+  height: 56px;
+  width: 100%;
+  font-size: 15px;
+  font-weight: 700;
   background: var(--accent) !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 15px rgba(108, 92, 231, 0.3);
 }
 
-.stop-btn {
+.stop-btn-lg {
+  height: 64px;
+  width: 100%;
+  font-size: 16px;
+  font-weight: 800;
   background: #e74c3c !important;
   color: white !important;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  animation: pulse-red 2s infinite;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 20px rgba(231, 76, 60, 0.4);
+  animation: pulse-red-heavy 2s infinite;
+  letter-spacing: 0.05em;
 }
 
-.stop-btn:hover {
+.stop-btn-lg:hover {
   background: #c0392b !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 25px rgba(231, 76, 60, 0.5);
+}
+
+.working-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+@keyframes pulse-red-heavy {
+  0% { transform: scale(1); box-shadow: 0 4px 20px rgba(231, 76, 60, 0.4); }
+  50% { transform: scale(1.02); box-shadow: 0 4px 30px rgba(231, 76, 60, 0.6); }
+  100% { transform: scale(1); box-shadow: 0 4px 20px rgba(231, 76, 60, 0.4); }
 }
 
 .spinner-sm {
   width: 14px;
   height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-  margin-right: 10px;
-}
-
-@keyframes pulse-red {
-  0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.4); }
-  70% { box-shadow: 0 0 0 10px rgba(231, 76, 60, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
 }
 
 @keyframes spin {
