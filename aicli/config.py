@@ -1,18 +1,34 @@
 """Configuration structures for AI CLI."""
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-class AppConfig(BaseSettings):
-    """Configuration based on environment variables or .env file."""
-    # LM Studio default settings
+import os
+import json
+from pathlib import Path
+from pydantic import BaseModel
+
+CONFIG_DIR = Path.home() / ".config" / "aicli"
+CONFIG_FILE = CONFIG_DIR / "settings.json"
+
+class AppConfig(BaseModel):
+    """Configuration based on JSON settings."""
     lm_studio_base_url: str = "http://localhost:1234/v1"
-    lm_studio_api_key: str = "sk-lm-UIfIMcJs:ga4Fhyit5WI6tz0FJTbR" # LM studio doesn't actually require one, but openai client expects it
-    
-    # Model to use, "local-model" usually works for LM studio
+    lm_studio_api_key: str = "sk-lm-UIfIMcJs:ga4Fhyit5WI6tz0FJTbR"
     model_name: str = "local-model"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+def load_config() -> AppConfig:
+    if CONFIG_FILE.exists():
+        try:
+            data = json.loads(CONFIG_FILE.read_text())
+            return AppConfig(**data)
+        except Exception:
+            pass
+    return AppConfig()
 
-config = AppConfig()
+def save_config(cfg: AppConfig):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.write_text(cfg.model_dump_json(indent=2))
+
+config = load_config()
 
 def resolve_dynamic_model(preferred_string: str = None) -> str:
     """Fetch the first available model ID from LM Studio and explicitly load it via native API."""
