@@ -1,4 +1,4 @@
-"""Dependencies for the Analyze domain."""
+"""Dependencies and shared state for the AICLI server."""
 from pathlib import Path
 from fastapi import Depends
 from aicli.server.repositories.analyze_repository import AnalyzeRepository
@@ -6,14 +6,16 @@ from aicli.server.services.analyze_pipeline_service import AnalyzePipelineServic
 from aicli.providers.lm_studio import LMStudioProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
 
-# This mimics the ServerState but should be configured on app startup
-class AnalyzeSettings:
-    data_dir = Path("data")
-    cache_dir = Path(".analyze_cache/images")
+class ServerState:
+    """Shared server state for directory paths.
+    Note: Initialized by the CLI run_server command.
+    """
+    data_dir: Path = Path("data")
+    cache_dir: Path = Path(".analyze_cache/images")
 
 def get_analyze_repository() -> AnalyzeRepository:
     """Dependency provider for AnalyzeRepository."""
-    db_path = AnalyzeSettings.data_dir / "analyze.db"
+    db_path = ServerState.data_dir / "analyze.db"
     return AnalyzeRepository(db_path)
 
 def get_analyze_service(

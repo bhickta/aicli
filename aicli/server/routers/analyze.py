@@ -8,7 +8,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from aicli.server.repositories.analyze_repository import AnalyzeRepository
 from aicli.server.services.analyze_pipeline_service import AnalyzePipelineService
-from aicli.server.dependencies import get_analyze_repository, get_analyze_service, AnalyzeSettings
+from aicli.server.dependencies import get_analyze_repository, get_analyze_service, ServerState as ServerSettings
 from aicli.server.schemas.analyze_schemas import (
     PDFListItemDTO,
     ProcessingStatusDTO,
@@ -22,6 +22,9 @@ from aicli.server.schemas.analyze_schemas import (
 )
 from aicli.server.orchestrator.base import BaseOrchestrator, SSEProgressContext, ConsoleRedirect
 
+# Backward compatibility alias
+ServerState = ServerSettings
+
 router = APIRouter(prefix="/analyze", tags=["analyze"])
 
 # Orchestrator singleton for SSE and background execution
@@ -29,21 +32,21 @@ analyze_orch = BaseOrchestrator()
 
 @router.get("/pdfs", response_model=List[PDFListItemDTO])
 def list_pdfs(repo: AnalyzeRepository = Depends(get_analyze_repository)):
-    return repo.get_pdf_list(AnalyzeSettings.data_dir)
+    return repo.get_pdf_list(ServerSettings.data_dir)
 
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def upload_pdfs(files: List[UploadFile] = File(...)):
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
     
-    AnalyzeSettings.data_dir.mkdir(parents=True, exist_ok=True)
+    ServerSettings.data_dir.mkdir(parents=True, exist_ok=True)
     uploaded_files = []
     for file in files:
         if not file.filename.lower().endswith('.pdf'):
             continue
         
         safe_name = Path(file.filename).name
-        target_path = AnalyzeSettings.data_dir / safe_name
+        target_path = ServerSettings.data_dir / safe_name
         target_path.write_bytes(await file.read())
         uploaded_files.append(safe_name)
         
@@ -73,7 +76,7 @@ def get_answer_dimensions(answer_id: int, repo: AnalyzeRepository = Depends(get_
 
 @router.get("/images/{pdf_name}/{image_name}")
 def get_image(pdf_name: str, image_name: str):
-    img_path = AnalyzeSettings.cache_dir / pdf_name / image_name
+    img_path = ServerSettings.cache_dir / pdf_name / image_name
     if not img_path.exists():
         raise HTTPException(status_code=404, detail="Image not found")
     return FileResponse(img_path)
@@ -101,11 +104,11 @@ def delete_pdf(pdf_file: str, repo: AnalyzeRepository = Depends(get_analyze_repo
     repo.delete_pdf(pdf_file_dec)
     
     # Filesystem cleanup
-    image_dir = AnalyzeSettings.cache_dir / Path(pdf_file_dec).stem
+    image_dir = ServerSettings.cache_dir / Path(pdf_file_dec).stem
     if image_dir.exists() and image_dir.is_dir():
         shutil.rmtree(image_dir)
         
-    pdf_path = AnalyzeSettings.data_dir / pdf_file_dec
+    pdf_path = ServerSettings.data_dir / pdf_file_dec
     if pdf_path.exists() and pdf_path.is_file():
         pdf_path.unlink()
         
@@ -127,8 +130,8 @@ def _analyze_worker(
             orch.queue.put({"type": "log", "message": msg})
 
         service.run_full_pipeline(
-            data_dir=AnalyzeSettings.data_dir,
-            cache_dir=AnalyzeSettings.cache_dir,
+            data_dir=ServerSettings.data_dir,
+            cache_dir=ServerSettings.cache_dir,
             workers=req.workers,
             dpi=req.dpi,
             llm_model=req.llm_model,
