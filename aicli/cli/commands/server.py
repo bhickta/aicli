@@ -30,6 +30,7 @@ def run_server(
     
     frontend_process = None
     if dev_mode:
+        os.environ["AICLI_DEV_MODE"] = "1"
         frontend_dir = Path(__file__).parent.parent.parent.parent / "frontend"
         if frontend_dir.exists():
             typer.echo("🔥 DEV MODE DETECTED: Booting Vite Hot-Reload Server...")

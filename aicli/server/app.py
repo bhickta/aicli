@@ -42,7 +42,15 @@ def health_check():
 BASE_DIR = Path(__file__).parent.parent.parent
 DIST_DIR = BASE_DIR / "frontend" / "dist"
 
-if DIST_DIR.exists():
+from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
+
+if os.environ.get("AICLI_DEV_MODE") == "1":
+    @app.get("/{full_path:path}")
+    async def redirect_to_vite(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="API route not found")
+        return RedirectResponse(f"http://localhost:5173/{full_path}")
+elif DIST_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
     
     @app.get("/{full_path:path}")
