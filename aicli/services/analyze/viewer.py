@@ -7,7 +7,7 @@ import json
 import mimetypes
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from aicli.domains.analyze.database import AnalyzeDB
 
@@ -90,7 +90,7 @@ class ViewerHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _serve_image(self, rel_path: str):
-        img_path = self.cache_dir / "images" / rel_path
+        img_path = self.cache_dir / "images" / unquote(rel_path)
         if not img_path.exists():
             self.send_error(404)
             return
