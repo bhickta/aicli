@@ -42,6 +42,8 @@ You are responsible for keeping these files accurate and complete:
 | `.agents/css-ui-refactorer.md` | CSS architecture, token system, BEM naming |
 | `.agents/dead-code-dry-enforcer.md` | Dead code detection, duplicate elimination |
 | `.agents/docs-keeper.md` | **This file** — self-referential, update when new docs/agents are added |
+| `.agents/git-committer.md` | Conventional git history curation and atomic commit specialist |
+| `.agents/session-handoff.md` | Context compression and handoff summary generator |
 
 ### Documentation Files (`docs/`)
 
