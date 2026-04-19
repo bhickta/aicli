@@ -30,14 +30,14 @@ from aicli.server.repositories.news_excel_repository import NewsExcelRepository
 
 
 def _classify_batch(
-    batch_idx: int, batch: list[str], system_prompt: str, provider
+    batch_idx: int, batch: list[str], provider
 ) -> tuple[int, list[dict], Exception | None]:
     try:
-        user_prompt = NewsReasoningService.build_user_prompt(batch)
+        messages = NewsReasoningService.get_classification_messages(batch)
         result = provider.structured_invoke(
             schema=NewsClassificationResult,
-            prompt=user_prompt,
-            system_prompt=system_prompt,
+            prompt=messages[1].content,
+            system_prompt=messages[0].content,
             allow_reasoning=True,
         )
         records = [item.model_dump() for item in result.items]
@@ -55,9 +55,8 @@ def parse_news(
     workers: int = 4,
     show_prompt: bool = False,
 ):
-    system_prompt = NewsReasoningService.build_system_prompt()
     if show_prompt:
-        console.print(system_prompt)
+        console.print("Using modular get_classification_messages() from aicli.prompts.news_prompts")
         raise typer.Exit()
 
     print_header(f"Parsing Current Affairs: {file_path.name}")
@@ -89,7 +88,6 @@ def parse_news(
                     _classify_batch,
                     idx,
                     batch,
-                    system_prompt,
                     provider,
                 ): (idx, batch)
                 for idx, batch in enumerate(batches)
