@@ -17,7 +17,7 @@ class AnswerTranscriberService:
         self.provider = provider
         self.config = config
 
-    def transcribe_page(self, page_row: dict, allow_reasoning: bool = True) -> str:
+    def transcribe_page(self, page_row: dict, allow_reasoning: bool = True, abort_event=None) -> str:
         """Transcribe a single page using the vision model.
 
         Returns:
@@ -38,6 +38,7 @@ class AnswerTranscriberService:
             max_retries=self.config.max_retries,
             retry_backoff_base=self.config.retry_backoff_base,
             allow_reasoning=allow_reasoning,
+            abort_event=abort_event,
         )
 
         return result
@@ -49,6 +50,7 @@ class AnswerTranscriberService:
         progress=None,
         task_id=None,
         allow_reasoning: bool = True,
+        abort_event=None,
     ) -> tuple[int, int]:
         """Transcribe all untranscribed answer/continuation pages in parallel.
 
@@ -64,7 +66,7 @@ class AnswerTranscriberService:
         first_error_shown = False
 
         def _process_one(page_row):
-            transcription = self.transcribe_page(page_row, allow_reasoning=allow_reasoning)
+            transcription = self.transcribe_page(page_row, allow_reasoning=allow_reasoning, abort_event=abort_event)
             db.update_transcription(page_row["id"], transcription)
             # Log success
             if progress:

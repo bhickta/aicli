@@ -164,6 +164,7 @@ def _analyze_worker(
             target_page_id=req.page_id,
             progress_callback=progress,
             log_callback=log_cb,
+            abort_event=orch.abort_event,
         )
     finally:
         service._repo.close()

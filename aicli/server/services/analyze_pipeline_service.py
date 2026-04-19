@@ -48,6 +48,7 @@ class AnalyzePipelineService:
         target_page_id: Optional[int] = None,
         progress_callback: Optional[Any] = None,
         log_callback: Optional[Callable[[str], None]] = None,
+        abort_event: Optional[Any] = None,
     ) -> float:
         """Execute the pipeline steps."""
         start_t = time.time()
@@ -73,6 +74,7 @@ class AnalyzePipelineService:
             data_dir=data_dir, cache_dir=cache_dir, workers=workers, dpi=dpi,
             db=db, resolver=resolver, target_page_id=target_page_id,
             progress=progress_callback, log_cb=log_callback,
+            abort_event=abort_event,
         )
 
         if self._should_run(1, target_steps):
@@ -107,6 +109,23 @@ class AnalyzePipelineService:
             self._transcribe_single_page(transcriber, ctx)
         else:
             self._transcribe_batch(transcriber, ctx)
+
+    def _transcribe_batch(self, transcriber: AnswerTranscriberService, ctx: "_PipelineContext") -> None:
+        think = ctx.resolver.should_think(2)
+        success, err = transcriber.transcribe_batch(
+            ctx.db, workers=ctx.workers, progress=ctx.progress,
+            allow_reasoning=think, abort_event=ctx.abort_event
+        )
+        self._log(ctx.log_cb, f"Transcription completed. Success: {success}, Errors: {err}")
+
+    def _transcribe_single_page(self, transcriber: AnswerTranscriberService, ctx: "_PipelineContext") -> None:
+        page_raw = ctx.db._get_by_id("pages", ctx.target_page_id)
+        if page_raw and not page_raw.get("transcription_text"):
+            page_row = ctx.db._page_tuple_to_dict(page_raw)
+            think = ctx.resolver.should_think(2)
+            transcription = transcriber.transcribe_page(page_row, allow_reasoning=think, abort_event=ctx.abort_event)
+            ctx.db.update_transcription(page_row["id"], transcription)
+        self._log(ctx.log_cb, f"Transcription completed for explicit page target (ID={ctx.target_page_id})")
 
     def _step_page_classify(self, ctx: "_PipelineContext") -> None:
         self._log(ctx.log_cb, "Step 3: Page Classification")
@@ -145,26 +164,7 @@ class AnalyzePipelineService:
 
     # ── Sub-step Helpers ────────────────────────────────────────────
 
-    def _transcribe_single_page(self, transcriber: AnswerTranscriberService, ctx: "_PipelineContext") -> None:
-        page = ctx.db.get_page(ctx.target_page_id)
-        if not page:
-            return
-        try:
-            txt = transcriber.transcribe_page(page, allow_reasoning=ctx.resolver.should_think(2))
-            ctx.db.update_transcription(page["id"], txt)
-            self._log(ctx.log_cb, f"Transcribed page {ctx.target_page_id}")
-        except Exception as e:
-            ctx.db.update_transcription(page["id"], f"{TRANSCRIPTION_ERROR_PREFIX} {e}]")
-            self._log(ctx.log_cb, f"Error transcribing page {ctx.target_page_id}: {e}")
 
-    def _transcribe_batch(self, transcriber: AnswerTranscriberService, ctx: "_PipelineContext") -> None:
-        untranscribed = ctx.db.get_untranscribed_pages()
-        if not untranscribed:
-            self._log(ctx.log_cb, "Step 2: No untranscribed pages. Skipping.")
-            return
-        think = ctx.resolver.should_think(2)
-        transcribed, errors = transcriber.transcribe_batch(ctx.db, ctx.workers, ctx.progress, None, allow_reasoning=think)
-        self._log(ctx.log_cb, f"Transcribed {transcribed} pages ({errors} errors)")
 
     def _classify_single_page(self, classifier: PageClassifierService, ctx: "_PipelineContext") -> None:
         page = ctx.db.get_page(ctx.target_page_id)
@@ -261,7 +261,7 @@ class _PipelineContext:
     """Lightweight data bag passed to each step method, avoiding long parameter lists."""
 
     __slots__ = ("data_dir", "cache_dir", "workers", "dpi", "db", "resolver",
-                 "target_page_id", "progress", "log_cb")
+                 "target_page_id", "progress", "log_cb", "abort_event")
 
     def __init__(
         self,
@@ -274,6 +274,7 @@ class _PipelineContext:
         target_page_id: Optional[int],
         progress: Optional[Any],
         log_cb: Optional[Callable],
+        abort_event: Optional[Any] = None,
     ) -> None:
         self.data_dir = data_dir
         self.cache_dir = cache_dir
@@ -284,3 +285,4 @@ class _PipelineContext:
         self.target_page_id = target_page_id
         self.progress = progress
         self.log_cb = log_cb
+        self.abort_event = abort_event

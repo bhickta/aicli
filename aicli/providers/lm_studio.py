@@ -40,12 +40,13 @@ class LMStudioProvider(ImageVisionProvider):
         image_path: str,
         prompt: str,
         system_prompt: Optional[str] = None,
-        max_size: int = 512,
-        temperature: float = 0.2,
-        max_tokens: Optional[int] = None,
-        max_retries: int = 1,
+        max_size: int = 1024,
+        temperature: float = 0.1,
+        max_tokens: int = 2000,
+        max_retries: int = 3,
         retry_backoff_base: int = 2,
         allow_reasoning: bool = True,
+        abort_event: Optional[threading.Event] = None,
     ) -> str:
         """Send a base64-encoded image + prompt to LM Studio, return text."""
         base64_image = self._encode_image(image_path, max_dim=max_size)
@@ -58,6 +59,8 @@ class LMStudioProvider(ImageVisionProvider):
         ]}]
 
         kwargs = self._build_create_kwargs(messages, temperature, max_tokens)
+        if abort_event:
+            kwargs["abort_event"] = abort_event
         return self._retry_image_completion(kwargs, allow_reasoning, max_retries, retry_backoff_base)
 
     def complete_text(
@@ -173,32 +176,49 @@ class LMStudioProvider(ImageVisionProvider):
                 self._backoff(attempt, max_retries, backoff_base)
         raise last_error
 
-    def _call_and_extract(self, kwargs: dict) -> str:
-        """Execute completion and extract content, raising on empty."""
-        response = self.client.chat.completions.create(**kwargs)
-        content = response.choices[0].message.content
-        if content:
-            return content.strip()
-        reason = response.choices[0].finish_reason
-        raise ValueError(f"LM Studio returned empty content (finish_reason: '{reason}')")
-
     def _call_with_reasoning(self, kwargs: dict, allow_reasoning: bool) -> str:
-        """Execute completion with optional reasoning parameter.
-
-        Uses chat_template_kwargs to control Gemma/Qwen thinking at the
-        Jinja template level (llama.cpp engine). Also sends the native
-        LM Studio 'reasoning' field and 'include_reasoning' as a belt-and-suspenders measure.
-        """
+        """Execute completion with optional reasoning parameter."""
         extra: dict = {
-            # llama.cpp Jinja template control
             "chat_template_kwargs": {"enable_thinking": allow_reasoning},
-            # Native LM Studio API fields (often required by various server versions)
             "reasoning": "on" if allow_reasoning else "off",
             "include_reasoning": allow_reasoning
         }
         enhanced = {**kwargs, "extra_body": extra}
         content = self._call_and_extract(enhanced)
         return self._strip_thought_blocks(content)
+
+    def _call_and_extract(self, kwargs: dict) -> str:
+        """Execute completion with support for instant thread abortion via streaming."""
+        abort_event = kwargs.pop("abort_event", None)
+        
+        # If no abort event, do simple sync request
+        if abort_event is None:
+            response = self.client.chat.completions.create(**kwargs)
+            content = response.choices[0].message.content
+            if content:
+                return content.strip()
+            reason = response.choices[0].finish_reason
+            raise ValueError(f"LM Studio returned empty content (finish_reason: '{reason}')")
+
+        # If abort_event provided, use streaming to enable immediate cancellation
+        kwargs["stream"] = True
+        response_stream = self.client.chat.completions.create(**kwargs)
+        
+        content_chunks = []
+        for chunk in response_stream:
+            # Check for instant abort signal on every chunk
+            if abort_event.is_set():
+                response_stream.close()
+                raise RuntimeError("PipelineAbortedError: Model inference aborted by user mid-generation.")
+            
+            delta = chunk.choices[0].delta
+            if delta and delta.content:
+                content_chunks.append(delta.content)
+                
+        content = "".join(content_chunks)
+        if content:
+            return content.strip()
+        raise ValueError("LM Studio returned empty streamed content")
 
     def _fallback_without_reasoning(self, kwargs: dict) -> str:
         """Fallback call without extra_body when the server rejects the reasoning param."""
