@@ -14,6 +14,7 @@ const emit = defineEmits<{
   'update:autoscroll': [value: boolean];
   'clear-logs': [];
   'start-pipeline': [config: any];
+  'stop-pipeline': [];
   'reset-step': [stepId: number];
 }>();
 
@@ -139,9 +140,14 @@ watch(() => props.parsedLogs.length, () => {
         </div>
       </div>
 
-      <button class="btn btn-primary" @click="handleStart" :disabled="pipelineRunning" style="height: 48px; font-size: 14px; justify-content: center;">
-        {{ pipelineRunning ? 'AI Pipeline Working...' : '▶ Start Execution' }}
-      </button>
+      <div class="action-buttons" style="display: flex; gap: 8px;">
+        <button class="btn btn-primary" @click="handleStart" :disabled="pipelineRunning" style="height: 48px; font-size: 14px; justify-content: center; flex: 1;">
+          {{ pipelineRunning ? 'AI Pipeline Working...' : '▶ Start Execution' }}
+        </button>
+        <button v-if="pipelineRunning" class="btn btn-danger" @click="$emit('stop-pipeline')" style="height: 48px; font-size: 14px; justify-content: center; width: 120px;">
+          ⏹ Stop
+        </button>
+      </div>
     </div>
 
     <div class="console-panel">

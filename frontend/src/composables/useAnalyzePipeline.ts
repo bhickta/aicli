@@ -90,6 +90,26 @@ export function useAnalyzePipeline(onCompleted?: () => void) {
     }
   }
 
+  async function stopPipeline() {
+    try {
+      await analyzeApi.stopPipeline()
+    } catch (e: any) {
+      alert("Could not stop pipeline: " + e.message)
+    }
+  }
+
+  async function restoreIfRunning() {
+    try {
+      const status = await analyzeApi.fetchOrchestratorStatus()
+      if (status.is_running) {
+        pipelineRunning.value = true
+        connectStream()
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
   onUnmounted(() => {
     if (eventSource) eventSource.close()
   })
@@ -100,6 +120,8 @@ export function useAnalyzePipeline(onCompleted?: () => void) {
     parsedLogs,
     tasks,
     autoscroll,
-    startPipeline
+    startPipeline,
+    stopPipeline,
+    restoreIfRunning
   }
 }

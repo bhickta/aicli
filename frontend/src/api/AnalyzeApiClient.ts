@@ -43,6 +43,14 @@ export class AnalyzeApiClient {
     return this.post('/run', config)
   }
 
+  async stopPipeline(): Promise<any> {
+    return this.post('/stop', {})
+  }
+
+  async fetchOrchestratorStatus(): Promise<any> {
+    return this.get('/orchestrator-status')
+  }
+
   async deletePdf(pdfFile: string): Promise<any> {
     const res = await fetch(`${this.base}/pdfs/${encodeURIComponent(pdfFile)}`, {
       method: 'DELETE',

@@ -124,6 +124,17 @@ async def stream_progress():
     return EventSourceResponse(analyze_orch.stream_events())
 
 
+@router.post("/stop")
+def stop_pipeline():
+    analyze_orch.abort()
+    return {"ok": True, "message": "Abort requested"}
+
+
+@router.get("/orchestrator-status")
+def get_orchestrator_status():
+    return {"is_running": analyze_orch.is_running}
+
+
 # ── Private Helpers ─────────────────────────────────────────────────
 
 def _analyze_worker(
@@ -133,8 +144,13 @@ def _analyze_worker(
 ) -> None:
     """Background worker for the pipeline."""
     try:
-        progress = SSEProgressContext(orch.queue)
-        log_cb = lambda msg: orch.queue.put({"type": "log", "message": msg})
+        from aicli.server.orchestrator.base import PipelineAbortedError
+        progress = SSEProgressContext(orch.queue, orch.abort_event)
+        
+        def log_cb(msg):
+            if orch.abort_event.is_set():
+                raise PipelineAbortedError("Pipeline aborted by user")
+            orch.queue.put({"type": "log", "message": msg})
 
         service.run_full_pipeline(
             data_dir=ServerState.data_dir,

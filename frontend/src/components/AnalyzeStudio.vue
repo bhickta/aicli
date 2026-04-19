@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useAnalyzeStatus } from '../composables/useAnalyzeStatus';
 import { useAnalyzePipeline } from '../composables/useAnalyzePipeline';
 import { usePageInspector } from '../composables/usePageInspector';
@@ -31,6 +31,8 @@ const {
   tasks, 
   autoscroll, 
   startPipeline, 
+  stopPipeline,
+  restoreIfRunning,
   logs 
 } = useAnalyzePipeline(() => {
   refreshAll();
@@ -47,6 +49,10 @@ const {
   nextPage, 
   prevPage 
 } = usePageInspector(pages);
+
+onMounted(() => {
+  restoreIfRunning();
+});
 
 // 4. Methods
 async function selectPdf(pdf: any) {
@@ -210,6 +216,7 @@ function openInspectorByPageNum(pageNum: number) {
           v-model:autoscroll="autoscroll"
           @clear-logs="logs = []"
           @start-pipeline="startPipeline"
+          @stop-pipeline="stopPipeline"
           @reset-step="handleResetStep"
         />
       </template>
