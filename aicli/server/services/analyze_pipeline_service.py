@@ -183,7 +183,9 @@ class AnalyzePipelineService:
         return time.time() - start_t
 
     def _should_run(self, step_id: int, target_steps: Optional[List[int]]) -> bool:
-        return target_steps is None or step_id in target_steps
+        """Check if a step should be executed based on the target selection."""
+        # Treat None or empty list as full pipeline (all steps)
+        return not target_steps or step_id in target_steps
 
     def _log(self, callback: Optional[Any], message: str):
         if callback:

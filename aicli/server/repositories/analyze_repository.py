@@ -60,11 +60,12 @@ class AnalyzeRepository:
     def get_status_metrics(self) -> ProcessingStatusDTO:
         """Fetch high-level processing metrics."""
         status = self._db.get_processing_status()
+        all_errors = status.get("errors", {})
         return ProcessingStatusDTO(
             total_pdfs=status.get("total_pdfs", 0),
             total_pages=status.get("total_pages", 0),
             classified_pages=status.get("classified_pages", 0),
-            errors={"OCR": status.get("errors", {}).get("OCR", 0)}
+            errors=all_errors
         )
 
     def get_pdf_pages(self, pdf_id: int) -> List[PageDTO]:
