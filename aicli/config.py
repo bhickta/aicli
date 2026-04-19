@@ -10,7 +10,7 @@ from pydantic import BaseModel
 CONFIG_DIR = Path.home() / ".config" / "aicli"
 CONFIG_FILE = CONFIG_DIR / "settings.json"
 
-PROVIDER_TYPE_CHOICES = ["ollama", "vllm"]
+PROVIDER_TYPE_CHOICES = ["ollama", "vllm", "lmstudio", "openai", "anthropic", "gemini"]
 
 
 class AppConfig(BaseModel):
@@ -21,6 +21,11 @@ class AppConfig(BaseModel):
     ollama_api_key: str = "ollama"
     vllm_base_url: str = "http://localhost:8000"
     vllm_api_key: str = "EMPTY"
+    lm_studio_base_url: str = "http://localhost:1234/v1"
+    lm_studio_api_key: str = "lm_studio"
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
+    gemini_api_key: str = ""
     model_name: str = "qwen3.5-9b"
 
 

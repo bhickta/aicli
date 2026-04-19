@@ -28,6 +28,11 @@ def update_settings(new_config: AppConfig):
     config.ollama_api_key = new_config.ollama_api_key
     config.vllm_base_url = new_config.vllm_base_url
     config.vllm_api_key = new_config.vllm_api_key
+    config.lm_studio_base_url = new_config.lm_studio_base_url
+    config.lm_studio_api_key = new_config.lm_studio_api_key
+    config.openai_api_key = new_config.openai_api_key
+    config.anthropic_api_key = new_config.anthropic_api_key
+    config.gemini_api_key = new_config.gemini_api_key
     config.model_name = new_config.model_name
 
     save_config(config)
