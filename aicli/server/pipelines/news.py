@@ -22,9 +22,9 @@ from aicli.config import config
 from aicli.providers import get_provider
 from aicli.server.services.news_reasoning_service import (
     NewsReasoningService,
-    STANDARD_TOPICS,
     NewsClassificationResult,
 )
+from aicli.prompts.news_prompts import STANDARD_TOPICS
 from aicli.server.services.news_clustering_service import NewsClusteringService
 from aicli.server.repositories.news_excel_repository import NewsExcelRepository
 

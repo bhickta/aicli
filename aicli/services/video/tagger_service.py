@@ -5,14 +5,12 @@ from pydantic import BaseModel, Field
 from langchain_core.prompts import PromptTemplate
 
 from aicli.providers import get_provider
-from aicli.config import config
 
 
 class VideoTaggerService:
-    """High-level Orchestrator for video metadata generation via Ollama."""
+    """High-level Orchestrator for video metadata generation."""
 
     VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts", ".mts"}
-    _lm_lock = threading.Lock()
 
     @staticmethod
     def ask_ollama(

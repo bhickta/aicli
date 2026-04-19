@@ -1,13 +1,10 @@
 """
 News Reasoning Service
-Handles LLM prompt generation, structured extraction, and AI summarization for news items.
+Handles structured extraction and AI summarization for news items.
 """
-import json
-import time
 from pathlib import Path
 from typing import List
 from pydantic import BaseModel, Field
-from langchain_core.prompts import PromptTemplate
 from aicli.prompts.news_prompts import CLASSIFICATION_PROMPT, MERGE_PROMPT
 
 class NewsItemSchema(BaseModel):

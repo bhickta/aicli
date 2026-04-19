@@ -1,14 +1,13 @@
-"""Service for generating compressed study notes from SRT transcripts via Ollama."""
+"""Service for generating compressed study notes from SRT transcripts via LLM provider."""
 
-import json
 import re
 import subprocess
-import urllib.request
-import urllib.error
 from pathlib import Path
 from typing import Optional
 
-from aicli.config import config
+from langchain_core.prompts import PromptTemplate
+
+from aicli.providers import get_provider
 from aicli.services.video.prompts import NOTES_SYSTEM_PROMPT, CLEAN_SYSTEM_PROMPT
 
 
@@ -67,47 +66,22 @@ class NotesService:
         return " ".join(lines)
 
     @staticmethod
-    def _call_ollama(text_chunk: str, style: str = "bullet") -> str:
-        """Send a text chunk to Ollama and return the compressed notes."""
+    def _call_llm(text_chunk: str, style: str = "bullet") -> str:
+        """Send a text chunk to the configured LLM provider and return compressed notes."""
         sys_prompt = CLEAN_SYSTEM_PROMPT if style == "clean" else NOTES_SYSTEM_PROMPT
 
-        payload = json.dumps(
-            {
-                "model": config.model_name,
-                "messages": [
-                    {"role": "system", "content": sys_prompt},
-                    {
-                        "role": "user",
-                        "content": f"Condense the following transcript text into {style} notes:\n\n{text_chunk}",
-                    },
-                ],
-                "temperature": 0.2,
-                "max_tokens": 2048,
-                "stream": False,
-            }
-        ).encode("utf-8")
-
-        endpoint = f"{config.ollama_base_url}/api/chat"
-
-        req = urllib.request.Request(
-            endpoint,
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
+        user_template = PromptTemplate.from_template(
+            "Condense the following transcript text into {style} notes:\n\n{text_chunk}"
         )
+        rendered = user_template.format(style=style, text_chunk=text_chunk)
 
-        try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                data = json.loads(resp.read())
-                if "message" in data and data["message"]:
-                    text = data["message"].get("content", "").strip()
-                else:
-                    text = ""
-                return text
-        except urllib.error.URLError as e:
-            raise ConnectionError(f"Ollama Error: {e}")
-        except Exception as e:
-            raise ValueError(f"Failed to parse Ollama response: {e}")
+        provider = get_provider()
+        return provider.complete_text(
+            prompt=rendered,
+            system_prompt=sys_prompt,
+            temperature=0.2,
+            max_tokens=2048,
+        )
 
     @staticmethod
     def generate_notes_from_text(text: str, style: str = "bullet") -> str:
@@ -131,7 +105,7 @@ class NotesService:
 
         all_notes = []
         for chunk in chunks:
-            notes = NotesService._call_ollama(chunk, style=style)
+            notes = NotesService._call_llm(chunk, style=style)
             if notes:
                 all_notes.append(notes)
 
