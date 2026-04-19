@@ -28,6 +28,12 @@ class AnswerSegment(BaseModel):
 class SegmentationResult(BaseModel):
     answers: List[AnswerSegment] = Field(description="List of segmented answers.")
 
+class CoverMetadata(BaseModel):
+    candidate_name: Optional[str] = Field(None, description="The name of the candidate (e.g. Anjali Verma)")
+    upsc_id: Optional[str] = Field(None, description="Roll number or UPSC identifier")
+    test_code: Optional[str] = Field(None, description="Test series code (e.g. 1928)")
+    test_date: Optional[str] = Field(None, description="Date of original test")
+
 
 class AnswerSegmenterService:
     """Group transcribed pages into answer units by question number."""
@@ -191,44 +197,34 @@ class AnswerSegmenterService:
     def _extract_metadata(
         self, pages: list[dict], db: AnalyzeDB, allow_reasoning: bool = True
     ) -> dict:
-        """Try to extract candidate metadata from the cover page."""
+        """Try to extract candidate metadata from the cover page via native structured output."""
         cover_pages = [p for p in pages if p.get("classification") == "cover"]
         if not cover_pages:
             return {}
 
-        # If cover page has a transcription, try to parse metadata
         cover = cover_pages[0]
         text_to_scan = cover.get("transcription")
 
-        # If no transcription yet, describe image with metadata prompt
         try:
+            # Use LangChain native structured output for reliable metadata extraction
+            # If we already have text (Ollama/Calyx OCR), we use it. If not, we use Image Vision.
             if not text_to_scan:
-                result = self.provider.describe_image(
+                result = self.provider.structured_invoke_image(
+                    schema=CoverMetadata,
                     image_path=cover["image_path"],
                     prompt=self.config.metadata_prompt,
-                    max_size=self.config.image_max_size,
-                    temperature=app_config.analyze_temperature,
-                    max_tokens=app_config.segmenter_max_tokens,
-                    max_retries=app_config.segmenter_max_retries,
                     allow_reasoning=allow_reasoning,
                 )
             else:
-                result = self.provider.complete_text_json(
-                    prompt=self.config.metadata_prompt + f"\n\nText:\n{text_to_scan}",
-                    temperature=app_config.analyze_temperature,
-                    max_tokens=app_config.segmenter_max_tokens,
+                result = self.provider.structured_invoke(
+                    schema=CoverMetadata,
+                    prompt=self.config.metadata_prompt + f"\n\nSCAN TEXT:\n{text_to_scan}",
                     allow_reasoning=allow_reasoning,
                 )
-
-            if isinstance(result, str):
-                try:
-                    import json
-
-                    return json.loads(result)
-                except:
-                    return {}
-            return result if isinstance(result, dict) else {}
-        except Exception:
+            
+            return result.model_dump() if result else {}
+        except Exception as e:
+            db.log_processing(None, "metadata_extraction_error", "warn", str(e))
             return {}
 
     def _fallback_segmentation(self, content_pages: list[dict]) -> list[dict]:

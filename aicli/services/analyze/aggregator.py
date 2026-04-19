@@ -58,7 +58,7 @@ class AggregationService:
         for r in valid_results:
             candidates.add(r.get("candidate") or r.get("pdf_file") or "unknown")
 
-        # Build dimension data string
+        # Build dimension data string - standardising on JSON representation for the LLM
         dimension_data = json.dumps(valid_results, indent=2, ensure_ascii=False)
 
         # Build the aggregation prompt

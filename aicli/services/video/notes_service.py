@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from langchain_core.prompts import PromptTemplate
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from aicli.providers import get_provider
 from aicli.config import config as app_config
@@ -86,23 +87,17 @@ class NotesService:
 
     @staticmethod
     def generate_notes_from_text(text: str, style: str = "bullet") -> str:
-        """Plain text → chunked Ollama calls → merged notes."""
+        """Plain text → LangChain splitters → chunked LLM calls → merged notes."""
         if not text.strip():
             raise ValueError("Input text is empty.")
 
-        chunks = []
-        words = text.split()
-        current = []
-        current_len = 0
-        for word in words:
-            current.append(word)
-            current_len += len(word) + 1
-            if current_len >= NotesService.CHUNK_SIZE:
-                chunks.append(" ".join(current))
-                current = []
-                current_len = 0
-        if current:
-            chunks.append(" ".join(current))
+        # Use native LangChain splitter for robust context-aware chunking
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=NotesService.CHUNK_SIZE,
+            chunk_overlap=app_config.notes_chunk_overlap if hasattr(app_config, "notes_chunk_overlap") else 200,
+            length_function=len,
+        )
+        chunks = splitter.split_text(text)
 
         all_notes = []
         for chunk in chunks:
