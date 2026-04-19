@@ -58,7 +58,11 @@ class AppConfig(BaseModel):
 
     # --- Database ---
     db_connect_timeout: int = 30            # SQLite connection timeout (seconds)
-    db_busy_timeout_ms: int = 5000          # SQLite busy_timeout pragma (milliseconds)
+    db_busy_timeout_ms: int = 5000
+
+    # Image Rename Tuning
+    image_rename_min_words: int = 3
+    image_rename_max_words: int = 6          # SQLite busy_timeout pragma (milliseconds)
 
 
 def load_config() -> AppConfig:
