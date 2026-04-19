@@ -13,10 +13,13 @@ def run_server(
     cache_dir: Path = None,
     dev_mode: bool = False,
 ):
+    import os
+    if dev_mode:
+        os.environ["AICLI_DEV_MODE"] = "1"
+        
     from aicli.server.app import app as fastapi_app
     from aicli.server.routers.analyze import ServerState
     import subprocess
-    import os
     import sys
     import signal
     

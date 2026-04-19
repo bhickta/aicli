@@ -185,89 +185,20 @@ class LMStudioProvider(ImageVisionProvider):
     def _call_with_reasoning(self, kwargs: dict, allow_reasoning: bool) -> str:
         """Execute completion with optional reasoning parameter.
 
-        When reasoning is ENABLED: use the standard OpenAI SDK (default behavior).
-        When reasoning is DISABLED: bypass the OpenAI SDK and call LM Studio's
-        native API at /api/v1/chat which is the ONLY endpoint that actually
-        honors the reasoning: "off" parameter. The OpenAI-compatible endpoint
-        at /v1/chat/completions ignores it completely.
+        Uses chat_template_kwargs to control Gemma/Qwen thinking at the
+        Jinja template level (llama.cpp engine). Also sends the native
+        LM Studio 'reasoning' field and 'include_reasoning' as a belt-and-suspenders measure.
         """
-        if not allow_reasoning:
-            return self._call_native_no_reasoning(kwargs)
-        # Reasoning ON — standard OpenAI SDK path (model thinks by default)
-        content = self._call_and_extract(kwargs)
-        return self._strip_thought_blocks(content)
-
-    def _call_native_no_reasoning(self, kwargs: dict) -> str:
-        """Call LM Studio's native /api/v1/chat endpoint with reasoning disabled.
-
-        The native API has a different request/response format than OpenAI:
-        - Request uses 'input' (list of content parts) instead of 'messages'
-        - Response uses 'output' (list) instead of 'choices'
-        """
-        import httpx
-
-        # Derive native API URL from OpenAI base URL
-        # e.g. http://localhost:1234/v1 -> http://localhost:1234/api/v1/chat
-        base = config.lm_studio_base_url.rstrip("/")
-        base_idx = base.rfind("/v1")
-        if base_idx >= 0:
-            native_url = base[:base_idx] + "/api/v1/chat"
-        else:
-            native_url = base.rstrip("/") + "/api/v1/chat"
-
-        # Convert OpenAI-format messages to native API 'input' format
-        input_parts = self._messages_to_native_input(kwargs.get("messages", []))
-
-        payload = {
-            "model": kwargs.get("model", config.model_name),
-            "input": input_parts,
-            "reasoning": "off",
-            "temperature": kwargs.get("temperature", 0.1),
+        extra: dict = {
+            # llama.cpp Jinja template control
+            "chat_template_kwargs": {"enable_thinking": allow_reasoning},
+            # Native LM Studio API fields (often required by various server versions)
+            "reasoning": "on" if allow_reasoning else "off",
+            "include_reasoning": allow_reasoning
         }
-        max_tokens = kwargs.get("max_tokens")
-        if max_tokens:
-            payload["max_output_tokens"] = max_tokens
-
-        resp = httpx.post(native_url, json=payload, timeout=300.0)
-        resp.raise_for_status()
-        data = resp.json()
-
-        # Extract content from native response format
-        content = self._extract_native_content(data)
+        enhanced = {**kwargs, "extra_body": extra}
+        content = self._call_and_extract(enhanced)
         return self._strip_thought_blocks(content)
-
-    @staticmethod
-    def _messages_to_native_input(messages: list) -> list:
-        """Convert OpenAI messages format to LM Studio native input format."""
-        parts = []
-        for msg in messages:
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                parts.append({"type": "text", "content": content})
-            elif isinstance(content, list):
-                for item in content:
-                    if item.get("type") == "text":
-                        parts.append({"type": "text", "content": item.get("text", "")})
-                    elif item.get("type") == "image_url":
-                        url = item.get("image_url", {}).get("url", "")
-                        parts.append({"type": "image", "data_url": url})
-        return parts
-
-    @staticmethod
-    def _extract_native_content(data: dict) -> str:
-        """Extract text content from LM Studio native API response."""
-        # Native response: {"output": [{"type": "message", "content": "..."}]}
-        output = data.get("output", [])
-        if isinstance(output, list):
-            for item in output:
-                if isinstance(item, dict) and item.get("content"):
-                    return item["content"].strip()
-        # Fallback: try choices format in case server returns hybrid
-        choices = data.get("choices", [])
-        if choices:
-            msg = choices[0].get("message", {})
-            return (msg.get("content") or "").strip()
-        raise ValueError(f"Could not extract content from native API response: {list(data.keys())}")
 
     def _fallback_without_reasoning(self, kwargs: dict) -> str:
         """Fallback call without extra_body when the server rejects the reasoning param."""
