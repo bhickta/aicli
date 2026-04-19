@@ -1,12 +1,12 @@
-"""Implementation of ImageVisionProvider using Ollama via the OpenAI SDK."""
+"""Implementation of ImageVisionProvider using Ollama via direct HTTP."""
 
 import base64
 import io
 import json
 import time
+import urllib.request
 from typing import Optional
 
-from openai import OpenAI
 from PIL import Image
 
 from aicli.core.interfaces import ImageVisionProvider
@@ -20,21 +20,12 @@ _MIME_MAP = {
     "gif": "image/gif",
 }
 
-_REASONING_MODELS = {"qwen3", "deepseek-r1", "qwq", "phi4"}
-
 
 class OllamaProvider(ImageVisionProvider):
     """Ollama provider for image vision and text completion."""
 
     def __init__(self) -> None:
-        self.client = OpenAI(
-            base_url=f"{config.ollama_base_url}/v1",
-            api_key=config.ollama_api_key,
-        )
-
-    def _is_reasoning_model(self) -> bool:
-        model_lower = config.model_name.lower()
-        return any(rm in model_lower for rm in _REASONING_MODELS)
+        self.base_url = config.ollama_base_url
 
     def describe_image(
         self,
@@ -52,23 +43,21 @@ class OllamaProvider(ImageVisionProvider):
         """Send a base64-encoded image + prompt to Ollama, return text."""
         base64_image = self._encode_image(image_path, max_dim=max_size)
         mime_type = self._get_mime_type(image_path)
-        combined_text = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
 
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": combined_text},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mime_type};base64,{base64_image}"},
-                    },
-                ],
-            }
-        ]
+        combined_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
 
-        return self._complete_with_retry(
-            messages, temperature, max_tokens, max_retries, retry_backoff_base
+        payload = {
+            "model": config.model_name,
+            "messages": [
+                {"role": "user", "content": combined_prompt, "images": [base64_image]}
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+
+        return self._post_with_retry(
+            "/api/chat", payload, max_retries, retry_backoff_base
         )
 
     def complete_text(
@@ -86,13 +75,17 @@ class OllamaProvider(ImageVisionProvider):
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
-        return self._complete_with_retry(
-            messages,
-            temperature,
-            max_tokens,
-            max_retries,
-            retry_backoff_base,
-            allow_reasoning,
+
+        payload = {
+            "model": config.model_name,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+
+        return self._post_with_retry(
+            "/api/chat", payload, max_retries, retry_backoff_base
         )
 
     def complete_text_json(
@@ -149,49 +142,33 @@ class OllamaProvider(ImageVisionProvider):
         ext = image_path.lower().rsplit(".", 1)[-1]
         return _MIME_MAP.get(ext, "image/jpeg")
 
-    def _complete_with_retry(
-        self,
-        messages: list,
-        temperature: float,
-        max_tokens: int,
-        max_retries: int,
-        backoff_base: int,
-        allow_reasoning: bool = True,
+    def _post_with_retry(
+        self, endpoint: str, payload: dict, max_retries: int, backoff_base: int
     ) -> str:
-        """Execute completion with retry logic."""
+        """Execute POST with retry logic."""
         last_error = None
         for attempt in range(max_retries):
             try:
-                extra_body = {}
-                is_reasoning = self._is_reasoning_model()
-
-                if is_reasoning and allow_reasoning:
-                    extra_body["thinking"] = {"type": "enabled", "duration": "inf"}
-                elif not allow_reasoning:
-                    extra_body["thinking"] = {"type": "disabled"}
-
-                kwargs = {
-                    "model": config.model_name,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                }
-                if extra_body:
-                    kwargs["extra_body"] = extra_body
-
-                response = self.client.chat.completions.create(**kwargs)
-                content = response.choices[0].message.content
-                if content:
-                    return content.strip()
-                reason = response.choices[0].finish_reason
-                raise ValueError(
-                    f"Ollama returned empty content (finish_reason: '{reason}')"
+                data = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(
+                    f"{self.base_url}{endpoint}",
+                    data=data,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
                 )
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    result = json.loads(resp.read())
+                    if "message" in result:
+                        content = result["message"].get("content", "").strip()
+                        if content:
+                            return content
+                    if "response" in result:
+                        return result["response"].strip()
+                    raise ValueError(f"Unexpected response: {result}")
             except Exception as e:
                 last_error = e
                 if attempt < max_retries - 1:
                     time.sleep(backoff_base**attempt)
-
         raise last_error
 
     @staticmethod
