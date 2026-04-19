@@ -110,17 +110,35 @@ class AnswerSegmenterService:
             if not raw_text_parts:
                 continue
 
-            # Use cleaned text from LLM if provided, else fallback to raw
+            # Use cleaned text from LLM if provided, else apply a secondary cleaning pass
             raw_text = seg.get("cleaned_answer_text")
             if not raw_text:
                 raw_text = "\n\n".join(raw_text_parts)
+                # Backup: Strip common boilerplate via regex if LLM failed to clean
+                import re
+                boilerplate = [
+                    r"\(Please do not write anything.*?\)",
+                    r"कृप्या इस स्थान में.*?लिखें",
+                    r"उम्मीदवारों को इस हाशिये में नहीं लिखना चाहिए",
+                    r"Candidates must not write on this margin",
+                    r"Answer Questions.*?Parenthesis",
+                    r"Content of the Question is more important than length",
+                    r"(Specimen Answer Booklet - For Practice Purpose Only)",
+                    r"Page \| \d+",
+                    r"- Page \d+ -",
+                    r"amBlitz",
+                    r"UPSC"
+                ]
+                for pattern in boilerplate:
+                    raw_text = re.sub(pattern, "", raw_text, flags=re.IGNORECASE | re.DOTALL)
+                raw_text = raw_text.strip()
 
             db.insert_answer(
                 pdf_file=pdf_file,
                 candidate_name=candidate_name,
                 upsc_id=upsc_id,
                 test_code=test_code,
-                question_number=seg.get("question_number"),
+                question_number=seg.get("question_number") or f"Q.{count+1}",
                 question_text=seg.get("question_text"),
                 question_directive=seg.get("question_directive"),
                 word_limit=seg.get("word_limit"),
