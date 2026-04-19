@@ -455,8 +455,8 @@ def reset_pipeline(
     """Reset pipeline from a given step onwards."""
     step_names = {
         1: "PDF → Images",
-        2: "Page Classification",
-        3: "OCR Transcription",
+        2: "OCR Transcription",
+        3: "Page Classification",
         4: "Answer Segmentation",
         5: "Dimension Analysis",
         6: "Aggregation",
@@ -482,3 +482,34 @@ def reset_pipeline(
         print_success(f"Reset from step {step} ({step_names[step]}) onwards")
     finally:
         db.close()
+
+
+@app.command("view")
+def view_dashboard(
+    data_dir: Path = typer.Option(
+        ".",
+        "--data-dir", "-d",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        help="Data directory containing analyze.db.",
+    ),
+    port: int = typer.Option(8765, "--port", "-p", help="Port to serve on."),
+):
+    """Start the API server for the Vue dashboard viewer."""
+    from aicli.services.analyze.viewer import start_viewer
+
+    try:
+        server = start_viewer(data_dir, port)
+    except FileNotFoundError as e:
+        print_error("No database found", e)
+        raise typer.Exit(1)
+
+    console.print(f"[bold green]✔ API server running at http://localhost:{port}[/bold green]")
+    console.print("[dim]Connect the Vue viewer or open in browser. Ctrl+C to stop.[/dim]")
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        console.print("\n[dim]Shutting down viewer.[/dim]")
+        server.shutdown()
