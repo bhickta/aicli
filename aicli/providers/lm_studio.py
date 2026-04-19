@@ -51,7 +51,7 @@ class LMStudioProvider(ImageVisionProvider):
     def describe_image(self, image_path: str, prompt: str, system_prompt: str = None,
                        max_size: int = 512, temperature: float = 0.2,
                        max_tokens: int = None, max_retries: int = 1,
-                       retry_backoff_base: int = 2) -> str:
+                       retry_backoff_base: int = 2, allow_reasoning: bool = True) -> str:
         """
         Sends the base64 encoded image and the prompt to LM Studio.
         
@@ -87,7 +87,7 @@ class LMStudioProvider(ImageVisionProvider):
             "model": config.model_name,
             "messages": messages,
             "temperature": temperature,
-            "extra_body": {"reasoning": False},  # Disable thinking for vision — saves tokens
+            "extra_body": {"reasoning": allow_reasoning},  # Explicitly control thinking
         }
         if max_tokens:
             create_kwargs["max_tokens"] = max_tokens
@@ -111,7 +111,8 @@ class LMStudioProvider(ImageVisionProvider):
 
     def complete_text(self, prompt: str, system_prompt: str = None,
                       temperature: float = 0.1, max_tokens: int = 2000,
-                      max_retries: int = 1, retry_backoff_base: int = 2) -> str:
+                      max_retries: int = 1, retry_backoff_base: int = 2,
+                      allow_reasoning: bool = True) -> str:
         """
         Text-only completion via LM Studio (no image). Used for analysis,
         segmentation, and aggregation steps.
@@ -126,6 +127,7 @@ class LMStudioProvider(ImageVisionProvider):
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "extra_body": {"reasoning": allow_reasoning},
         }
 
         last_error = None
@@ -147,7 +149,8 @@ class LMStudioProvider(ImageVisionProvider):
 
     def complete_text_json(self, prompt: str, system_prompt: str = None,
                            temperature: float = 0.1, max_tokens: int = 2000,
-                           max_retries: int = 3, retry_backoff_base: int = 2) -> dict:
+                           max_retries: int = 3, retry_backoff_base: int = 2,
+                           allow_reasoning: bool = True) -> dict:
         """
         Text completion that parses the response as JSON. Retries with a
         stricter prompt prefix on parse failure.
@@ -165,6 +168,7 @@ class LMStudioProvider(ImageVisionProvider):
                     temperature=temperature,
                     max_tokens=max_tokens,
                     max_retries=1,
+                    allow_reasoning=allow_reasoning,
                 )
                 
                 # Strip markdown code fences if present

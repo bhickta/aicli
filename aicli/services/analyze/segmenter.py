@@ -60,6 +60,7 @@ class AnswerSegmenterService:
                 max_tokens=self.config.max_tokens,
                 max_retries=self.config.max_retries,
                 retry_backoff_base=self.config.retry_backoff_base,
+                allow_reasoning=allow_reasoning,
             )
         except Exception as e:
             db.log_processing(pdf_file, "segmentation", "error", str(e))

@@ -37,6 +37,7 @@ class AnswerTranscriberService:
             max_tokens=max_tokens,
             max_retries=self.config.max_retries,
             retry_backoff_base=self.config.retry_backoff_base,
+            allow_reasoning=allow_reasoning,
         )
 
         return result
