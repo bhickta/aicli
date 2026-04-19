@@ -4,6 +4,7 @@ Groups pages by question boundaries. Each question + its continuation
 pages = one answer unit stored in the answers table.
 """
 import json
+from pathlib import Path
 
 from aicli.domains.analyze.database import AnalyzeDB
 from aicli.providers.lm_studio import LMStudioProvider
