@@ -4,6 +4,7 @@ import { useAnalyzeStatus } from '../composables/useAnalyzeStatus';
 import { useAnalyzePipeline } from '../composables/useAnalyzePipeline';
 import { usePageInspector } from '../composables/usePageInspector';
 import { analyzeApi } from '../api/AnalyzeApiClient';
+import { DEFAULT_STEP_REASONING } from '../constants/pipeline.constants';
 
 import AnalyzeSidebar from './AnalyzeStudio/AnalyzeSidebar.vue';
 import AnalyzeBanner from './AnalyzeStudio/AnalyzeBanner.vue';
@@ -22,6 +23,15 @@ const answerDimensions = ref<Record<number, any[]>>({});
 const aggregations = ref<any[]>([]);
 const activeTab = ref('answers');
 const expandedAnswers = ref(new Set<number>());
+
+const runConfig = ref({
+  workers: 4,
+  llm_model: 'gemma-4-26b-a4b',
+  allow_reasoning: true,
+  mode: 'all',
+  target_steps: [] as number[],
+  step_reasoning: { ...DEFAULT_STEP_REASONING } as Record<number, boolean>
+});
 
 
 // 3. Composables
@@ -154,7 +164,11 @@ async function runPageStep(stepId: number | null) {
     tasks.value = {};
     const config = {
       target_steps: stepId ? [stepId] : null,
-      page_id: inspectedPage.value.id
+      page_id: inspectedPage.value.id,
+      workers: runConfig.value.workers,
+      llm_model: runConfig.value.llm_model,
+      allow_reasoning: runConfig.value.allow_reasoning,
+      step_reasoning: runConfig.value.step_reasoning
     };
     await analyzeApi.runPipeline(config);
     setTimeout(() => { if (selectedPdf.value) loadPdfData(selectedPdf.value); }, 2000);
@@ -214,6 +228,7 @@ function openInspectorByPageNum(pageNum: number) {
           :parsed-logs="parsedLogs"
           :tasks="tasks"
           v-model:autoscroll="autoscroll"
+          v-model:run-config="runConfig"
           @clear-logs="logs = []"
           @start-pipeline="startPipeline"
           @stop-pipeline="stopPipeline"

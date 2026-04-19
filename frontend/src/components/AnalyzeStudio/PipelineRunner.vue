@@ -8,49 +8,56 @@ const props = defineProps<{
   parsedLogs: any[];
   tasks: Record<string, any>;
   autoscroll: boolean;
+  runConfig: {
+    workers: number;
+    llm_model: string;
+    allow_reasoning: boolean;
+    mode: string;
+    target_steps: number[];
+    step_reasoning: Record<number, boolean>;
+  };
 }>();
 
 const emit = defineEmits<{
   'update:autoscroll': [value: boolean];
+  'update:run-config': [value: any];
   'clear-logs': [];
   'start-pipeline': [config: any];
   'stop-pipeline': [];
   'reset-step': [stepId: number];
 }>();
 
-const runConfig = ref({
-  workers: 4,
-  llm_model: 'gemma-4-26b-a4b',
-  allow_reasoning: true,
-  mode: 'all',
-  target_steps: [] as number[],
-  stepReasoning: { ...DEFAULT_STEP_REASONING } as Record<number, boolean>
-});
+// local state removed, using props.runConfig
 
 const terminalRef = ref<HTMLElement | null>(null);
 
 function toggleStep(stepId: number) {
   if (props.pipelineRunning) return;
-  const idx = runConfig.value.target_steps.indexOf(stepId);
-  if (idx > -1) runConfig.value.target_steps.splice(idx, 1);
+  const config = { ...props.runConfig };
+  const idx = config.target_steps.indexOf(stepId);
+  if (idx > -1) config.target_steps.splice(idx, 1);
   else {
-    runConfig.value.target_steps.push(stepId);
-    runConfig.value.target_steps.sort((a, b) => a - b);
+    config.target_steps.push(stepId);
+    config.target_steps.sort((a, b) => a - b);
   }
+  emit('update:run-config', config);
 }
 
 function toggleStepReasoning(stepId: number) {
-  if (props.pipelineRunning || !runConfig.value.allow_reasoning) return;
-  runConfig.value.stepReasoning[stepId] = !runConfig.value.stepReasoning[stepId];
+  if (props.pipelineRunning || !props.runConfig.allow_reasoning) return;
+  const config = { ...props.runConfig };
+  config.step_reasoning = { ...config.step_reasoning };
+  config.step_reasoning[stepId] = !config.step_reasoning[stepId];
+  emit('update:run-config', config);
 }
 
 function handleStart() {
   const config = {
-    workers: runConfig.value.workers,
-    llm_model: runConfig.value.llm_model,
-    allow_reasoning: runConfig.value.allow_reasoning,
-    target_steps: runConfig.value.mode === 'all' ? null : runConfig.value.target_steps,
-    step_reasoning: runConfig.value.stepReasoning
+    workers: props.runConfig.workers,
+    llm_model: props.runConfig.llm_model,
+    allow_reasoning: props.runConfig.allow_reasoning,
+    target_steps: props.runConfig.mode === 'all' ? null : props.runConfig.target_steps,
+    step_reasoning: props.runConfig.step_reasoning
   };
   emit('start-pipeline', config);
 }
@@ -72,15 +79,15 @@ watch(() => props.parsedLogs.length, () => {
         <div class="settings-grid">
           <div class="form-group">
             <label>Workers</label>
-            <input type="number" v-model.number="runConfig.workers" min="1" max="16" :disabled="pipelineRunning" />
+            <input type="number" :value="runConfig.workers" @input="emit('update:run-config', { ...runConfig, workers: Number(($event.target as HTMLInputElement).value) })" min="1" max="16" :disabled="pipelineRunning" />
           </div>
           <div class="form-group span-full" style="grid-column: span 2;">
             <label>LLM Model ID</label>
-            <input type="text" v-model="runConfig.llm_model" placeholder="Model for vision & reasoning" :disabled="pipelineRunning" />
+            <input type="text" :value="runConfig.llm_model" @input="emit('update:run-config', { ...runConfig, llm_model: ($event.target as HTMLInputElement).value })" placeholder="Model for vision & reasoning" :disabled="pipelineRunning" />
           </div>
           <div class="form-group span-full" style="grid-column: span 2; display: flex; align-items: center; justify-content: center; padding: 12px; background: var(--bg-input); border-radius: var(--radius); margin-top: 8px;">
             <label class="toggle-control" style="display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none;">
-              <input type="checkbox" v-model="runConfig.allow_reasoning" :disabled="pipelineRunning" style="width: 20px; height: 20px;" />
+              <input type="checkbox" :checked="runConfig.allow_reasoning" @change="emit('update:run-config', { ...runConfig, allow_reasoning: ($event.target as HTMLInputElement).checked })" :disabled="pipelineRunning" style="width: 20px; height: 20px;" />
               <span style="font-weight: 600; font-size: 13px; color: var(--text-primary);">Model Reasoning (Master Toggle)</span>
             </label>
             <div class="info-tip" style="margin-left: 8px;" title="Master switch for Deep Thinking.">ⓘ</div>
@@ -98,10 +105,10 @@ watch(() => props.parsedLogs.length, () => {
         <div class="form-group">
           <div class="radio-group" style="display: flex; gap: 16px; margin-bottom: 8px;">
             <label style="display: flex; align-items: center; gap: 8px;" :style="{ cursor: pipelineRunning ? 'not-allowed' : 'pointer' }">
-              <input type="radio" v-model="runConfig.mode" value="all" :disabled="pipelineRunning" /> End-to-End
+              <input type="radio" :checked="runConfig.mode === 'all'" @change="emit('update:run-config', { ...runConfig, mode: 'all' })" name="run_mode" :disabled="pipelineRunning" /> End-to-End
             </label>
             <label style="display: flex; align-items: center; gap: 8px;" :style="{ cursor: pipelineRunning ? 'not-allowed' : 'pointer' }">
-              <input type="radio" v-model="runConfig.mode" value="custom" :disabled="pipelineRunning" /> Custom Step Selection
+              <input type="radio" :checked="runConfig.mode === 'custom'" @change="emit('update:run-config', { ...runConfig, mode: 'custom' })" name="run_mode" :disabled="pipelineRunning" /> Custom Step Selection
             </label>
           </div>
           
@@ -126,9 +133,9 @@ watch(() => props.parsedLogs.length, () => {
                 <div 
                   v-if="step.id > 1"
                   class="reasoning-toggle" 
-                  :class="{ active: runConfig.stepReasoning[step.id], disabled: !runConfig.allow_reasoning || pipelineRunning }" 
+                  :class="{ active: runConfig.step_reasoning[step.id], disabled: !runConfig.allow_reasoning || pipelineRunning }" 
                   @click.stop="toggleStepReasoning(step.id)"
-                  :title="runConfig.stepReasoning[step.id] ? 'Reasoning ENABLED' : 'Reasoning DISABLED'"
+                  :title="runConfig.step_reasoning[step.id] ? 'Reasoning ENABLED' : 'Reasoning DISABLED'"
                 >
                   🧠
                 </div>
