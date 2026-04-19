@@ -24,7 +24,7 @@ class PageClassifierService:
     def classify_page(self, page_row: dict, allow_reasoning: bool = True) -> str:
         """Classify a single page from its transcription text. Returns classification string."""
         prompt = self.config.classification_prompt
-        max_tokens = 8192 if allow_reasoning else 1000
+        max_tokens = 8192  # Generous ceiling to prevent cutoffs for models that ignore the reasoning=False flag
         
         if not allow_reasoning:
             prompt = f"[SHORT RESPONSE MODE]\nRespond ONLY with the single word classification tag.\nDO NOT think step-by-step. DO NOT explain.\n\n{prompt}"

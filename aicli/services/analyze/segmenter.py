@@ -58,7 +58,7 @@ class AnswerSegmenterService:
             segments = self.provider.complete_text_json(
                 prompt=prompt,
                 temperature=self.config.temperature,
-                max_tokens=8192 if allow_reasoning else self.config.max_tokens,
+                max_tokens=8192,  # Let the model think as much as it wants
                 max_retries=self.config.max_retries,
                 retry_backoff_base=self.config.retry_backoff_base,
                 allow_reasoning=allow_reasoning,
