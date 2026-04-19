@@ -215,7 +215,13 @@
                       :class="[selectedPdf.progress ? selectedPdf.progress[step.id] : '', { disabled: pipelineRunning }]"
                       @click="!pipelineRunning && toggleStep(step.id)"
                     >
-                      <input type="checkbox" :checked="runConfig.target_steps.includes(step.id)" @click.stop :disabled="pipelineRunning" />
+                      <input 
+                        type="checkbox" 
+                        :value="step.id" 
+                        v-model="runConfig.target_steps" 
+                        @click.stop
+                        :disabled="pipelineRunning" 
+                      />
                       <span class="step-name">{{ step.id }}: {{ step.fullname }}</span>
                       
                       <!-- Action Group (Right Aligned) -->
@@ -714,10 +720,14 @@ export default {
       }
     },
     toggleStep(stepId) {
-      const idx = this.runConfig.target_steps.indexOf(stepId)
+      if (this.pipelineRunning) return;
+      const id = Number(stepId)
+      const idx = this.runConfig.target_steps.indexOf(id)
       if (idx > -1) this.runConfig.target_steps.splice(idx, 1)
-      else this.runConfig.target_steps.push(stepId)
-      this.runConfig.target_steps.sort((a,b) => a - b)
+      else {
+        this.runConfig.target_steps.push(id)
+        this.runConfig.target_steps.sort((a,b) => a - b)
+      }
     },
     toggleStepReasoning(stepId) {
       if (this.pipelineRunning || !this.runConfig.allow_reasoning) return;
