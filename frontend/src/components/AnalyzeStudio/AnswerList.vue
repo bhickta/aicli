@@ -10,6 +10,7 @@ const props = defineProps<{
   answerDimensions: Record<number, any[]>;
   aggregations: any[];
   selectedPdf: any;
+  pages: any[];
 }>();
 
 const emit = defineEmits<{
@@ -22,6 +23,11 @@ function getPageNumbers(pageIdsStr: string) {
   try {
     return JSON.parse(pageIdsStr).map((id: any) => parseInt(id));
   } catch (e) { return []; }
+}
+
+function getPhysicalPage(dbId: number) {
+  const page = props.pages?.find(p => p.id === dbId);
+  return page?.page_number || dbId;
 }
 
 function imageUrl(pdfFile: string, pageNum: number) {
@@ -50,13 +56,13 @@ function imageUrl(pdfFile: string, pageNum: number) {
 
           <div class="answer-page-strip" v-if="answer.page_ids">
             <div 
-              v-for="pageNum in getPageNumbers(answer.page_ids)" 
-              :key="pageNum"
+              v-for="pageId in getPageNumbers(answer.page_ids)" 
+              :key="pageId"
               class="answer-thumbnail"
-              @click="$emit('open-inspector', pageNum)"
+              @click="$emit('open-inspector', getPhysicalPage(pageId))"
             >
-              <img :src="imageUrl(selectedPdf.filename, pageNum)" loading="lazy" />
-              <span class="thumb-label">Page {{ pageNum }}</span>
+              <img :src="imageUrl(selectedPdf.filename, getPhysicalPage(pageId))" loading="lazy" />
+              <span class="thumb-label">Page {{ getPhysicalPage(pageId) }}</span>
             </div>
           </div>
 

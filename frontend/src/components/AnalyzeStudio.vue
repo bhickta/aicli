@@ -196,6 +196,7 @@ function openInspectorByPageNum(pageNum: number) {
           :answer-dimensions="answerDimensions"
           :aggregations="aggregations"
           :selected-pdf="selectedPdf"
+          :pages="pages"
           @toggle-answer="toggleAnswer"
           @open-inspector="openInspectorByPageNum"
         />
