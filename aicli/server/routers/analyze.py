@@ -239,6 +239,7 @@ class RunRequest(BaseModel):
     workers: int = 4
     dpi: int = 300
     llm_model: str = "gemma-4-26b-a4b"
+    allow_reasoning: bool = True
     target_steps: list[int] | None = None
     page_id: int | None = None
 
@@ -251,6 +252,7 @@ def _analyze_worker(
     workers: int, 
     dpi: int, 
     llm_model: str, 
+    allow_reasoning: bool = True,
     target_steps: list[int] | None = None,
     target_page_id: int | None = None
 ):
@@ -277,6 +279,7 @@ def _analyze_worker(
             dpi=dpi,
             pdf_files=None,
             llm_model=llm_model,
+            allow_reasoning=allow_reasoning,
             target_steps=target_steps,
             target_page_id=target_page_id
         )
@@ -297,6 +300,7 @@ def run_pipeline(req: RunRequest):
             workers=req.workers,
             dpi=req.dpi,
             llm_model=req.llm_model,
+            allow_reasoning=req.allow_reasoning,
             target_steps=req.target_steps,
             target_page_id=req.page_id
         )

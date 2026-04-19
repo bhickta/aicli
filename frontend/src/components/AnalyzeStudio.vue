@@ -181,6 +181,13 @@
                     <label>LLM Model ID</label>
                     <input type="text" v-model="runConfig.llm_model" placeholder="Model for vision & reasoning" :disabled="pipelineRunning" />
                   </div>
+                  <div class="form-group span-full" style="grid-column: span 2; display: flex; align-items: center; gap: 12px; margin-top: 8px;">
+                    <label class="toggle-control" style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
+                      <input type="checkbox" v-model="runConfig.allow_reasoning" :disabled="pipelineRunning" style="width: 18px; height: 18px;" />
+                      <span style="font-weight: 500; font-size: 0.9em;">Enable Model Reasoning (Deep Thinking)</span>
+                    </label>
+                    <div class="info-tip" title="Turn OFF for faster, direct answers. Turn ON for higher accuracy on complex logic (requires high token limit).">ⓘ</div>
+                  </div>
                 </div>
               </div>
 
@@ -401,17 +408,18 @@ export default {
         workers: 4,
         dpi: 300,
         llm_model: 'gemma-4-26b-a4b',
+        allow_reasoning: true,
         mode: 'all',
         target_steps: []
       },
       pipelineSteps: [
-        { id: '1', name: 'Images', fullname: 'PDF → Page Images' },
-        { id: '2', name: 'OCR', fullname: 'OCR Transcription' },
-        { id: '3', name: 'Classify', fullname: 'Page Classification' },
-        { id: '4', name: 'Segment', fullname: 'Answer Segmentation' },
-        { id: '5', name: 'Analyze', fullname: 'Dimension Analysis' },
-        { id: '6', name: 'Aggregate', fullname: 'Cross-PDF Aggregation' },
-        { id: '7', name: 'Report', fullname: 'Report Generation' }
+        { id: 1, name: 'Images', fullname: 'PDF → Page Images' },
+        { id: 2, name: 'OCR', fullname: 'OCR Transcription' },
+        { id: 3, name: 'Classify', fullname: 'Page Classification' },
+        { id: 4, name: 'Segment', fullname: 'Answer Segmentation' },
+        { id: 5, name: 'Analyze', fullname: 'Dimension Analysis' },
+        { id: 6, name: 'Aggregate', fullname: 'Cross-PDF Aggregation' },
+        { id: 7, name: 'Report', fullname: 'Report Generation' }
       ],
       // Page Inspector
       inspectedPage: null,
@@ -683,6 +691,7 @@ export default {
           workers: this.runConfig.workers,
           dpi: this.runConfig.dpi,
           llm_model: this.runConfig.llm_model,
+          allow_reasoning: this.runConfig.allow_reasoning,
           target_steps: this.runConfig.mode === 'all' ? null : this.runConfig.target_steps
         }
         
@@ -719,6 +728,9 @@ export default {
               this.logs.push(`[SYSTEM] Pipeline execution completed successfully.`)
               this.pipelineRunning = false
               this.refreshAll()
+              if (this.selectedPdf) {
+                this.loadPdfData(this.selectedPdf)
+              }
             }
           }
           else if (data.type === 'task_add') {

@@ -8,6 +8,7 @@ class SSEProgressContext:
     def __init__(self, event_queue: queue.Queue):
         self.queue = event_queue
         self.tasks = {}
+        self.console = ConsoleRedirect(event_queue)
 
     def add_task(self, description: str, total: int) -> int:
         task_id = len(self.tasks)

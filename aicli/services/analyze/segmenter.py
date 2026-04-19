@@ -122,7 +122,7 @@ class AnswerSegmenterService:
         db.log_processing(pdf_file, "segmentation", "done")
         return count
 
-    def segment_all(self, db: AnalyzeDB, progress=None, task_id=None) -> int:
+    def segment_all(self, db: AnalyzeDB, progress=None, task_id=None, allow_reasoning: bool = True) -> int:
         """Segment all unsegmented PDFs.
 
         Returns:
@@ -132,7 +132,7 @@ class AnswerSegmenterService:
         total = 0
 
         for pdf_file in pdfs:
-            count = self.segment_pdf(pdf_file, db)
+            count = self.segment_pdf(pdf_file, db, allow_reasoning=allow_reasoning)
             total += count
             if progress and task_id is not None:
                 progress.advance(task_id)

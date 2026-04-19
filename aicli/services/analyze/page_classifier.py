@@ -21,9 +21,14 @@ class PageClassifierService:
         self.provider = provider
         self.config = config
 
-    def classify_page(self, page_row: dict) -> str:
+    def classify_page(self, page_row: dict, allow_reasoning: bool = True) -> str:
         """Classify a single page from its transcription text. Returns classification string."""
         prompt = self.config.classification_prompt
+        max_tokens = 3000 if allow_reasoning else 50
+        
+        if not allow_reasoning:
+            prompt = f"[SHORT RESPONSE MODE]\nRespond ONLY with the single word classification tag.\nDO NOT think step-by-step. DO NOT explain.\n\n{prompt}"
+        
         transcription = page_row.get("transcription") or ""
 
         # If transcription is empty or error, it's likely blank
@@ -35,7 +40,7 @@ class PageClassifierService:
         result = self.provider.complete_text(
             prompt=full_prompt,
             temperature=self.config.temperature,
-            max_tokens=500,  # Reasoning models use thinking tokens
+            max_tokens=max_tokens,
             max_retries=self.config.max_retries,
             retry_backoff_base=self.config.retry_backoff_base,
         )
@@ -61,6 +66,7 @@ class PageClassifierService:
         workers: int = 4,
         progress=None,
         task_id=None,
+        allow_reasoning: bool = True,
     ) -> tuple[int, int]:
         """Classify all unclassified pages in parallel (text-only).
 
@@ -76,7 +82,7 @@ class PageClassifierService:
         first_error_shown = False
 
         def _process_one(page_row):
-            classification = self.classify_page(page_row)
+            classification = self.classify_page(page_row, allow_reasoning=allow_reasoning)
             db.update_classification(page_row["id"], classification)
             # Log success
             if progress:

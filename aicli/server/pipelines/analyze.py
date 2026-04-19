@@ -90,10 +90,11 @@ def _run_full_pipeline(
     workers: int,
     dpi: int,
     pdf_files: list[Path] | None = None,
-    llm_model: str | None = None,
+    llm_model: str = "gemma-4-26b-a4b",
+    allow_reasoning: bool = True,
     target_steps: list[int] | None = None,
     target_page_id: int | None = None,
-):
+) -> float:
     """Execute the full 7-step pipeline."""
     cache_dir = _get_cache_dir(data_dir)
     cfg = AnalyzeConfig()
@@ -101,6 +102,10 @@ def _run_full_pipeline(
     provider = LMStudioProvider()
 
     start_t = time.time()
+
+    # Defensive type-casting for target_steps
+    if target_steps is not None:
+        target_steps = [int(s) for s in target_steps]
 
     # ------------------------------------------------------------------
     # Step 1: PDF → Images
@@ -121,7 +126,9 @@ def _run_full_pipeline(
         if total_pages > 0:
             print_success(f"Converted {pdf_count} PDF(s) → {total_pages} page images")
         else:
-            console.print("[dim]All PDFs already converted. Skipping.[/dim]")
+            console.print("[dim]Step 1: All PDFs already converted. Skipping.[/dim]")
+    elif target_steps is not None and 1 not in target_steps:
+        pass # Explicitly not requested
 
     # ------------------------------------------------------------------
     # Step 2: OCR Transcription (Vision Model — all pages)
@@ -148,7 +155,7 @@ def _run_full_pipeline(
                     for p in untranscribed:
                         try:
                             # Update directly
-                            txt = transcriber.transcribe_page(p)
+                            txt = transcriber.transcribe_page(p, allow_reasoning=allow_reasoning)
                             db.update_transcription(p["id"], txt)
                             transcribed += 1
                         except Exception as e:
@@ -157,13 +164,16 @@ def _run_full_pipeline(
                         progress.advance(task)
                     tr_errors = errors
                 else:
-                    transcribed, tr_errors = transcriber.transcribe_batch(db, workers, progress, task)
+                    transcribed, tr_errors = transcriber.transcribe_batch(
+                        db, workers, progress, task, 
+                        allow_reasoning=allow_reasoning
+                    )
             
             if tr_errors:
                 print_error(f"Transcription: {tr_errors} errors", ValueError(""))
             print_success(f"Transcribed {transcribed} pages")
         else:
-            console.print("[dim]No untranscribed pages. Skipping.[/dim]")
+            console.print("[dim]Step 2: No untranscribed pages. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
     # Step 3: Page Classification (Text-only — fast)
@@ -188,7 +198,7 @@ def _run_full_pipeline(
                     errors = 0
                     for p in unclassified:
                         try:
-                            cls = classifier.classify_page(p)
+                            cls = classifier.classify_page(p, allow_reasoning=allow_reasoning)
                             db.update_classification(p["id"], cls)
                             classified += 1
                         except Exception as e:
@@ -196,13 +206,16 @@ def _run_full_pipeline(
                         progress.advance(task)
                     cls_errors = errors
                 else:
-                    classified, cls_errors = classifier.classify_batch(db, workers, progress, task)
+                    classified, cls_errors = classifier.classify_batch(
+                        db, workers, progress, task,
+                        allow_reasoning=allow_reasoning
+                    )
             
             if cls_errors:
                 print_error(f"Classification: {cls_errors} errors", ValueError(""))
             print_success(f"Classified {classified} pages")
         else:
-            console.print("[dim]No unclassified pages. Skipping.[/dim]")
+            console.print("[dim]Step 3: No unclassified pages. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
     # Step 4: Answer Segmentation
@@ -212,7 +225,6 @@ def _run_full_pipeline(
         segmenter = AnswerSegmenterService(provider, cfg)
         
         if target_page_id:
-            # Segmentation depends on the whole PDF. Find the PDF for this page.
             page = db.get_page(target_page_id)
             unsegmented = [Path(data_dir / page["pdf_file"])] if page else []
         else:

@@ -17,20 +17,24 @@ class AnswerTranscriberService:
         self.provider = provider
         self.config = config
 
-    def transcribe_page(self, page_row: dict) -> str:
+    def transcribe_page(self, page_row: dict, allow_reasoning: bool = True) -> str:
         """Transcribe a single page using the vision model.
 
         Returns:
             Raw transcription text.
         """
         prompt = self.config.transcription_prompt
-
+        max_tokens = 4000 if allow_reasoning else 2000
+        
+        if not allow_reasoning:
+            prompt = f"[SHORT RESPONSE MODE]\nTranscribe ONLY the visible text. DO NOT provide any reasoning, analysis, or explanation.\n\n{prompt}"
+        
         result = self.provider.describe_image(
             image_path=page_row["image_path"],
             prompt=prompt,
             max_size=self.config.image_max_size,
             temperature=self.config.temperature,
-            max_tokens=self.config.max_tokens,
+            max_tokens=max_tokens,
             max_retries=self.config.max_retries,
             retry_backoff_base=self.config.retry_backoff_base,
         )
@@ -43,6 +47,7 @@ class AnswerTranscriberService:
         workers: int = 4,
         progress=None,
         task_id=None,
+        allow_reasoning: bool = True,
     ) -> tuple[int, int]:
         """Transcribe all untranscribed answer/continuation pages in parallel.
 
@@ -58,7 +63,7 @@ class AnswerTranscriberService:
         first_error_shown = False
 
         def _process_one(page_row):
-            transcription = self.transcribe_page(page_row)
+            transcription = self.transcribe_page(page_row, allow_reasoning=allow_reasoning)
             db.update_transcription(page_row["id"], transcription)
             # Log success
             if progress:
