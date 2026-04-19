@@ -64,16 +64,15 @@ class AnalyzePipelineService:
         self._log_target_info(log_callback, target_steps)
 
         if llm_model:
-            from aicli.config import resolve_dynamic_model, config as aicli_config
+            from aicli.config import config as aicli_config
 
-            self._log(log_callback, f"🔄 Loading/Verifying model: {llm_model}...")
+            self._log(log_callback, f"🔄 Using model: {llm_model}...")
             try:
-                resolved = resolve_dynamic_model(llm_model)
-                aicli_config.model_name = resolved
-                self._log(log_callback, f"✔ Model ready: {resolved}")
+                aicli_config.model_name = llm_model
+                self._log(log_callback, f"✔ Model ready: {llm_model}")
             except Exception as e:
                 self._log(
-                    log_callback, f"⚠️ Warning: Model loading may have failed ({e})"
+                    log_callback, f"⚠️ Warning: Model config may have failed ({e})"
                 )
 
         ctx = _PipelineContext(

@@ -3,13 +3,19 @@
 Reads prompts.yaml from the domains/analyze directory and provides
 typed access to prompts, dimension configs, and LM Studio settings.
 """
+
 from pathlib import Path
 
 import yaml
 
 
 # Default config path: aicli/domains/analyze/prompts.yaml
-_DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "domains" / "analyze" / "prompts.yaml"
+_DEFAULT_CONFIG_PATH = (
+    Path(__file__).resolve().parent.parent.parent
+    / "domains"
+    / "analyze"
+    / "prompts.yaml"
+)
 
 
 class AnalyzeConfig:
@@ -30,7 +36,7 @@ class AnalyzeConfig:
     # ------------------------------------------------------------------
     @property
     def lm_settings(self) -> dict:
-        return self._data.get("lm_studio", {})
+        return self._data.get("ollama", {})
 
     @property
     def max_tokens(self) -> int:
@@ -96,7 +102,9 @@ class AnalyzeConfig:
         """Get the prompt template for a specific dimension."""
         dim = self.all_dimensions.get(name)
         if not dim:
-            raise ValueError(f"Unknown dimension: '{name}'. Available: {list(self.all_dimensions.keys())}")
+            raise ValueError(
+                f"Unknown dimension: '{name}'. Available: {list(self.all_dimensions.keys())}"
+            )
         return dim["prompt"]
 
     def is_dimension_enabled(self, name: str) -> bool:
