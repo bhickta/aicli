@@ -139,11 +139,14 @@ class AnalyzeDB:
         conn.commit()
 
     def get_untranscribed_pages(self) -> list[dict]:
-        """Get ALL pages that haven't been transcribed yet (for OCR-first pipeline)."""
+        """Get pages that haven't been transcribed yet (or failed previous attempts)."""
         conn = self._get_conn()
-        rows = conn.execute(
-            "SELECT * FROM pages WHERE transcription IS NULL ORDER BY pdf_file, page_number"
-        ).fetchall()
+        rows = conn.execute("""
+            SELECT * FROM pages 
+            WHERE transcription IS NULL 
+               OR transcription LIKE '[TRANSCRIPTION_ERROR%'
+            ORDER BY pdf_file, page_number
+        """).fetchall()
         return [dict(r) for r in rows]
 
     def update_transcription(self, page_id: int, transcription: str):
@@ -166,6 +169,58 @@ class AnalyzeDB:
         conn = self._get_conn()
         rows = conn.execute("SELECT DISTINCT pdf_file FROM pages ORDER BY pdf_file").fetchall()
         return [r["pdf_file"] for r in rows]
+
+    def get_pdf_progress(self, pdf_file: str) -> dict:
+        """Calculate progress for steps 1-5 for a specific PDF.
+        
+        Returns a dict mapping step number to status ('done', 'partial', 'pending').
+        """
+        conn = self._get_conn()
+        progress = {}
+
+        # Step 1: PDF -> Images
+        row = conn.execute("SELECT COUNT(*) as cnt FROM pages WHERE pdf_file = ?", (pdf_file,)).fetchone()
+        page_count = row["cnt"]
+        progress["1"] = "done" if page_count > 0 else "pending"
+
+        if page_count == 0:
+            for s in ["2", "3", "4", "5"]: progress[s] = "pending"
+            return progress
+
+        # Step 2: OCR
+        row = conn.execute("SELECT COUNT(*) as cnt FROM pages WHERE pdf_file = ? AND transcription IS NOT NULL", (pdf_file,)).fetchone()
+        ocr_count = row["cnt"]
+        if ocr_count == page_count: progress["2"] = "done"
+        elif ocr_count > 0: progress["2"] = "partial"
+        else: progress["2"] = "pending"
+
+        # Step 3: Classification
+        row = conn.execute("SELECT COUNT(*) as cnt FROM pages WHERE pdf_file = ? AND classification IS NOT NULL", (pdf_file,)).fetchone()
+        cls_count = row["cnt"]
+        if cls_count == page_count: progress["3"] = "done"
+        elif cls_count > 0: progress["3"] = "partial"
+        else: progress["3"] = "pending"
+
+        # Step 4: Segmentation
+        row = conn.execute("SELECT COUNT(*) as cnt FROM answers WHERE pdf_file = ?", (pdf_file,)).fetchone()
+        ans_count = row["cnt"]
+        progress["4"] = "done" if ans_count > 0 else "pending"
+
+        # Step 5: Analysis
+        if ans_count > 0:
+            # Check if all answers have at least one dimension result
+            row = conn.execute("""
+                SELECT COUNT(DISTINCT answer_id) as cnt FROM answer_dimensions 
+                WHERE answer_id IN (SELECT id FROM answers WHERE pdf_file = ?)
+            """, (pdf_file,)).fetchone()
+            analyzed_count = row["cnt"]
+            if analyzed_count == ans_count: progress["5"] = "done"
+            elif analyzed_count > 0: progress["5"] = "partial"
+            else: progress["5"] = "pending"
+        else:
+            progress["5"] = "pending"
+
+        return progress
 
     # ------------------------------------------------------------------
     # Answers
@@ -230,15 +285,16 @@ class AnalyzeDB:
     # Dimensions
     # ------------------------------------------------------------------
     def get_unanalyzed_answers(self, dimension_name: str) -> list[dict]:
-        """Get answers that haven't been analyzed for a specific dimension."""
+        """Get answers that haven't been analyzed (or failed previous attempts) for a specific dimension."""
         conn = self._get_conn()
-        rows = conn.execute(
-            "SELECT a.* FROM answers a "
-            "WHERE a.id NOT IN ("
-            "  SELECT answer_id FROM answer_dimensions WHERE dimension_name = ?"
-            ") ORDER BY a.pdf_file, a.question_number",
-            (dimension_name,),
-        ).fetchall()
+        # Select answers that either have no dimension result, OR have a result that contains an error
+        rows = conn.execute("""
+            SELECT a.* FROM answers a 
+            WHERE a.id NOT IN (
+              SELECT answer_id FROM answer_dimensions 
+              WHERE dimension_name = ? AND result_json NOT LIKE '%"error":%'
+            ) ORDER BY a.pdf_file, a.question_number
+        """, (dimension_name,)).fetchall()
         return [dict(r) for r in rows]
 
     def insert_dimension_result(self, answer_id: int, dimension_name: str, result_json: str):

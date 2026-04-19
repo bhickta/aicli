@@ -104,8 +104,8 @@ def _run_full_pipeline(
     # ------------------------------------------------------------------
     # Step 1: PDF → Images
     # ------------------------------------------------------------------
-    console.print("\nif target_steps is None or 1 in target_steps:
-    [bold magenta]━━━ Step 1: PDF → Images ━━━[/bold magenta]")
+    if target_steps is None or 1 in target_steps:
+        console.print("\n[bold magenta]━━━ Step 1: PDF → Images ━━━[/bold magenta]")
         converter = PDFConverterService()
 
         if pdf_files:
@@ -125,8 +125,8 @@ def _run_full_pipeline(
     # ------------------------------------------------------------------
     # Step 2: OCR Transcription (Vision Model — all pages)
     # ------------------------------------------------------------------
-    console.print("\nif target_steps is None or 2 in target_steps:
-    [bold magenta]━━━ Step 2: OCR Transcription ━━━[/bold magenta]")
+    if target_steps is None or 2 in target_steps:
+        console.print("\n[bold magenta]━━━ Step 2: OCR Transcription ━━━[/bold magenta]")
         transcriber = AnswerTranscriberService(provider, cfg)
         untranscribed = db.get_untranscribed_pages()
 
@@ -143,8 +143,8 @@ def _run_full_pipeline(
     # ------------------------------------------------------------------
     # Step 3: Page Classification (Text-only — fast)
     # ------------------------------------------------------------------
-    console.print("\nif target_steps is None or 3 in target_steps:
-    [bold magenta]━━━ Step 3: Page Classification ━━━[/bold magenta]")
+    if target_steps is None or 3 in target_steps:
+        console.print("\n[bold magenta]━━━ Step 3: Page Classification ━━━[/bold magenta]")
         classifier = PageClassifierService(provider, cfg)
         unclassified = db.get_unclassified_pages()
 
@@ -161,8 +161,8 @@ def _run_full_pipeline(
     # ------------------------------------------------------------------
     # Step 4: Answer Segmentation
     # ------------------------------------------------------------------
-    console.print("\nif target_steps is None or 4 in target_steps:
-    [bold magenta]━━━ Step 4: Answer Segmentation ━━━[/bold magenta]")
+    if target_steps is None or 4 in target_steps:
+        console.print("\n[bold magenta]━━━ Step 4: Answer Segmentation ━━━[/bold magenta]")
         segmenter = AnswerSegmenterService(provider, cfg)
         unsegmented = db.get_unsegmented_pdfs()
 
@@ -177,8 +177,8 @@ def _run_full_pipeline(
     # ------------------------------------------------------------------
     # Step 5: Dimension Analysis
     # ------------------------------------------------------------------
-    console.print("\nif target_steps is None or 5 in target_steps:
-    [bold magenta]━━━ Step 5: Dimension Analysis ━━━[/bold magenta]")
+    if target_steps is None or 5 in target_steps:
+        console.print("\n[bold magenta]━━━ Step 5: Dimension Analysis ━━━[/bold magenta]")
         analyzer = DimensionAnalyzerService(provider, cfg)
         enabled_dims = cfg.enabled_dimensions
 
@@ -196,8 +196,8 @@ def _run_full_pipeline(
     # ------------------------------------------------------------------
     # Step 6: Aggregation
     # ------------------------------------------------------------------
-    console.print("\nif target_steps is None or 6 in target_steps:
-    [bold magenta]━━━ Step 6: Cross-PDF Aggregation ━━━[/bold magenta]")
+    if target_steps is None or 6 in target_steps:
+        console.print("\n[bold magenta]━━━ Step 6: Cross-PDF Aggregation ━━━[/bold magenta]")
         aggregator = AggregationService(provider, cfg)
 
         with _make_progress() as progress:

@@ -24,7 +24,16 @@
           @click="selectPdf(pdf)"
         >
           <span class="icon">📄</span>
-          {{ pdf.filename }} ({{ pdf.page_count }}p)
+          <span class="filename" :title="pdf.filename">{{ pdf.filename }}</span>
+          <div class="pdf-progress-dots" v-if="pdf.progress">
+            <div 
+              v-for="s in ['1','2','3','4','5']" 
+              :key="s" 
+              :class="['dot', pdf.progress[s]]"
+              :title="'Step ' + s + ': ' + pdf.progress[s]"
+            ></div>
+          </div>
+          <span class="page-count" v-if="pdf.page_count">({{ pdf.page_count }}p)</span>
         </div>
         <div v-if="!pdfs.length" class="pdf-item" style="opacity: 0.4; cursor: default;">
           No PDFs found
@@ -47,6 +56,12 @@
       <template v-if="selectedPdf">
         <div class="top-bar">
           <h2>{{ selectedPdf.filename }}</h2>
+          <div class="pdf-status-strip" v-if="selectedPdf.progress">
+            <div v-for="step in pipelineSteps" :key="step.id" :class="['status-step', selectedPdf.progress[step.id]]">
+              <div class="step-dot"></div>
+              <span>{{ step.name }}</span>
+            </div>
+          </div>
           <div class="tabs">
             <button :class="['tab', { active: activeTab === 'pages' }]" @click="activeTab = 'pages'">
               Pages ({{ pages.length }})
@@ -168,39 +183,54 @@
           <!-- Runner Tab -->
           <div v-if="activeTab === 'runner'" class="runner-tab">
             <div class="config-panel">
-              <h3>Pipeline Configuration</h3>
-              <div class="form-group">
-                <label>Workers</label>
-                <input type="number" v-model.number="runConfig.workers" min="1" max="16" />
-              </div>
-              <div class="form-group">
-                <label>DPI</label>
-                <input type="number" v-model.number="runConfig.dpi" min="50" max="600" />
-              </div>
-              <div class="form-group">
-                <label>LLM Model ID</label>
-                <input type="text" v-model="runConfig.llm_model" placeholder="e.g. gemma-4-26b-a4b" />
+              <div class="panel-section">
+                <h4>Core Parameters</h4>
+                <div class="settings-grid">
+                  <div class="form-group">
+                    <label>Workers</label>
+                    <input type="number" v-model.number="runConfig.workers" min="1" max="16" />
+                  </div>
+                  <div class="form-group">
+                    <label>DPI</label>
+                    <input type="number" v-model.number="runConfig.dpi" min="50" max="600" />
+                  </div>
+                  <div class="form-group span-full" style="grid-column: span 2;">
+                    <label>LLM Model ID</label>
+                    <input type="text" v-model="runConfig.llm_model" placeholder="Model for vision & reasoning" />
+                  </div>
+                </div>
               </div>
 
-              <div class="form-group span-full">
-                <label>Execution Mode</label>
-                <div class="radio-group" style="display: flex; gap: 16px; margin-bottom: 8px;">
-                  <label><input type="radio" v-model="runConfig.mode" value="all" /> End-to-End</label>
-                  <label><input type="radio" v-model="runConfig.mode" value="custom" /> Custom Steps</label>
-                </div>
-                
-                <div v-if="runConfig.mode === 'custom'" class="steps-grid">
-                  <label><input type="checkbox" v-model="runConfig.target_steps" :value="1" /> 1: PDF → Images</label>
-                  <label><input type="checkbox" v-model="runConfig.target_steps" :value="2" /> 2: OCR Transcription</label>
-                  <label><input type="checkbox" v-model="runConfig.target_steps" :value="3" /> 3: Classification</label>
-                  <label><input type="checkbox" v-model="runConfig.target_steps" :value="4" /> 4: Segmentation</label>
-                  <label><input type="checkbox" v-model="runConfig.target_steps" :value="5" /> 5: Dimension Analysis</label>
-                  <label><input type="checkbox" v-model="runConfig.target_steps" :value="6" /> 6: Aggregation</label>
-                  <label><input type="checkbox" v-model="runConfig.target_steps" :value="7" /> 7: Report Generation</label>
+              <div class="panel-section">
+                <h4>Pipeline Workflow</h4>
+                <div class="form-group">
+                  <div class="radio-group" style="display: flex; gap: 16px; margin-bottom: 8px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                      <input type="radio" v-model="runConfig.mode" value="all" /> End-to-End
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                      <input type="radio" v-model="runConfig.mode" value="custom" /> Custom Step Selection
+                    </label>
+                  </div>
+                  
+                  <div v-if="runConfig.mode === 'custom'" class="steps-list">
+                    <div 
+                      v-for="step in pipelineSteps" 
+                      :key="step.id" 
+                      class="step-row"
+                      :class="selectedPdf.progress ? selectedPdf.progress[step.id] : ''"
+                      @click="toggleStep(step.id)"
+                    >
+                      <input type="checkbox" :checked="runConfig.target_steps.includes(step.id)" @click.stop />
+                      <span class="step-name">{{ step.id }}: {{ step.fullname }}</span>
+                      <span class="step-badge" v-if="selectedPdf.progress">{{ selectedPdf.progress[step.id] }}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <button class="btn btn-primary" @click="startPipeline" :disabled="pipelineRunning">
-                {{ pipelineRunning ? 'Pipeline Running...' : '▶ Start Execution' }}
+
+              <button class="btn btn-primary" @click="startPipeline" :disabled="pipelineRunning" style="height: 48px; font-size: 14px; justify-content: center;">
+                {{ pipelineRunning ? 'AI Pipeline Working...' : '▶ Start Execution' }}
               </button>
             </div>
 
@@ -307,7 +337,18 @@ export default {
         workers: 4,
         dpi: 200,
         llm_model: 'gemma-4-26b-a4b',
+        mode: 'all',
+        target_steps: []
       },
+      pipelineSteps: [
+        { id: '1', name: 'Images', fullname: 'PDF → Page Images' },
+        { id: '2', name: 'OCR', fullname: 'OCR Transcription' },
+        { id: '3', name: 'Classify', fullname: 'Page Classification' },
+        { id: '4', name: 'Segment', fullname: 'Answer Segmentation' },
+        { id: '5', name: 'Analyze', fullname: 'Dimension Analysis' },
+        { id: '6', name: 'Aggregate', fullname: 'Cross-PDF Aggregation' },
+        { id: '7', name: 'Report', fullname: 'Report Generation' }
+      ],
       pipelineRunning: false,
       eventSource: null,
       logs: [],
@@ -463,10 +504,29 @@ export default {
         this.pipelineRunning = true
         this.logs = []
         this.tasks = {}
-        await runPipeline(this.runConfig)
+        
+        // Prepare config clone
+        const finalConfig = {
+          workers: this.runConfig.workers,
+          dpi: this.runConfig.dpi,
+          llm_model: this.runConfig.llm_model,
+          target_steps: this.runConfig.mode === 'all' ? null : this.runConfig.target_steps
+        }
+        
+        await runPipeline(finalConfig)
       } catch(e) {
         alert("Could not start pipeline: " + e.message)
         this.pipelineRunning = false
+      }
+    },
+    toggleStep(stepId) {
+      const id = parseInt(stepId);
+      const idx = this.runConfig.target_steps.indexOf(id);
+      if (idx > -1) {
+        this.runConfig.target_steps.splice(idx, 1);
+      } else {
+        this.runConfig.target_steps.push(id);
+        this.runConfig.target_steps.sort((a,b) => a - b);
       }
     },
     connectStream() {

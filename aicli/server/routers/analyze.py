@@ -35,16 +35,28 @@ def list_pdfs():
     with db._get_conn() as conn:
         pdfs = conn.execute("SELECT pdf_file as filename, count(*) as page_count FROM pages GROUP BY pdf_file ORDER BY pdf_file").fetchall()
         # Mock an ID for Vue (just index + 1)
-        db_pdfs = [{"id": i+1, "filename": p["filename"], "page_count": p["page_count"]} for i, p in enumerate(pdfs)]
+        db_pdfs = []
+        for i, p in enumerate(pdfs):
+            progress = db.get_pdf_progress(p["filename"])
+            db_pdfs.append({
+                "id": i+1, 
+                "filename": p["filename"], 
+                "page_count": p["page_count"],
+                "progress": progress
+            })
         
         # Also include uploaded but unprocessed PDFs from ServerState.data_dir
-        # so they appear instantly in the UI with page_count = 0.
         processed_names = {p["filename"] for p in db_pdfs}
         if ServerState.data_dir.exists():
             idx = len(db_pdfs) + 1
             for child in ServerState.data_dir.glob("*.pdf"):
                 if child.name not in processed_names:
-                    db_pdfs.append({"id": idx, "filename": child.name, "page_count": 0})
+                    db_pdfs.append({
+                        "id": idx, 
+                        "filename": child.name, 
+                        "page_count": 0,
+                        "progress": {"1": "pending", "2": "pending", "3": "pending", "4": "pending", "5": "pending"}
+                    })
                     idx += 1
                     
         # Sort so we get consistent ordering
