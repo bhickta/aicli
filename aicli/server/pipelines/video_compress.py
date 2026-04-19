@@ -9,7 +9,6 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from aicli.services.video import VideoTaggerService
 from aicli.cli.tui import print_header, print_success, print_error, console
 
-
 def _compress_single(
     video_path: Path, resolution: int, preset: str, overwrite: bool, crf: int, fps: str, fast_skip: bool
 ) -> tuple:
@@ -30,26 +29,18 @@ def _compress_single(
     return out_path, src_mb, out_mb
 
 
-def register(app: typer.Typer):
-    """Register the compress command on the given Typer app."""
-
-    @app.command("compress")
-    def compress_video(
-        target_path: Path = typer.Argument(
-            ...,
-            exists=True,
-            help="Path to a video file or directory."
-        ),
-        resolution: int = typer.Option(240, "--res", "-r", help="Target vertical resolution (e.g. 240, 360, 480)."),
-        preset: str = typer.Option("light", "--preset", "-p", help="Compression preset: ultralight, light, balanced, slideshow."),
-        overwrite: bool = typer.Option(False, "--overwrite", help="Replace the original file with the compressed version."),
-        workers: int = typer.Option(4, "--workers", help="Number of concurrent compression jobs."),
-        crf: int = typer.Option(None, "--crf", help="Constant quality (0-51). Lower = better. Overrides preset bitrate."),
-        fps: str = typer.Option(None, "--fps", help="Override output framerate (e.g., 5, 1, or '1/60' for 1 frame per minute)."),
-        fast_skip: bool = typer.Option(False, "--fast-skip", help="Skip decoding non-keyframes for ultra-fast slideshows."),
-    ):
-        """
-        GPU-accelerated video compression using NVENC (RTX 3090).
+def compress_video(
+    target_path: Path,
+    resolution: int = 240,
+    preset: str = "light",
+    overwrite: bool = False,
+    workers: int = 4,
+    crf: int = None,
+    fps: str = None,
+    fast_skip: bool = False,
+):
+    """
+    GPU-accelerated video compression.
 
         Full GPU-resident pipeline: decode → scale → encode all on GPU.
         Frames never leave VRAM. A 2-hour lecture compresses in ~15 seconds.
@@ -71,14 +62,14 @@ def register(app: typer.Typer):
 
         if not files:
             console.print("[yellow]No supported video files found.[/yellow]")
-            raise typer.Exit()
+            return
 
         if not overwrite:
             files = [f for f in files if f"_{resolution}p" not in f.stem]
 
         if not files:
             console.print("[yellow]All files already compressed. Use --overwrite to reprocess.[/yellow]")
-            raise typer.Exit()
+            return
 
         print_header(f"Compressing {len(files)} video(s) → {resolution}p [{preset}]")
         display_fps = fps if fps is not None else CompressService.PRESETS[preset][4]

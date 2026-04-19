@@ -10,75 +10,22 @@ from aicli.services.video import MetadataBackupManager, WhisperEngine, VideoTagg
 from aicli.cli.commands.video_processor import VideoBatchProcessor
 from aicli.cli.tui import print_header, print_success, print_error, console
 
-
-def register(app: typer.Typer):
-    """Register the tag command on the given Typer app."""
-
-    @app.command("tag")
-    def tag_video(
-        target_path: Path = typer.Argument(
-            ...,
-            exists=True,
-            help="Path to the video file or directory."
-        ),
-        write: bool = typer.Option(
-            False,
-            "--write", "-w",
-            help="Apply tags and rename the file. Without this, it performs a dry run."
-        ),
-        no_rename: bool = typer.Option(
-            False,
-            "--no-rename",
-            help="Tag only, keep the original filename. (Requires --write)"
-        ),
-        full_cc: bool = typer.Option(
-            False,
-            "--full-cc",
-            help="Perform a full transcription to generate a sidecar .srt track."
-        ),
-        text_thumb: bool = typer.Option(
-            True,
-            "--text-thumb/--no-text-thumb",
-            help="Generate a centered text image from the title and embed it directly into the video as cover art."
-        ),
-        retranscribe: bool = typer.Option(
-            False,
-            "--retranscribe",
-            help="Ignore cached sidecar data and force a full re-transcription."
-        ),
-        transcribe_only: bool = typer.Option(
-            False,
-            "--transcribe-only",
-            help="Skip AI tagging and file renaming. Only perform transcription (writes .srt if --full-cc is used)."
-        ),
-        workers: int = typer.Option(
-            2,
-            "--workers",
-            help="Number of concurrent workers."
-        ),
-        clip_every: int = typer.Option(
-            360,
-            "--clip-every",
-            help="Frequency to sample audio clips (in seconds)."
-        ),
-        clip_len: int = typer.Option(
-            60,
-            "--clip-len",
-            help="Duration of each audio sample (in seconds)."
-        ),
-        save_txt: bool = typer.Option(
-            False,
-            "--save-txt",
-            help="Save a clean plain-text transcript as a .txt file alongside the video."
-        ),
-        whisper_model: str = typer.Option(
-            "base",
-            "--whisper-model",
-            help="faster-whisper model size (tiny, base, small, medium, large-v3)."
-        )
-    ):
-        """
-        Transcribe and AI-tag lecture videos. Parallel, cached, and automatically backed up.
+def tag_video(
+    target_path: Path,
+    write: bool = False,
+    no_rename: bool = False,
+    full_cc: bool = False,
+    text_thumb: bool = True,
+    retranscribe: bool = False,
+    transcribe_only: bool = False,
+    workers: int = 2,
+    clip_every: int = 360,
+    clip_len: int = 60,
+    save_txt: bool = False,
+    whisper_model: str = "base"
+):
+    """
+    Transcribe and AI-tag lecture videos. Parallel, cached, and automatically backed up.
         """
         valid_extensions = VideoTaggerService.VIDEO_EXTENSIONS
         if target_path.is_file():
@@ -88,7 +35,7 @@ def register(app: typer.Typer):
 
         if not files:
             console.print("[yellow]No supported video files found.[/yellow]")
-            raise typer.Exit()
+            return
 
         print_header(f"Found {len(files)} video(s) to process")
         console.print(f"[dim]Workers: {workers} | Whisper: {whisper_model} | Cache: {'IGNORED' if retranscribe else 'Enabled'}[/dim]")
@@ -108,7 +55,7 @@ def register(app: typer.Typer):
                 model_instance = WhisperEngine.load_whisper(whisper_model, num_workers=workers)
             except Exception as e:
                 print_error("Failed to load whisper model", e)
-                raise typer.Exit(1)
+                return
         else:
             console.print("[green]All files cached. Skipping Whisper instantiation.[/green]")
 
