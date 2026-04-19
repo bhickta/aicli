@@ -255,6 +255,7 @@ def _analyze_worker(
     llm_model: str, 
     allow_reasoning: bool = True,
     target_steps: list[int] | None = None,
+    step_reasoning: dict[int, bool] | None = None,
     target_page_id: int | None = None
 ):
     import aicli.server.pipelines.analyze as analyze_mod
@@ -282,6 +283,7 @@ def _analyze_worker(
             llm_model=llm_model,
             allow_reasoning=allow_reasoning,
             target_steps=target_steps,
+            step_reasoning=step_reasoning,
             target_page_id=target_page_id
         )
         db.close()
