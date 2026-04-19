@@ -53,15 +53,14 @@ def _make_progress() -> Progress:
 
 
 def _ensure_model(llm_model: str | None = None):
-    """Load preferred model into LM Studio."""
+    """Set preferred Ollama model."""
     if not llm_model:
         return
-    from aicli.config import resolve_dynamic_model, config as aicli_config
+    from aicli.config import config as aicli_config
 
-    console.print(f"[cyan]Loading model matching '{llm_model}'...[/cyan]")
-    resolved = resolve_dynamic_model(llm_model)
-    aicli_config.model_name = resolved
-    console.print(f"[green]✔ Model ready: {resolved}[/green]")
+    console.print(f"[cyan]Using model: '{llm_model}'...[/cyan]")
+    aicli_config.model_name = llm_model
+    console.print(f"[green]✔ Model ready: {llm_model}[/green]")
 
 
 @app.command("pdfs")
