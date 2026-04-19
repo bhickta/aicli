@@ -93,7 +93,7 @@ segmentation:
 
     Return strict JSON array:
     [
-      {
+      {{
         "question_number": "Q.1",
         "question_text": "...",
         "question_directive": "...",
@@ -101,7 +101,7 @@ segmentation:
         "start_page": 1,
         "end_page": 2,
         "cleaned_answer_text": "..."
-      }
+      }}
     ]
 
     Return ONLY valid JSON, no other text.
@@ -116,11 +116,11 @@ metadata:
     - upsc_id: The UPSC ID number (e.g., 883478).
 
     Return strict JSON:
-    {
+    {{
       "candidate_name": null,
       "test_code": null,
       "upsc_id": null
-    }
+    }}
 
     Return ONLY valid JSON, no other text.
 
@@ -140,7 +140,7 @@ dimensions:
       Identify: pattern type (definition/context/constitutional/statistical/question_reframe), exact text, effectiveness markers.
 
       Return strict JSON:
-      {
+      {{
         "pattern_type": "definition|context|constitutional|statistical|question_reframe",
         "text": "exact intro text",
         "word_count": 0,
@@ -149,7 +149,7 @@ dimensions:
         "has_constitutional_ref": false,
         "has_current_event": false,
         "effectiveness_markers": []
-      }
+      }}
 
       Return ONLY valid JSON, no other text.
 
@@ -166,7 +166,7 @@ dimensions:
       Identify: pattern type (recommendation/forward_looking/source_citation/balanced_view/way_forward), exact text, sources cited.
 
       Return strict JSON:
-      {
+      {{
         "pattern_type": "recommendation|forward_looking|source_citation|balanced_view|way_forward",
         "text": "exact outro text",
         "word_count": 0,
@@ -175,7 +175,7 @@ dimensions:
         "source_cited": null,
         "has_way_forward": false,
         "has_statistic": false
-      }
+      }}
 
       Return ONLY valid JSON, no other text.
 
@@ -192,12 +192,12 @@ dimensions:
       Identify how the writer moves between introduction, body sections, and conclusion.
 
       Return strict JSON:
-      {
+      {{
         "intro_to_body_phrase": "exact phrase or null",
         "between_sections_phrases": [],
         "body_to_conclusion_phrase": "exact phrase or null",
         "transition_style": "abrupt|smooth|formulaic"
-      }
+      }}
 
       Return ONLY valid JSON, no other text.
 
@@ -212,7 +212,7 @@ dimensions:
       ---
 
       Return strict JSON:
-      {
+      {{
         "numbering_style": "decimal|circled|bullet|mixed|none",
         "uses_boxes": false,
         "boxed_texts": [],
@@ -224,7 +224,7 @@ dimensions:
         "avg_lines_per_point": 0.0,
         "has_section_headers": false,
         "header_style": null
-      }
+      }}
 
       Return ONLY valid JSON, no other text.
 
@@ -239,20 +239,20 @@ dimensions:
       ---
 
       Return strict JSON:
-      {
+      {{
         "has_diagram": false,
         "diagram_count": 0,
         "diagrams": [
-          {
+          {{
             "type": "map|flowchart|table|timeline|sketch|other",
             "position": "intro|middle|end",
             "labels": [],
             "caption": null,
             "spatial_description": "",
             "question_directive_that_triggered_it": null
-          }
+          }}
         ]
-      }
+      }}
 
       Return ONLY valid JSON, no other text.
 
@@ -269,12 +269,12 @@ dimensions:
       Look for: unusual statistics, specific report citations, constitutional article references, international comparisons, recent policy examples, elegant phrasing.
 
       Return strict JSON:
-      {
+      {{
         "selling_point_type": "statistic|report_citation|constitutional_ref|international_comparison|policy_example|elegant_phrasing|other",
         "exact_text": "the exact impressive text",
         "why_impressive": "brief explanation",
         "rarity": "common|uncommon|rare"
-      }
+      }}
 
       Return ONLY valid JSON, no other text.
 
