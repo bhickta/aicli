@@ -107,6 +107,8 @@ def _run_full_pipeline(
     # Defensive type-casting for target_steps
     if target_steps is not None:
         target_steps = [int(s) for s in target_steps]
+    
+    console.print(f"[cyan]DEBUG: Running pipeline with target_steps: {target_steps}[/cyan]")
 
     # Smart Reasoning Logic: Default to OFF for extraction, ON for analysis
     # User can override per-step, OR disable reasoning globally by turning OFF master switch.
