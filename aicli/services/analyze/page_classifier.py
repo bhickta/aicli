@@ -11,9 +11,19 @@ from aicli.domains.analyze.database import AnalyzeDB
 from aicli.core.interfaces import ImageVisionProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
 
+from pydantic import BaseModel, Field
+from enum import Enum
+from langchain_core.prompts import PromptTemplate
 
-VALID_CLASSIFICATIONS = {"cover", "evaluation", "answer", "continuation", "blank"}
+class PageClass(str, Enum):
+    cover = "cover"
+    evaluation = "evaluation"
+    answer = "answer"
+    continuation = "continuation"
+    blank = "blank"
 
+class PageClassificationSchema(BaseModel):
+    classification: PageClass = Field(description="The classification of the page: cover, evaluation, answer, continuation, or blank.")
 
 class PageClassifierService:
     """Classify pages using their OCR'd text (text-only LLM calls)."""
@@ -38,31 +48,19 @@ class PageClassifierService:
         ):
             return "blank"
 
-        # Text-only classification — much faster than vision
-        full_prompt = f"{prompt}\n\n---\nPAGE TEXT:\n{transcription}"
-        result = self.provider.complete_text(
-            prompt=full_prompt,
-            temperature=self.config.temperature,
-            max_tokens=max_tokens,
-            max_retries=self.config.max_retries,
-            retry_backoff_base=self.config.retry_backoff_base,
-            allow_reasoning=allow_reasoning,
-        )
+        prompt_template = PromptTemplate.from_template("{prompt}\n\n---\nPAGE TEXT:\n{text}")
+        full_prompt = prompt_template.format(prompt=prompt, text=transcription)
 
-        # Parse the single-word response
-        classification = result.strip().lower().strip('"').strip("'")
-
-        # Validate — fall back to "answer" if unrecognized
-        if classification not in VALID_CLASSIFICATIONS:
-            # Try to find a valid classification within the response
-            for vc in VALID_CLASSIFICATIONS:
-                if vc in classification:
-                    classification = vc
-                    break
-            else:
-                classification = "answer"  # Safe default
-
-        return classification
+        try:
+            result = self.provider.structured_invoke(
+                schema=PageClassificationSchema,
+                prompt=full_prompt,
+                allow_reasoning=allow_reasoning,
+            )
+            return result.classification.value
+        except Exception as e:
+            # Safe default
+            return "answer"
 
     def classify_batch(
         self,

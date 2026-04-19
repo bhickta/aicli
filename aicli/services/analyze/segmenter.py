@@ -7,9 +7,25 @@ pages = one answer unit stored in the answers table.
 import json
 from pathlib import Path
 
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from langchain_core.prompts import PromptTemplate
+
 from aicli.domains.analyze.database import AnalyzeDB
 from aicli.core.interfaces import ImageVisionProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
+
+class AnswerSegment(BaseModel):
+    question_number: str = Field(description="The question number (e.g. Q.1)")
+    question_text: Optional[str] = Field(None, description="The complete question text if written by candidate.")
+    question_directive: Optional[str] = Field(None, description="The question directive (e.g. discuss, analyze).")
+    word_limit: Optional[str] = Field(None, description="Word limit if specified (e.g. 150 words).")
+    start_page: int = Field(description="The integer page number where the answer begins.")
+    end_page: int = Field(description="The integer page number where the answer ends.")
+    cleaned_answer_text: Optional[str] = Field(None, description="The fully cleaned text without boilerplate.")
+
+class SegmentationResult(BaseModel):
+    answers: List[AnswerSegment] = Field(description="List of segmented answers.")
 
 
 class AnswerSegmenterService:
@@ -53,37 +69,22 @@ class AnswerSegmenterService:
             )
         pages_text = "\n".join(pages_text_parts)
 
-        # Get segmentation prompt and inject pages
-        prompt_template = self.config.segmentation_prompt
-        prompt = prompt_template.replace("{pages_text}", pages_text)
+        prompt_template = PromptTemplate.from_template(self.config.segmentation_prompt)
+        prompt_template = PromptTemplate.from_template("{prompt}\n\n{pages_text}")
+        prompt = prompt_template.format(prompt=self.config.segmentation_prompt, pages_text=pages_text)
 
-        # Call LM Studio for segmentation
+        # Call LM Studio for segmentation via LangChain native structured output
         try:
-            segments = self.provider.complete_text_json(
+            result = self.provider.structured_invoke(
+                schema=SegmentationResult,
                 prompt=prompt,
-                temperature=self.config.temperature,
-                max_tokens=8192,  # Let the model think as much as it wants
-                max_retries=self.config.max_retries,
-                retry_backoff_base=self.config.retry_backoff_base,
                 allow_reasoning=allow_reasoning,
             )
+            segments = [seg.model_dump() for seg in result.answers]
         except Exception as e:
             db.log_processing(pdf_file, "segmentation", "error", str(e))
             # Fallback: treat each "answer" page as a separate answer
             segments = self._fallback_segmentation(content_pages)
-
-        # Handle case where the model returns a dict with a list inside
-        if isinstance(segments, dict):
-            # Try common keys
-            for key in ("answers", "segments", "questions", "data"):
-                if key in segments and isinstance(segments[key], list):
-                    segments = segments[key]
-                    break
-            else:
-                segments = [segments]
-
-        if not isinstance(segments, list):
-            segments = [segments]
 
         # Extract metadata from cover page if available
         metadata = self._extract_metadata(pages, db, allow_reasoning=allow_reasoning)

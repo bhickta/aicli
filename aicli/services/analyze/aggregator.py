@@ -5,6 +5,7 @@ the LM for pattern identification across candidates.
 """
 
 import json
+from langchain_core.prompts import PromptTemplate
 
 from aicli.domains.analyze.database import AnalyzeDB
 from aicli.core.interfaces import ImageVisionProvider
@@ -60,7 +61,7 @@ class AggregationService:
         dimension_data = json.dumps(valid_results, indent=2, ensure_ascii=False)
 
         # Build the aggregation prompt
-        prompt_template = self.config.aggregation_prompt_template
+        prompt_template = PromptTemplate.from_template(self.config.aggregation_prompt_template)
         prompt = prompt_template.format(
             count=len(valid_results),
             candidates=len(candidates),
@@ -139,7 +140,8 @@ class AggregationService:
         chunk_summaries = []
         for chunk in chunks:
             chunk_data = json.dumps(chunk, indent=2, ensure_ascii=False)
-            prompt = self.config.aggregation_prompt_template.format(
+            prompt_t = PromptTemplate.from_template(self.config.aggregation_prompt_template)
+            prompt = prompt_t.format(
                 count=len(chunk),
                 candidates=len(candidates),
                 dimension_name=dimension_name,

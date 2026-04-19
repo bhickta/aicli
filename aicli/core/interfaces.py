@@ -21,3 +21,9 @@ class ImageVisionProvider(ABC):
                            allow_reasoning: bool = True) -> dict:
         """Text completion that returns a parsed JSON object."""
         pass
+
+    @abstractmethod
+    def structured_invoke(self, schema: type, prompt: str, system_prompt: str = None,
+                          allow_reasoning: bool = True) -> any:
+        """Text completion that returns a strongly typed Pydantic schema using structured outputs."""
+        pass

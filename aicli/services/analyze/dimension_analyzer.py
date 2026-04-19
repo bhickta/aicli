@@ -6,6 +6,7 @@ Adding a new dimension requires only editing the YAML — no code changes.
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+from langchain_core.prompts import PromptTemplate
 
 from aicli.domains.analyze.database import AnalyzeDB
 from aicli.core.interfaces import ImageVisionProvider
@@ -31,8 +32,8 @@ class DimensionAnalyzerService:
         Returns:
             Parsed JSON result dict.
         """
-        prompt_template = self.config.get_dimension_prompt(dimension_name)
-        prompt = prompt_template.replace("{answer_text}", answer["raw_text"] or "")
+        prompt_template = PromptTemplate.from_template(self.config.get_dimension_prompt(dimension_name))
+        prompt = prompt_template.format(answer_text=answer["raw_text"] or "")
 
         result = self.provider.complete_text_json(
             prompt=prompt,

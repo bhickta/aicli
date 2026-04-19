@@ -133,6 +133,52 @@ class LangChainProvider(ImageVisionProvider):
                     time.sleep(retry_backoff_base**attempt)
         raise ValueError(f"Failed to parse JSON after {max_retries} attempts: {last_error}")
 
+    def structured_invoke(
+        self,
+        schema: type,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        allow_reasoning: bool = True,
+        max_retries: int = 3,
+        retry_backoff_base: int = 2,
+    ) -> any:
+        from langchain_core.output_parsers import PydanticOutputParser
+        from langchain_core.exceptions import OutputParserException
+        
+        parser = PydanticOutputParser(pydantic_object=schema)
+        messages = []
+        if system_prompt:
+            messages.append(SystemMessage(content=system_prompt))
+        messages.append(HumanMessage(content=prompt))
+
+        # Try native structured output first
+        if hasattr(self.llm, "with_structured_output"):
+            try:
+                llm_with_struct = self.llm.with_structured_output(schema)
+                for attempt in range(max_retries):
+                    try:
+                        if attempt > 0:
+                            time.sleep(retry_backoff_base ** attempt)
+                        return llm_with_struct.invoke(messages)
+                    except Exception:
+                        pass
+            except NotImplementedError:
+                pass
+                
+        # Graceful fallback: append formatting instructions & parse manually via Langchain core logic
+        messages[-1] = HumanMessage(content=prompt + "\n\n" + parser.get_format_instructions())
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    time.sleep(retry_backoff_base ** attempt)
+                res = self.llm.invoke(messages)
+                return parser.invoke(res.content)
+            except OutputParserException as e:
+                last_error = e
+
+        raise ValueError(f"Failed to extract structured schema after {max_retries} attempts: {last_error}")
+
     @staticmethod
     def _encode_image(image_path: str, max_dim: int = 512) -> str:
         with Image.open(image_path) as img:

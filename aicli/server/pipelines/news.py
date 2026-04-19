@@ -20,29 +20,28 @@ from rich.progress import (
 
 from aicli.cli.tui import print_header, print_success, print_error, console
 from aicli.config import config
+from aicli.providers import get_provider
 from aicli.server.services.news_reasoning_service import (
     NewsReasoningService,
     STANDARD_TOPICS,
+    NewsClassificationResult,
 )
 from aicli.server.services.news_clustering_service import NewsClusteringService
 from aicli.server.repositories.news_excel_repository import NewsExcelRepository
 
 
 def _classify_batch(
-    batch_idx: int, batch: list[str], system_prompt: str, client, model_name: str
+    batch_idx: int, batch: list[str], system_prompt: str, provider
 ) -> tuple[int, list[dict], Exception | None]:
     try:
         user_prompt = NewsReasoningService.build_user_prompt(batch)
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.1,
+        result = provider.structured_invoke(
+            schema=NewsClassificationResult,
+            prompt=user_prompt,
+            system_prompt=system_prompt,
+            allow_reasoning=True,
         )
-        raw_output = response.choices[0].message.content or ""
-        records = NewsReasoningService.extract_json_array(raw_output)
+        records = [item.model_dump() for item in result.items]
         return batch_idx, records, None
     except Exception as e:
         return batch_idx, [], e
@@ -70,9 +69,7 @@ def parse_news(
 
     console.print(f"[cyan]Found {len(lines)} news lines to classify[/cyan]")
     output = output or file_path.parent / f"{file_path.stem}_parsed.xlsx"
-    client = OpenAI(
-        base_url=f"{config.ollama_base_url}/v1", api_key=config.ollama_api_key
-    )
+    provider = get_provider()
 
     batches = [lines[i : i + batch_size] for i in range(0, len(lines), batch_size)]
     batch_results = {}
@@ -94,8 +91,7 @@ def parse_news(
                     idx,
                     batch,
                     system_prompt,
-                    client,
-                    config.model_name,
+                    provider,
                 ): (idx, batch)
                 for idx, batch in enumerate(batches)
             }
@@ -182,10 +178,8 @@ def dedupe(
         f"[yellow]⚠ Found {len(clusters)} unique events. {num_duplicates} duplicate records will be merged.[/yellow]"
     )
 
-    client = OpenAI(
-        base_url=f"{config.ollama_base_url}/v1", api_key=config.ollama_api_key
-    )
-    unique_records = _run_ai_merging(clusters, records, client, workers, output)
+    provider = get_provider()
+    unique_records = _run_ai_merging(clusters, records, provider, workers, output)
 
     if output.exists():
         output.unlink()
@@ -226,11 +220,9 @@ def process_news(
         NewsExcelRepository.write_excel(records, output)
         raise typer.Exit()
 
-    client = OpenAI(
-        base_url=f"{config.ollama_base_url}/v1", api_key=config.ollama_api_key
-    )
+    provider = get_provider()
     unique_records = _run_ai_merging(
-        clusters, records, client, workers, output, force_merge=force_merge
+        clusters, records, provider, workers, output, force_merge=force_merge
     )
 
     if output.exists():
@@ -284,7 +276,7 @@ def _json_to_records(data: list) -> list[dict]:
 def _run_ai_merging(
     clusters: list[list[int]],
     records: list[dict],
-    client,
+    provider,
     workers: int,
     output: Path,
     force_merge: bool = False,
@@ -337,7 +329,7 @@ def _run_ai_merging(
 
     def _do_merge(job):
         merged = NewsReasoningService.merge_duplicate_news(
-            job.pop("_news_strings"), client, config.model_name
+            job.pop("_news_strings"), provider
         )
         job["news"] = merged
         return job
