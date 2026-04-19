@@ -1,4 +1,3 @@
-import typer
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
@@ -7,8 +6,6 @@ from rich.table import Table
 from aicli.providers.lm_studio import LMStudioProvider
 from aicli.services.image_renamer import ImageRenamerService
 from aicli.cli.tui import print_header, print_success, print_error, confirm_action, console
-
-app = typer.Typer(help="Image management commands.")
 
 def _fetch_suggestion(img_path: Path, service: ImageRenamerService, trash_junk: bool = False) -> tuple[Path, str, Exception]:
     """Helper to be run in a separate thread. Just fetches the name."""
@@ -129,35 +126,12 @@ def _process_single_image(image_path: Path, service: ImageRenamerService, auto_r
         print_error(f"Failed to rename file {image_path.name}", e)
 
 
-@app.command("rename")
 def rename_image(
-    target_path: Path = typer.Argument(
-        ...,
-        exists=True,
-        file_okay=True,
-        dir_okay=True,
-        help="Path to the image or directory of images you want to rename."
-    ),
-    auto_rename: bool = typer.Option(
-        False, 
-        "--auto", "-a", 
-        help="Automatically rename without asking for confirmation."
-    ),
-    workers: int = typer.Option(
-        4,
-        "--workers", "-w",
-        help="Number of concurrent LM inferences when processing a directory."
-    ),
-    sync_refs: bool = typer.Option(
-        False,
-        "--sync-refs",
-        help="Update references to renamed images inside .md and .json files in the same directory."
-    ),
-    trash_junk: bool = typer.Option(
-        False,
-        "--trash-junk",
-        help="Automatically move icons, logos, and purely cosmetic graphics to a .trash folder."
-    )
+    target_path: Path,
+    auto_rename: bool = False,
+    workers: int = 4,
+    sync_refs: bool = False,
+    trash_junk: bool = False
 ):
     """
     Uses LM Studio Vision to scan an image (or a folder of images) and intelligently rename them.
@@ -168,11 +142,11 @@ def rename_image(
         service = ImageRenamerService(provider)
     except Exception as e:
         print_error("Failed to initialize AI Provider", e)
-        raise typer.Exit(code=1)
+        return
 
     if target_path.is_file():
         _process_single_image(target_path, service, auto_rename, sync_refs, trash_junk)
-        raise typer.Exit(code=0)
+        return
 
     # Directory processing via ThreadPool
     console.print(f"[bold cyan]Scanning directory {target_path} for images...[/bold cyan]")
@@ -181,7 +155,7 @@ def rename_image(
     
     if not images:
         console.print("[yellow]No supported images found in the directory.[/yellow]")
-        raise typer.Exit()
+        return
         
     console.print(f"[bold green]Found {len(images)} images to process using {workers} parallel workers.[/bold green]\n")
     
@@ -233,12 +207,12 @@ def rename_image(
     # If --auto was enabled, we're basically done!
     if auto_rename:
         print_success(f"Successfully auto-renamed {len(successful)} images!")
-        raise typer.Exit(code=0)
+        return
 
     # If --auto is NOT enabled, we must ask the user for confirmation bulk style
     if not successful:
         console.print("[yellow]No valid suggestions generated to be renamed.[/yellow]")
-        raise typer.Exit(code=0)
+        return
 
     # Draw table
     table = Table(title="AI Rename Suggestions", show_lines=True)
@@ -261,7 +235,7 @@ def rename_image(
     else:
         console.print("[yellow]Action cancelled. No files were renamed.[/yellow]")
 
-    raise typer.Exit(code=0)
+    return
 
 def _fetch_junk_status(img_path: Path, service: ImageRenamerService, strict: bool = False) -> tuple[Path, bool, Exception]:
     """Helper to be run in a separate thread. Just fetches the junk boolean."""
@@ -271,35 +245,12 @@ def _fetch_junk_status(img_path: Path, service: ImageRenamerService, strict: boo
     except Exception as e:
         return img_path, False, e
 
-@app.command("clean")
 def clean_images(
-    target_path: Path = typer.Argument(
-        ...,
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        help="Directory to scan for junk images."
-    ),
-    auto_trash: bool = typer.Option(
-        False, 
-        "--auto", "-a", 
-        help="Automatically move junk to .trash without asking for confirmation."
-    ),
-    strict: bool = typer.Option(
-        False,
-        "--strict", "-s",
-        help="Hyper-aggressive filtering. Trashes generic photos, scenes, and abstract art that lack explicit data/study value."
-    ),
-    sync_refs: bool = typer.Option(
-        False,
-        "--sync-refs",
-        help="Remove references to trashed images inside .md and .json files in the same directory."
-    ),
-    workers: int = typer.Option(
-        4,
-        "--workers", "-w",
-        help="Number of concurrent LM inferences."
-    )
+    target_path: Path,
+    auto_trash: bool = False,
+    strict: bool = False,
+    sync_refs: bool = False,
+    workers: int = 4
 ):
     """
     Scans a directory using AI. Throws any cosmetic icons, logos, or useless graphics into a .trash folder. Leaves useful images completely untouched.
@@ -309,7 +260,7 @@ def clean_images(
         service = ImageRenamerService(provider)
     except Exception as e:
         print_error("Failed to initialize AI Provider", e)
-        raise typer.Exit(code=1)
+        return
         
     console.print(f"[bold cyan]Scanning directory {target_path} for junk images...[/bold cyan]")
     valid_extensions = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
@@ -317,7 +268,7 @@ def clean_images(
     
     if not images:
         console.print("[yellow]No supported images found in the directory.[/yellow]")
-        raise typer.Exit()
+        return
         
     console.print(f"[bold green]Scanning {len(images)} images rapidly using {workers} parallel workers.[/bold green]\n")
     
@@ -360,11 +311,11 @@ def clean_images(
 
     if not junk_items:
         print_success("No junk images detected in this directory!")
-        raise typer.Exit(code=0)
+        return
 
     if auto_trash:
         print_success(f"Successfully cleaned up {len(junk_items)} junk images!")
-        raise typer.Exit(code=0)
+        return
 
     # Manual confirmation flow
     console.print(f"\n[bold yellow]Found {len(junk_items)} purely cosmetic/useless images.[/bold yellow]")
@@ -374,7 +325,7 @@ def clean_images(
         print_success("Bulk wipe complete!")
     else:
         console.print("[yellow]Action cancelled. No files were trashed.[/yellow]")
-    raise typer.Exit(code=0)
+    return
 
 def _apply_digitize_safe(img_path: Path, markdown_text: str, sync_refs: bool = False, working_dir: Path = None) -> str:
     """Moves the image to .trash/converted/ and replaces file references with text."""
@@ -421,30 +372,11 @@ def _fetch_ocr_text(img_path: Path, service: ImageRenamerService) -> tuple[Path,
     except Exception as e:
         return img_path, "", e
 
-@app.command("digitize")
 def digitize_images(
-    target_path: Path = typer.Argument(
-        ...,
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        help="Directory to scan for text-heavy images."
-    ),
-    auto_replace: bool = typer.Option(
-        False, 
-        "--auto", "-a", 
-        help="Automatically convert and trash images without asking for confirmation."
-    ),
-    sync_refs: bool = typer.Option(
-        False,
-        "--sync-refs",
-        help="Inject the generated markdown into the .md notes in place of the image."
-    ),
-    workers: int = typer.Option(
-        2,
-        "--workers", "-w",
-        help="Number of concurrent LM inferences."
-    )
+    target_path: Path,
+    auto_replace: bool = False,
+    sync_refs: bool = False,
+    workers: int = 2
 ):
     """
     Intelligently extracts completely text-based images into Markdown data, deleting the original screenshot.
@@ -454,7 +386,7 @@ def digitize_images(
         service = ImageRenamerService(provider)
     except Exception as e:
         print_error("Failed to initialize AI Provider", e)
-        raise typer.Exit(code=1)
+        return
         
     console.print(f"[bold cyan]Scanning directory {target_path} for text images...[/bold cyan]")
     valid_extensions = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
@@ -462,7 +394,7 @@ def digitize_images(
     
     if not images:
         console.print("[yellow]No supported images found in the directory.[/yellow]")
-        raise typer.Exit()
+        return
         
     console.print(f"[bold green]Generating Markdown for {len(images)} images using {workers} parallel workers.[/bold green]\n")
     
@@ -518,11 +450,11 @@ def digitize_images(
 
     if not ocr_items:
         print_success("No pure text images suitable for conversion detected!")
-        raise typer.Exit(code=0)
+        return
 
     if auto_replace:
         print_success(f"Successfully digitized and replaced {len(ocr_items)} images!")
-        raise typer.Exit(code=0)
+        return
 
     # Manual confirmation flow
     console.print(f"\n[bold yellow]Found {len(ocr_items)} text-heavy images capable of being fully digitized.[/bold yellow]")
@@ -532,18 +464,9 @@ def digitize_images(
         print_success("Bulk conversion complete!")
     else:
         console.print("[yellow]Action cancelled. No text was injected.[/yellow]")
-    raise typer.Exit(code=0)
+    return
 
-@app.command("prune-refs")
-def prune_refs(
-    target_path: Path = typer.Argument(
-        ...,
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        help="Directory to scan for broken image references."
-    )
-):
+def prune_refs(target_path: Path):
     """
     Rapidly scans .md and .json files to strip out image references to files that no longer exist on disk.
     """
@@ -555,7 +478,7 @@ def prune_refs(
     
     if not target_files:
         console.print("[yellow]No .md or .json files found in the directory.[/yellow]")
-        raise typer.Exit(code=0)
+        return
         
     broken_links_removed = 0
     modified_files = 0
@@ -599,4 +522,4 @@ def prune_refs(
                 console.print(f"[red]Failed to process {file_path.name}: {e}[/red]")
             
     print_success(f"Removed {broken_links_removed} broken references across {modified_files} files!")
-    raise typer.Exit(code=0)
+    return

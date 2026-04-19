@@ -1,4 +1,3 @@
-import typer
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from rich.progress import (
@@ -9,9 +8,6 @@ from rich.progress import (
     MofNCompleteColumn,
 )
 from aicli.cli.tui import print_header, print_success, print_error, console
-
-app = typer.Typer(help="Current affairs news parsing → filterable Excel.")
-
 
 def _classify_batch(
     batch_idx: int,
@@ -41,52 +37,14 @@ def _classify_batch(
         return batch_idx, [], e
 
 
-@app.command("parse")
 def parse_news(
-    file_path: Path = typer.Argument(
-        ...,
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-        help="Path to the current affairs text/markdown file.",
-    ),
-    output: Path = typer.Option(
-        None,
-        "--output",
-        "-o",
-        help="Output Excel file path. Defaults to <input_name>_parsed.xlsx. If file exists, new rows are APPENDED.",
-    ),
-    batch_size: int = typer.Option(
-        10,
-        "--batch-size",
-        "-b",
-        help="Number of lines to send per LLM call (lower = more accurate, higher = faster).",
-    ),
-    month: str = typer.Option(
-        "Not Specified",
-        "--month",
-        "-m",
-        help="Global month to apply to all items (e.g. 'December').",
-    ),
-    year: str = typer.Option(
-        "Not Specified",
-        "--year",
-        "-y",
-        help="Global year to apply to all items (e.g. '2025').",
-    ),
-    workers: int = typer.Option(
-        4,
-        "--workers",
-        "-W",
-        help="Number of parallel LLM inference threads.",
-        min=1,
-        max=8,
-    ),
-    show_prompt: bool = typer.Option(
-        False,
-        "--show-prompt",
-        help="Print the full system prompt to stdout and exit.",
-    ),
+    file_path: Path,
+    output: Path = None,
+    batch_size: int = 10,
+    month: str = "Not Specified",
+    year: str = "Not Specified",
+    workers: int = 4,
+    show_prompt: bool = False,
 ):
     """
     Parse a current affairs file into a filterable Excel spreadsheet.
@@ -236,21 +194,9 @@ def parse_news(
     )
 
 
-@app.command("from-json")
 def from_json(
-    file_path: Path = typer.Argument(
-        ...,
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-        help="Path to the JSON file containing current affairs data.",
-    ),
-    output: Path = typer.Option(
-        None,
-        "--output",
-        "-o",
-        help="Output Excel file path. Defaults to <input_name>.xlsx. Appends if exists.",
-    ),
+    file_path: Path,
+    output: Path = None,
 ):
     """
     Convert a generated JSON file directly into the filterable Excel spreadsheet.
@@ -345,33 +291,11 @@ def from_json(
     print_success(f"Done! {len(records)} items written to {output}")
 
 
-@app.command("dedupe")
 def dedupe(
-    file_path: Path = typer.Argument(
-        ...,
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-        help="Path to the Excel file to deduplicate.",
-    ),
-    output: Path = typer.Option(
-        None,
-        "--output",
-        "-o",
-        help="Output Excel file path. Defaults to <input_name>_deduped.xlsx.",
-    ),
-    threshold: float = typer.Option(
-        0.80,
-        "--threshold",
-        "-t",
-        help="Cosine similarity threshold for embeddings (0.0 to 1.0). Default is 0.80.",
-    ),
-    workers: int = typer.Option(
-        10,
-        "--workers",
-        "-w",
-        help="Number of parallel LLM workers for merging duplicates. Default is 10.",
-    ),
+    file_path: Path,
+    output: Path = None,
+    threshold: float = 0.80,
+    workers: int = 10,
 ):
     """
     De-duplicate an existing Current Affairs Excel file using RAG AI.
@@ -603,45 +527,13 @@ def dedupe(
     print_success(f"Deduplicated file saved → {output}")
 
 
-@app.command("process")
 def process_news(
-    json_path: Path = typer.Argument(
-        ...,
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-        help="Path to the JSON file containing new current affairs data.",
-    ),
-    output: Path = typer.Option(
-        None,
-        "--output",
-        "-o",
-        help="Master Output Excel file path. Defaults to <input_name>_master.xlsx.",
-    ),
-    workers: int = typer.Option(
-        4,
-        "--workers",
-        "-w",
-        help="Number of parallel LLM inference threads.",
-        min=1,
-    ),
-    threshold: float = typer.Option(
-        0.8,
-        "--threshold",
-        "-t",
-        help="Cosine similarity threshold for duplicates (0.0 to 1.0).",
-    ),
-    force_merge: bool = typer.Option(
-        False,
-        "--force-merge",
-        "-f",
-        help="Force LLM merge even when source+order cache hit (re-merges current batch).",
-    ),
-    no_cache: bool = typer.Option(
-        False,
-        "--no-cache",
-        help="Bypass file-based LLM cache (equivalent to deleting cache file).",
-    ),
+    json_path: Path,
+    output: Path = None,
+    workers: int = 4,
+    threshold: float = 0.8,
+    force_merge: bool = False,
+    no_cache: bool = False,
 ):
     """
     Unified God-Mode Pipeline: Parses JSON, appends to existing master Excel, and natively deduplicates the entire dataset.

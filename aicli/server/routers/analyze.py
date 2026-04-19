@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from aicli.domains.analyze.database import AnalyzeDB
-from aicli.server.orchestrator import AnalyzeOrchestrator
+from aicli.server.orchestrator.base import BaseOrchestrator, SSEProgressContext, ConsoleRedirect
 
 router = APIRouter()
 
@@ -33,29 +33,87 @@ def get_db():
 def list_pdfs():
     db = get_db()
     with db._get_conn() as conn:
-        pdfs = conn.execute("SELECT id, filename, page_count FROM pdfs ORDER BY filename").fetchall()
-        return [dict(p) for p in pdfs]
+        pdfs = conn.execute("SELECT pdf_file as filename, count(*) as page_count FROM pages GROUP BY pdf_file ORDER BY pdf_file").fetchall()
+        # Mock an ID for Vue (just index + 1)
+        return [{"id": i+1, "filename": p["filename"], "page_count": p["page_count"]} for i, p in enumerate(pdfs)]
 
 @router.get("/pdfs/{pdf_id}/pages")
 def get_pdf_pages(pdf_id: int):
     db = get_db()
     with db._get_conn() as conn:
+        # Find the pdf name by index
+        pdfs = conn.execute("SELECT DISTINCT pdf_file as filename FROM pages ORDER BY pdf_file").fetchall()
+        if pdf_id < 1 or pdf_id > len(pdfs):
+            raise HTTPException(404, "PDF not found")
+        pdf_name = pdfs[pdf_id - 1]["filename"]
+        
         pages = conn.execute(
-            "SELECT id, page_number, image_path, transcription, classification, dimensions, answers "
-            "FROM pages WHERE pdf_id = ? ORDER BY page_number",
-            (pdf_id,)
+            "SELECT id, page_number, pdf_file, image_path, transcription, classification "
+            "FROM pages WHERE pdf_file = ? ORDER BY page_number",
+            (pdf_name,)
         ).fetchall()
         
         results = []
         for p in pages:
             d = dict(p)
-            for json_field in ['dimensions', 'answers']:
-                if d.get(json_field):
-                    try:
-                        d[json_field] = json.loads(d[json_field])
-                    except:
-                        pass
             results.append(d)
+        return results
+
+@router.get("/status")
+def get_status():
+    db = get_db()
+    with db._get_conn() as conn:
+        pdf_count = conn.execute("SELECT COUNT(DISTINCT pdf_file) FROM pages").fetchone()[0]
+        pages_count = conn.execute("SELECT COUNT(*) FROM pages").fetchone()[0]
+        classified = conn.execute("SELECT COUNT(*) FROM pages WHERE classification IS NOT NULL").fetchone()[0]
+        
+        # Count errors matching transcription prefixes
+        errors = conn.execute(
+            "SELECT COUNT(*) FROM pages WHERE transcription LIKE '[TRANSCRIPTION_ERROR%'"
+        ).fetchone()[0]
+        
+        # Note: using `total_pdfs` to match frontend
+        return {
+            "total_pdfs": pdf_count,
+            "total_pages": pages_count,
+            "classified_pages": classified,
+            "errors": {"OCR": errors} if errors else {}
+        }
+
+@router.get("/pdfs/{pdf_id}/answers")
+def get_pdf_answers(pdf_id: int):
+    db = get_db()
+    with db._get_conn() as conn:
+        pdfs = conn.execute("SELECT DISTINCT pdf_file as filename FROM pages ORDER BY pdf_file").fetchall()
+        if pdf_id < 1 or pdf_id > len(pdfs):
+            raise HTTPException(404, "PDF not found")
+        pdf_name = pdfs[pdf_id - 1]["filename"]
+        
+        ans = conn.execute(
+            "SELECT id, question_number, question_directive, question_text, raw_text "
+            "FROM answers WHERE pdf_file = ? ORDER BY CAST(question_number AS INTEGER)",
+            (pdf_name,)
+        ).fetchall()
+        return [dict(a) for a in ans]
+
+@router.get("/answers/{answer_id}/dimensions")
+def get_answer_dimensions(answer_id: int):
+    db = get_db()
+    with db._get_conn() as conn:
+        dims = conn.execute(
+            "SELECT dimension_name, result_json FROM dimensions WHERE answer_id = ?",
+            (answer_id,)
+        ).fetchall()
+        
+        results = []
+        for d in dims:
+            row = dict(d)
+            if row.get("result_json"):
+                try:
+                    row["result_json"] = json.loads(row["result_json"])
+                except:
+                    pass
+            results.append(row)
         return results
 
 @router.get("/images/{pdf_name}/{image_name}")
@@ -71,13 +129,19 @@ def get_image(pdf_name: str, image_name: str):
 def get_aggregate():
     db = get_db()
     with db._get_conn() as conn:
-        agg = conn.execute("SELECT output FROM aggregation ORDER BY created_at DESC LIMIT 1").fetchone()
-        if agg and agg["output"]:
+        rows = conn.execute("SELECT dimension_name, aggregation_json, answer_count FROM dimension_aggregations").fetchall()
+        
+        results = {}
+        for row in rows:
+            dimension_name = row["dimension_name"]
             try:
-                return json.loads(agg["output"])
+                results[dimension_name] = {
+                    "answer_count": row["answer_count"],
+                    "aggregation_json": json.loads(row["aggregation_json"])
+                }
             except:
                 pass
-    return None
+        return results
 
 class ResetRequest(BaseModel):
     step: int = 2
@@ -106,11 +170,47 @@ class RunRequest(BaseModel):
     dpi: int = 200
     llm_model: str = "gemma-4-26b-a4b"
 
+# Use a singleton instance of BaseOrchestrator for analyze (or instantiate per pipeline if wanted, but singleton limits concurrency nicely here)
+analyze_orch = BaseOrchestrator()
+
+def _analyze_worker(orch: BaseOrchestrator, data_dir: Path, workers: int, dpi: int, llm_model: str):
+    import aicli.server.pipelines.analyze as analyze_mod
+    from aicli.server.pipelines.analyze import _get_db, _run_full_pipeline
+
+    orig_make_progress = getattr(analyze_mod, "_make_progress", None)
+    orig_console = getattr(analyze_mod, "console", None)
+    orig_print_success = getattr(analyze_mod, "print_success", None)
+    orig_print_error = getattr(analyze_mod, "print_error", None)
+
+    try:
+        db = _get_db(data_dir)
+        
+        analyze_mod._make_progress = lambda: SSEProgressContext(orch.queue)
+        analyze_mod.console = ConsoleRedirect(orch.queue)
+        analyze_mod.print_success = lambda msg: orch.queue.put({"type": "log", "message": f"[SUCCESS] {msg}"})
+        analyze_mod.print_error = lambda msg, exc: orch.queue.put({"type": "log", "message": f"[ERROR] {msg} - {exc}"})
+        
+        _run_full_pipeline(
+            data_dir=data_dir,
+            db=db,
+            workers=workers,
+            dpi=dpi,
+            pdf_files=None,
+            llm_model=llm_model
+        )
+        db.close()
+    finally:
+        # Restore originals
+        if orig_make_progress: analyze_mod._make_progress = orig_make_progress
+        if orig_console: analyze_mod.console = orig_console
+        if orig_print_success: analyze_mod.print_success = orig_print_success
+        if orig_print_error: analyze_mod.print_error = orig_print_error
+
 @router.post("/run")
 def run_pipeline(req: RunRequest):
-    orch = AnalyzeOrchestrator.get_instance()
     try:
-        orch.run_pipeline(
+        analyze_orch.dispatch(
+            _analyze_worker,
             data_dir=ServerState.data_dir,
             workers=req.workers,
             dpi=req.dpi,
@@ -122,5 +222,4 @@ def run_pipeline(req: RunRequest):
 
 @router.get("/stream")
 async def stream_progress():
-    orch = AnalyzeOrchestrator.get_instance()
-    return EventSourceResponse(orch.stream_events())
+    return EventSourceResponse(analyze_orch.stream_events())
