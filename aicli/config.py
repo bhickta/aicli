@@ -10,12 +10,17 @@ from pydantic import BaseModel
 CONFIG_DIR = Path.home() / ".config" / "aicli"
 CONFIG_FILE = CONFIG_DIR / "settings.json"
 
+PROVIDER_TYPE_CHOICES = ["ollama", "vllm"]
+
 
 class AppConfig(BaseModel):
     """Configuration based on JSON settings."""
 
+    provider_type: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
     ollama_api_key: str = "ollama"
+    vllm_base_url: str = "http://localhost:8000"
+    vllm_api_key: str = "EMPTY"
     model_name: str = "qwen3.5-9b"
 
 

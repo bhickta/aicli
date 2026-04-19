@@ -7,14 +7,14 @@ cursive English directly from page images. Fully parallelizable.
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from aicli.domains.analyze.database import AnalyzeDB
-from aicli.providers.ollama import OllamaProvider
+from aicli.core.interfaces import ImageVisionProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
 
 
 class AnswerTranscriberService:
     """Vision-model-only transcription for handwritten answer pages."""
 
-    def __init__(self, provider: OllamaProvider, config: AnalyzeConfig):
+    def __init__(self, provider: ImageVisionProvider, config: AnalyzeConfig):
         self.provider = provider
         self.config = config
 

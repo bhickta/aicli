@@ -8,7 +8,7 @@ from typing import List, Dict, Optional, Any, Callable
 from aicli.server.constants.analyze_constants import TRANSCRIPTION_ERROR_PREFIX
 from aicli.server.repositories.analyze_repository import AnalyzeRepository
 from aicli.server.services.reasoning_resolver import ReasoningResolver
-from aicli.providers.ollama import OllamaProvider
+from aicli.core.interfaces import ImageVisionProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
 from aicli.services.analyze.pdf_converter import PDFConverterService
 from aicli.services.analyze.page_classifier import PageClassifierService
@@ -29,7 +29,7 @@ class AnalyzePipelineService:
     def __init__(
         self,
         repository: AnalyzeRepository,
-        provider: OllamaProvider,
+        provider: ImageVisionProvider,
         config: AnalyzeConfig,
     ) -> None:
         self._repo = repository

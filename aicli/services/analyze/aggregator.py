@@ -7,14 +7,14 @@ the LM for pattern identification across candidates.
 import json
 
 from aicli.domains.analyze.database import AnalyzeDB
-from aicli.providers.ollama import OllamaProvider
+from aicli.core.interfaces import ImageVisionProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
 
 
 class AggregationService:
     """Aggregate dimension results across all PDFs to find reusable patterns."""
 
-    def __init__(self, provider: OllamaProvider, config: AnalyzeConfig):
+    def __init__(self, provider: ImageVisionProvider, config: AnalyzeConfig):
         self.provider = provider
         self.config = config
 

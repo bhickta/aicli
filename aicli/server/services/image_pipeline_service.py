@@ -12,7 +12,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from aicli.providers.ollama import OllamaProvider
+from aicli.providers import get_provider
 from aicli.services.image_renamer import ImageRenamerService
 from aicli.cli.tui import (
     print_header,

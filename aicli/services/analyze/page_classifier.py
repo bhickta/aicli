@@ -8,7 +8,7 @@ Parallel-safe — each call is independent.
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from aicli.domains.analyze.database import AnalyzeDB
-from aicli.providers.ollama import OllamaProvider
+from aicli.core.interfaces import ImageVisionProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
 
 
@@ -18,7 +18,7 @@ VALID_CLASSIFICATIONS = {"cover", "evaluation", "answer", "continuation", "blank
 class PageClassifierService:
     """Classify pages using their OCR'd text (text-only LLM calls)."""
 
-    def __init__(self, provider: OllamaProvider, config: AnalyzeConfig):
+    def __init__(self, provider: ImageVisionProvider, config: AnalyzeConfig):
         self.provider = provider
         self.config = config
 

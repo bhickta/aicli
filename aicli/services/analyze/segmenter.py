@@ -8,14 +8,14 @@ import json
 from pathlib import Path
 
 from aicli.domains.analyze.database import AnalyzeDB
-from aicli.providers.ollama import OllamaProvider
+from aicli.core.interfaces import ImageVisionProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
 
 
 class AnswerSegmenterService:
     """Group transcribed pages into answer units by question number."""
 
-    def __init__(self, provider: OllamaProvider, config: AnalyzeConfig):
+    def __init__(self, provider: ImageVisionProvider, config: AnalyzeConfig):
         self.provider = provider
         self.config = config
 

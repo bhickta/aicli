@@ -4,7 +4,8 @@ from pathlib import Path
 from fastapi import Depends
 from aicli.server.repositories.analyze_repository import AnalyzeRepository
 from aicli.server.services.analyze_pipeline_service import AnalyzePipelineService
-from aicli.providers.ollama import OllamaProvider
+from aicli.providers import get_provider
+from aicli.core.interfaces import ImageVisionProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
 
 
@@ -23,10 +24,15 @@ def get_analyze_repository() -> AnalyzeRepository:
     return AnalyzeRepository(db_path)
 
 
+def get_provider_instance() -> ImageVisionProvider:
+    """Dependency provider for the configured AI provider."""
+    return get_provider()
+
+
 def get_analyze_service(
     repo: AnalyzeRepository = Depends(get_analyze_repository),
+    provider: ImageVisionProvider = Depends(get_provider_instance),
 ) -> AnalyzePipelineService:
     """Dependency provider for AnalyzePipelineService."""
-    provider = OllamaProvider()
     config = AnalyzeConfig()
     return AnalyzePipelineService(repo, provider, config)

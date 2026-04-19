@@ -8,14 +8,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 
 from aicli.domains.analyze.database import AnalyzeDB
-from aicli.providers.ollama import OllamaProvider
+from aicli.core.interfaces import ImageVisionProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
 
 
 class DimensionAnalyzerService:
     """Run modular dimension analysis on answer units."""
 
-    def __init__(self, provider: OllamaProvider, config: AnalyzeConfig):
+    def __init__(self, provider: ImageVisionProvider, config: AnalyzeConfig):
         self.provider = provider
         self.config = config
 

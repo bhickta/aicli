@@ -19,7 +19,7 @@ from rich.table import Table
 from aicli.cli.tui import print_header, print_success, print_error, console
 from aicli.server.repositories.analyze_repository import AnalyzeRepository
 from aicli.server.services.analyze_pipeline_service import AnalyzePipelineService
-from aicli.providers.ollama import OllamaProvider
+from aicli.providers import get_provider
 from aicli.services.analyze.config_loader import AnalyzeConfig
 from aicli.server.constants.analyze_constants import (
     DEFAULT_WORKERS,
@@ -33,7 +33,7 @@ app = typer.Typer(help="UPSC topper answer sheet analysis pipeline.")
 def _get_service(data_dir: Path) -> AnalyzePipelineService:
     """Helper to initialize the service for CLI usage."""
     repo = AnalyzeRepository(data_dir / "analyze.db")
-    provider = OllamaProvider()
+    provider = get_provider()
     config = AnalyzeConfig()
     return AnalyzePipelineService(repo, provider, config)
 

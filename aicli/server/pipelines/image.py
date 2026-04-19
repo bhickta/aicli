@@ -10,7 +10,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from aicli.providers.ollama import OllamaProvider
+from aicli.providers import get_provider
 from aicli.services.image_renamer import ImageRenamerService
 from aicli.cli.tui import (
     print_header,
@@ -119,7 +119,7 @@ def rename_image(
     trash_junk: bool = False,
 ):
     try:
-        service = ImageRenamerService(OllamaProvider())
+        service = ImageRenamerService(get_provider())
     except Exception as e:
         return print_error("Failed to initialize AI Provider", e)
 
@@ -254,7 +254,7 @@ def clean_images(
     workers: int = 4,
 ):
     try:
-        service = ImageRenamerService(OllamaProvider())
+        service = ImageRenamerService(get_provider())
     except Exception as e:
         return print_error("Failed to initialize AI Provider", e)
 
@@ -341,7 +341,7 @@ def digitize_images(
     workers: int = 2,
 ):
     try:
-        service = ImageRenamerService(OllamaProvider())
+        service = ImageRenamerService(get_provider())
     except Exception as e:
         return print_error("Failed to initialize AI Provider", e)
 
