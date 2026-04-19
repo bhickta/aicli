@@ -29,7 +29,7 @@ class AnalyzePipelineService:
     def __init__(
         self,
         repository: AnalyzeRepository,
-        provider: LMStudioProvider,
+        provider: OllamaProvider,
         config: AnalyzeConfig,
     ) -> None:
         self._repo = repository

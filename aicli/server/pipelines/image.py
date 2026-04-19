@@ -119,7 +119,7 @@ def rename_image(
     trash_junk: bool = False,
 ):
     try:
-        service = ImageRenamerService(LMStudioProvider())
+        service = ImageRenamerService(OllamaProvider())
     except Exception as e:
         return print_error("Failed to initialize AI Provider", e)
 
@@ -254,7 +254,7 @@ def clean_images(
     workers: int = 4,
 ):
     try:
-        service = ImageRenamerService(LMStudioProvider())
+        service = ImageRenamerService(OllamaProvider())
     except Exception as e:
         return print_error("Failed to initialize AI Provider", e)
 
@@ -341,7 +341,7 @@ def digitize_images(
     workers: int = 2,
 ):
     try:
-        service = ImageRenamerService(LMStudioProvider())
+        service = ImageRenamerService(OllamaProvider())
     except Exception as e:
         return print_error("Failed to initialize AI Provider", e)
 
