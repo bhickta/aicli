@@ -32,6 +32,10 @@
       </div>
 
       <div class="sidebar-actions">
+        <label class="btn btn-ghost btn-sm upload-btn">
+          📤 Upload PDFs
+          <input type="file" multiple accept=".pdf" @change="uploadPdfs" hidden />
+        </label>
         <button class="btn btn-ghost btn-sm" @click="retryErrorPages">🔄 Retry Error Pages</button>
         <button class="btn btn-ghost btn-sm" @click="showResetModal = true">⚠️ Reset Pipeline</button>
         <button class="btn btn-ghost btn-sm" @click="refreshAll">↻ Refresh</button>
@@ -177,8 +181,26 @@
                 <label>LLM Model ID</label>
                 <input type="text" v-model="runConfig.llm_model" placeholder="e.g. gemma-4-26b-a4b" />
               </div>
+
+              <div class="form-group span-full">
+                <label>Execution Mode</label>
+                <div class="radio-group" style="display: flex; gap: 16px; margin-bottom: 8px;">
+                  <label><input type="radio" v-model="runConfig.mode" value="all" /> End-to-End</label>
+                  <label><input type="radio" v-model="runConfig.mode" value="custom" /> Custom Steps</label>
+                </div>
+                
+                <div v-if="runConfig.mode === 'custom'" class="steps-grid">
+                  <label><input type="checkbox" v-model="runConfig.target_steps" :value="1" /> 1: PDF → Images</label>
+                  <label><input type="checkbox" v-model="runConfig.target_steps" :value="2" /> 2: OCR Transcription</label>
+                  <label><input type="checkbox" v-model="runConfig.target_steps" :value="3" /> 3: Classification</label>
+                  <label><input type="checkbox" v-model="runConfig.target_steps" :value="4" /> 4: Segmentation</label>
+                  <label><input type="checkbox" v-model="runConfig.target_steps" :value="5" /> 5: Dimension Analysis</label>
+                  <label><input type="checkbox" v-model="runConfig.target_steps" :value="6" /> 6: Aggregation</label>
+                  <label><input type="checkbox" v-model="runConfig.target_steps" :value="7" /> 7: Report Generation</label>
+                </div>
+              </div>
               <button class="btn btn-primary" @click="startPipeline" :disabled="pipelineRunning">
-                {{ pipelineRunning ? 'Pipeline Running...' : '▶ Start End-to-End Pipeline' }}
+                {{ pipelineRunning ? 'Pipeline Running...' : '▶ Start Execution' }}
               </button>
             </div>
 
@@ -213,7 +235,7 @@
         <div class="icon">📑</div>
         <p>Select a PDF from the sidebar to view analysis results.</p>
         <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
-          Start the API: <code style="color: var(--accent);">aicli analyze view -d ./data/toppers_2022/</code>
+          Use the 📤 <strong>Upload PDFs</strong> button in the sidebar to add files.
         </p>
       </div>
     </main>
@@ -255,9 +277,12 @@ import {
   fetchDimensions,
   fetchAggregations,
   resetPipeline,
+  runPipeline,
   retryErrors,
   imageUrl,
 } from '../api.js'
+
+const API_BASE = 'http://127.0.0.1:8765/api'
 
 export default {
   name: 'AnalyzeStudio',
@@ -326,6 +351,7 @@ export default {
       await this.loadPdfData(pdf)
     },
     async loadPdfData(pdf) {
+      if (!pdf.page_count) return; // Prevent loading data if PDF has not been analyzed yet.
       this.loading = true
       try {
         const [pages, answers, aggregations] = await Promise.all([
@@ -345,6 +371,30 @@ export default {
         }
       } finally {
         this.loading = false
+      }
+    },
+    async uploadPdfs(event) {
+      const files = event.target.files
+      if (!files.length) return
+
+      const formData = new FormData()
+      for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i])
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/analyze/upload`, {
+          method: 'POST',
+          body: formData
+        })
+        if (!res.ok) throw new Error("Upload failed")
+        alert("Upload successful! Click the Runner tab and hit Start End-to-End Pipeline to process.")
+        await this.refreshAll()
+      } catch (err) {
+        alert(err.message)
+      } finally {
+        // clear input
+        event.target.value = ''
       }
     },
     async toggleAnswer(answerId) {

@@ -8,6 +8,9 @@ from aicli.services.video import VideoTaggerService
 from aicli.cli.tui import print_header, print_success, print_error, console
 
 
+def process_notes(target_path: Path, overwrite: bool = False, style: str = "bullet"):
+    """Core logic to generate video notes, extracted for API usage."""
+
 def register(app: typer.Typer):
     """Register the notes command on the given Typer app."""
 
@@ -35,6 +38,9 @@ def register(app: typer.Typer):
         Detects subtitles from sidecar .srt files or embedded subtitle streams inside the
         video container. Converts to plain text, sends to LM Studio, saves as .md file.
         """
+        process_notes(target_path, overwrite, style)
+
+def process_notes(target_path: Path, overwrite: bool = False, style: str = "bullet"):
         from aicli.services.video.notes_service import NotesService
         
         valid_extensions = VideoTaggerService.VIDEO_EXTENSIONS + (".txt", ".srt")

@@ -166,3 +166,34 @@ def run_video_tag(req: VideoTagRequest):
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
+
+class VideoNotesRequest(BaseModel):
+    target_path: str
+    overwrite: bool = False
+    style: str = "bullet"
+
+def _video_notes_worker(orch: BaseOrchestrator, req: VideoNotesRequest):
+    import aicli.server.pipelines.video_notes as notes_mod
+    orig_console = getattr(notes_mod, "console", None)
+    try:
+        notes_mod.console = ConsoleRedirect(orch.queue)
+        
+        target = Path(req.target_path)
+        if not target.is_absolute():
+            target = ServerState.data_dir / req.target_path
+
+        notes_mod.process_notes(
+            target_path=target,
+            overwrite=req.overwrite,
+            style=req.style
+        )
+    finally:
+        if orig_console: notes_mod.console = orig_console
+
+@router.post("/notes/run")
+def run_video_notes(req: VideoNotesRequest):
+    try:
+        video_course_orch.dispatch(_video_notes_worker, req=req)
+        return {"ok": True, "message": "Video Notes Pipeline started"}
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))

@@ -15,12 +15,13 @@ def serve(
     port: int = 8765,
     workers: int = 1,
     data_dir: str = "./data",
-    cache_dir: str = "./.aicli_cache"
+    cache_dir: str = "./.aicli_cache",
+    dev: bool = typer.Option(False, "--dev", is_flag=True, help="Enable Dev Mode with Vite HMR."),
 ):
     """Alias for 'aicli server'."""
     from aicli.cli.commands.server import run_server
     from pathlib import Path
-    run_server(host=host, port=port, workers=workers, data_dir=Path(data_dir), cache_dir=Path(cache_dir))
+    run_server(host=host, port=port, workers=workers, data_dir=Path(data_dir), cache_dir=Path(cache_dir), dev_mode=dev)
 
 def run():
     """Entry point for the CLI."""

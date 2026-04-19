@@ -98,7 +98,7 @@ class BaseOrchestrator:
             try:
                 event = self.queue.get_nowait()
                 json_data = json.dumps(event)
-                yield f"data: {json_data}\n\n"
+                yield {"data": json_data}
                 
                 if event.get("type") == "status" and event.get("status") in ("completed", "error"):
                     break

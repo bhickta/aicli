@@ -91,6 +91,7 @@ def _run_full_pipeline(
     dpi: int,
     pdf_files: list[Path] | None = None,
     llm_model: str | None = None,
+    target_steps: list[int] | None = None,
 ):
     """Execute the full 7-step pipeline."""
     cache_dir = _get_cache_dir(data_dir)
@@ -103,109 +104,116 @@ def _run_full_pipeline(
     # ------------------------------------------------------------------
     # Step 1: PDF → Images
     # ------------------------------------------------------------------
-    console.print("\n[bold magenta]━━━ Step 1: PDF → Images ━━━[/bold magenta]")
-    converter = PDFConverterService()
+    console.print("\nif target_steps is None or 1 in target_steps:
+    [bold magenta]━━━ Step 1: PDF → Images ━━━[/bold magenta]")
+        converter = PDFConverterService()
 
-    if pdf_files:
-        total_pages = 0
-        for pf in pdf_files:
-            n = converter.convert(pf, cache_dir, db, dpi)
-            total_pages += n
-        pdf_count = len(pdf_files)
-    else:
-        pdf_count, total_pages = converter.convert_all(data_dir, cache_dir, db, dpi)
+        if pdf_files:
+            total_pages = 0
+            for pf in pdf_files:
+                n = converter.convert(pf, cache_dir, db, dpi)
+                total_pages += n
+            pdf_count = len(pdf_files)
+        else:
+            pdf_count, total_pages = converter.convert_all(data_dir, cache_dir, db, dpi)
 
-    if total_pages > 0:
-        print_success(f"Converted {pdf_count} PDF(s) → {total_pages} page images")
-    else:
-        console.print("[dim]All PDFs already converted. Skipping.[/dim]")
+        if total_pages > 0:
+            print_success(f"Converted {pdf_count} PDF(s) → {total_pages} page images")
+        else:
+            console.print("[dim]All PDFs already converted. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
     # Step 2: OCR Transcription (Vision Model — all pages)
     # ------------------------------------------------------------------
-    console.print("\n[bold magenta]━━━ Step 2: OCR Transcription ━━━[/bold magenta]")
-    transcriber = AnswerTranscriberService(provider, cfg)
-    untranscribed = db.get_untranscribed_pages()
+    console.print("\nif target_steps is None or 2 in target_steps:
+    [bold magenta]━━━ Step 2: OCR Transcription ━━━[/bold magenta]")
+        transcriber = AnswerTranscriberService(provider, cfg)
+        untranscribed = db.get_untranscribed_pages()
 
-    if untranscribed:
-        with _make_progress() as progress:
-            task = progress.add_task("Transcribing pages...", total=len(untranscribed))
-            transcribed, tr_errors = transcriber.transcribe_batch(db, workers, progress, task)
-        if tr_errors:
-            print_error(f"Transcription: {tr_errors} errors (see first error above)", ValueError(""))
-        print_success(f"Transcribed {transcribed} pages")
-    else:
-        console.print("[dim]All pages already transcribed. Skipping.[/dim]")
+        if untranscribed:
+            with _make_progress() as progress:
+                task = progress.add_task("Transcribing pages...", total=len(untranscribed))
+                transcribed, tr_errors = transcriber.transcribe_batch(db, workers, progress, task)
+            if tr_errors:
+                print_error(f"Transcription: {tr_errors} errors (see first error above)", ValueError(""))
+            print_success(f"Transcribed {transcribed} pages")
+        else:
+            console.print("[dim]All pages already transcribed. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
     # Step 3: Page Classification (Text-only — fast)
     # ------------------------------------------------------------------
-    console.print("\n[bold magenta]━━━ Step 3: Page Classification ━━━[/bold magenta]")
-    classifier = PageClassifierService(provider, cfg)
-    unclassified = db.get_unclassified_pages()
+    console.print("\nif target_steps is None or 3 in target_steps:
+    [bold magenta]━━━ Step 3: Page Classification ━━━[/bold magenta]")
+        classifier = PageClassifierService(provider, cfg)
+        unclassified = db.get_unclassified_pages()
 
-    if unclassified:
-        with _make_progress() as progress:
-            task = progress.add_task("Classifying pages...", total=len(unclassified))
-            classified, cls_errors = classifier.classify_batch(db, workers, progress, task)
-        if cls_errors:
-            print_error(f"Classification: {cls_errors} errors (see first error above)", ValueError(""))
-        print_success(f"Classified {classified} pages")
-    else:
-        console.print("[dim]All pages already classified. Skipping.[/dim]")
+        if unclassified:
+            with _make_progress() as progress:
+                task = progress.add_task("Classifying pages...", total=len(unclassified))
+                classified, cls_errors = classifier.classify_batch(db, workers, progress, task)
+            if cls_errors:
+                print_error(f"Classification: {cls_errors} errors (see first error above)", ValueError(""))
+            print_success(f"Classified {classified} pages")
+        else:
+            console.print("[dim]All pages already classified. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
     # Step 4: Answer Segmentation
     # ------------------------------------------------------------------
-    console.print("\n[bold magenta]━━━ Step 4: Answer Segmentation ━━━[/bold magenta]")
-    segmenter = AnswerSegmenterService(provider, cfg)
-    unsegmented = db.get_unsegmented_pdfs()
+    console.print("\nif target_steps is None or 4 in target_steps:
+    [bold magenta]━━━ Step 4: Answer Segmentation ━━━[/bold magenta]")
+        segmenter = AnswerSegmenterService(provider, cfg)
+        unsegmented = db.get_unsegmented_pdfs()
 
-    if unsegmented:
-        with _make_progress() as progress:
-            task = progress.add_task("Segmenting answers...", total=len(unsegmented))
-            seg_count = segmenter.segment_all(db, progress, task)
-        print_success(f"Created {seg_count} answer units from {len(unsegmented)} PDFs")
-    else:
-        console.print("[dim]All PDFs already segmented. Skipping.[/dim]")
+        if unsegmented:
+            with _make_progress() as progress:
+                task = progress.add_task("Segmenting answers...", total=len(unsegmented))
+                seg_count = segmenter.segment_all(db, progress, task)
+            print_success(f"Created {seg_count} answer units from {len(unsegmented)} PDFs")
+        else:
+            console.print("[dim]All PDFs already segmented. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
     # Step 5: Dimension Analysis
     # ------------------------------------------------------------------
-    console.print("\n[bold magenta]━━━ Step 5: Dimension Analysis ━━━[/bold magenta]")
-    analyzer = DimensionAnalyzerService(provider, cfg)
-    enabled_dims = cfg.enabled_dimensions
+    console.print("\nif target_steps is None or 5 in target_steps:
+    [bold magenta]━━━ Step 5: Dimension Analysis ━━━[/bold magenta]")
+        analyzer = DimensionAnalyzerService(provider, cfg)
+        enabled_dims = cfg.enabled_dimensions
 
-    for dim_name in enabled_dims:
-        unanalyzed = db.get_unanalyzed_answers(dim_name)
-        if unanalyzed:
-            console.print(f"  [cyan]→ {dim_name}[/cyan]: {len(unanalyzed)} answers to analyze")
-            with _make_progress() as progress:
-                task = progress.add_task(f"Analyzing [{dim_name}]...", total=len(unanalyzed))
-                count = analyzer.analyze_dimension(dim_name, db, workers, progress, task)
-            print_success(f"  {dim_name}: {count} answers analyzed")
-        else:
-            console.print(f"  [dim]{dim_name}: already complete. Skipping.[/dim]")
+        for dim_name in enabled_dims:
+            unanalyzed = db.get_unanalyzed_answers(dim_name)
+            if unanalyzed:
+                console.print(f"  [cyan]→ {dim_name}[/cyan]: {len(unanalyzed)} answers to analyze")
+                with _make_progress() as progress:
+                    task = progress.add_task(f"Analyzing [{dim_name}]...", total=len(unanalyzed))
+                    count = analyzer.analyze_dimension(dim_name, db, workers, progress, task)
+                print_success(f"  {dim_name}: {count} answers analyzed")
+            else:
+                console.print(f"  [dim]{dim_name}: already complete. Skipping.[/dim]")
 
     # ------------------------------------------------------------------
     # Step 6: Aggregation
     # ------------------------------------------------------------------
-    console.print("\n[bold magenta]━━━ Step 6: Cross-PDF Aggregation ━━━[/bold magenta]")
-    aggregator = AggregationService(provider, cfg)
+    console.print("\nif target_steps is None or 6 in target_steps:
+    [bold magenta]━━━ Step 6: Cross-PDF Aggregation ━━━[/bold magenta]")
+        aggregator = AggregationService(provider, cfg)
 
-    with _make_progress() as progress:
-        task = progress.add_task("Aggregating patterns...", total=len(enabled_dims))
-        agg_count = aggregator.aggregate_all(db, progress, task)
-    print_success(f"Aggregated {agg_count} dimensions")
+        with _make_progress() as progress:
+            task = progress.add_task("Aggregating patterns...", total=len(enabled_dims))
+            agg_count = aggregator.aggregate_all(db, progress, task)
+        print_success(f"Aggregated {agg_count} dimensions")
 
     # ------------------------------------------------------------------
     # Step 7: Report Generation
     # ------------------------------------------------------------------
-    console.print("\n[bold magenta]━━━ Step 7: Report Generation ━━━[/bold magenta]")
-    reporter = ReportGeneratorService()
-    md_path, json_path = reporter.generate(db, data_dir)
-    print_success(f"Report: {md_path}")
-    print_success(f"JSON:   {json_path}")
+    if target_steps is None or 7 in target_steps:
+        console.print("\n[bold magenta]━━━ Step 7: Report Generation ━━━[/bold magenta]")
+        reporter = ReportGeneratorService()
+        md_path, json_path = reporter.generate(db, data_dir)
+        print_success(f"Report: {md_path}")
+        print_success(f"JSON:   {json_path}")
 
 
     elapsed = time.time() - start_t

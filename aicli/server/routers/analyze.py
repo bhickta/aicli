@@ -2,7 +2,7 @@ import json
 import urllib.parse
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
@@ -35,7 +35,42 @@ def list_pdfs():
     with db._get_conn() as conn:
         pdfs = conn.execute("SELECT pdf_file as filename, count(*) as page_count FROM pages GROUP BY pdf_file ORDER BY pdf_file").fetchall()
         # Mock an ID for Vue (just index + 1)
-        return [{"id": i+1, "filename": p["filename"], "page_count": p["page_count"]} for i, p in enumerate(pdfs)]
+        db_pdfs = [{"id": i+1, "filename": p["filename"], "page_count": p["page_count"]} for i, p in enumerate(pdfs)]
+        
+        # Also include uploaded but unprocessed PDFs from ServerState.data_dir
+        # so they appear instantly in the UI with page_count = 0.
+        processed_names = {p["filename"] for p in db_pdfs}
+        if ServerState.data_dir.exists():
+            idx = len(db_pdfs) + 1
+            for child in ServerState.data_dir.glob("*.pdf"):
+                if child.name not in processed_names:
+                    db_pdfs.append({"id": idx, "filename": child.name, "page_count": 0})
+                    idx += 1
+                    
+        # Sort so we get consistent ordering
+        db_pdfs.sort(key=lambda x: x["filename"])
+        return db_pdfs
+
+@router.post("/upload")
+async def upload_pdfs(files: list[UploadFile] = File(...)):
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+    
+    ServerState.data_dir.mkdir(parents=True, exist_ok=True)
+    
+    uploaded_files = []
+    for file in files:
+        if not file.filename.lower().endswith('.pdf'):
+            continue
+        
+        safe_name = Path(file.filename).name
+        target_path = ServerState.data_dir / safe_name
+        
+        # Write file in chunks to handle large PDFs without bursting RAM
+        target_path.write_bytes(await file.read())
+        uploaded_files.append(safe_name)
+        
+    return {"message": "Success", "files": uploaded_files}
 
 @router.get("/pdfs/{pdf_id}/pages")
 def get_pdf_pages(pdf_id: int):
@@ -169,11 +204,12 @@ class RunRequest(BaseModel):
     workers: int = 4
     dpi: int = 200
     llm_model: str = "gemma-4-26b-a4b"
+    target_steps: list[int] | None = None
 
 # Use a singleton instance of BaseOrchestrator for analyze (or instantiate per pipeline if wanted, but singleton limits concurrency nicely here)
 analyze_orch = BaseOrchestrator()
 
-def _analyze_worker(orch: BaseOrchestrator, data_dir: Path, workers: int, dpi: int, llm_model: str):
+def _analyze_worker(orch: BaseOrchestrator, data_dir: Path, workers: int, dpi: int, llm_model: str, target_steps: list[int] | None = None):
     import aicli.server.pipelines.analyze as analyze_mod
     from aicli.server.pipelines.analyze import _get_db, _run_full_pipeline
 
@@ -196,7 +232,8 @@ def _analyze_worker(orch: BaseOrchestrator, data_dir: Path, workers: int, dpi: i
             workers=workers,
             dpi=dpi,
             pdf_files=None,
-            llm_model=llm_model
+            llm_model=llm_model,
+            target_steps=target_steps
         )
         db.close()
     finally:
@@ -214,7 +251,8 @@ def run_pipeline(req: RunRequest):
             data_dir=ServerState.data_dir,
             workers=req.workers,
             dpi=req.dpi,
-            llm_model=req.llm_model
+            llm_model=req.llm_model,
+            target_steps=req.target_steps
         )
         return {"ok": True, "message": "Pipeline started"}
     except RuntimeError as e:
