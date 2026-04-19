@@ -287,9 +287,58 @@
 .log-line.system .log-text { color: #d2a8ff; font-weight: 600; }
 .log-line.page .log-text { color: #8b949e; }
 
-.empty-terminal {
-  color: #484f58;
-  font-style: italic;
-  padding: 20px;
-  text-align: center;
+/* ─── Action Buttons Grid ─── */
+.action-buttons {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: auto;
+}
+
+.action-buttons.is-running {
+  grid-template-columns: 1fr 120px;
+}
+
+.action-buttons .btn {
+  height: 48px;
+  font-size: 14px;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.start-btn {
+  background: var(--accent) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stop-btn {
+  background: #e74c3c !important;
+  color: white !important;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: pulse-red 2s infinite;
+}
+
+.stop-btn:hover {
+  background: #c0392b !important;
+}
+
+.spinner-sm {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 10px;
+}
+
+@keyframes pulse-red {
+  0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(231, 76, 60, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }

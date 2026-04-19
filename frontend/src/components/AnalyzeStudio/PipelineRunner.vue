@@ -147,12 +147,13 @@ watch(() => props.parsedLogs.length, () => {
         </div>
       </div>
 
-      <div class="action-buttons" style="display: flex; gap: 8px;">
-        <button class="btn btn-primary" @click="handleStart" :disabled="pipelineRunning" style="height: 48px; font-size: 14px; justify-content: center; flex: 1;">
+      <div class="action-buttons" :class="{ 'is-running': pipelineRunning }">
+        <button class="btn btn-primary start-btn" @click="handleStart" :disabled="pipelineRunning">
+          <span v-if="pipelineRunning" class="spinner-sm"></span>
           {{ pipelineRunning ? 'AI Pipeline Working...' : '▶ Start Execution' }}
         </button>
-        <button v-if="pipelineRunning" class="btn btn-danger" @click="$emit('stop-pipeline')" style="height: 48px; font-size: 14px; justify-content: center; width: 120px;">
-          ⏹ Stop
+        <button v-if="pipelineRunning" class="btn btn-danger stop-btn" @click="$emit('stop-pipeline')">
+          ⏹ Stop Execution
         </button>
       </div>
     </div>

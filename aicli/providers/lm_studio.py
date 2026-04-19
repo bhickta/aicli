@@ -184,7 +184,14 @@ class LMStudioProvider(ImageVisionProvider):
 
     def _call_with_reasoning(self, kwargs: dict, allow_reasoning: bool) -> str:
         """Execute completion with optional reasoning parameter."""
-        enhanced = {**kwargs, "extra_body": {"reasoning": allow_reasoning}}
+        val = "on" if allow_reasoning else "off"
+        # Send multiple variants for maximum server compatibility
+        extra = {
+            "reasoning": val,
+            "thinking": allow_reasoning,  # fallback for some servers
+            "include_reasoning": allow_reasoning  # fallback for others
+        }
+        enhanced = {**kwargs, "extra_body": extra}
         content = self._call_and_extract(enhanced)
         return self._strip_thought_blocks(content)
 
