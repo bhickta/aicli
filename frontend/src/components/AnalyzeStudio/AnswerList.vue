@@ -26,8 +26,9 @@ function getPageNumbers(pageIdsStr: string) {
 }
 
 function getPhysicalPage(dbId: number) {
-  const page = props.pages?.find(p => p.id === dbId);
-  return page?.page_number || dbId;
+  if (!props.pages || props.pages.length === 0) return null;
+  const page = props.pages.find(p => p.id == dbId);
+  return page ? page.page_number : null;
 }
 
 function imageUrl(pdfFile: string, pageNum: number) {
@@ -61,8 +62,8 @@ function imageUrl(pdfFile: string, pageNum: number) {
               class="answer-thumbnail"
               @click="$emit('open-inspector', getPhysicalPage(pageId))"
             >
-              <img :src="imageUrl(selectedPdf.filename, getPhysicalPage(pageId))" loading="lazy" />
-              <span class="thumb-label">Page {{ getPhysicalPage(pageId) }}</span>
+              <img v-if="getPhysicalPage(pageId)" :src="imageUrl(selectedPdf.filename, getPhysicalPage(pageId)!)" loading="lazy" />
+              <span class="thumb-label">Page {{ getPhysicalPage(pageId) || '...' }}</span>
             </div>
           </div>
 
@@ -81,7 +82,7 @@ function imageUrl(pdfFile: string, pageNum: number) {
                     :key="key"
                     class="dim-field"
                   >
-                    <span class="label">{{ formatKey(key) }}</span>
+                    <span class="label">{{ formatKey(String(key)) }}</span>
                     <span class="value">{{ formatValue(value) }}</span>
                   </div>
                 </template>
