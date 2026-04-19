@@ -61,7 +61,8 @@ class AnalyzeRepository:
         pdf_name = self._resolve_pdf_name(pdf_id)
         with self._db._get_conn() as conn:
             rows = conn.execute(
-                "SELECT id, question_number, question_directive, question_text, raw_text, page_ids "
+                "SELECT id, pdf_file, candidate_name, upsc_id, test_code, question_number, "
+                "question_directive, question_text, raw_text, page_ids "
                 "FROM answers WHERE pdf_file = ? ORDER BY CAST(question_number AS INTEGER)",
                 (pdf_name,),
             ).fetchall()
