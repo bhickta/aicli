@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import time
+import logging
 from typing import Optional
 
 from PIL import Image
@@ -20,11 +21,24 @@ _MIME_MAP = {
     "gif": "image/gif",
 }
 
+logger = logging.getLogger(__name__)
+
 class LangChainProvider(ImageVisionProvider):
     """Generic provider mapped to any LangChain Chat Model interface."""
 
     def __init__(self, llm: BaseChatModel) -> None:
         self.llm = llm
+
+    def _log_llm_call(self, res, latency_ms: float):
+        """Helper to log token counts and latency from AIMessage response wrapper."""
+        try:
+            tokens = res.response_metadata.get("token_usage", {})
+            p_tokens = tokens.get("prompt_tokens", 0)
+            c_tokens = tokens.get("completion_tokens", 0)
+            model_name = res.response_metadata.get("model_name", "unknown_model")
+            logger.info("LLM call | model=%s | tokens=%d+%d | latency=%.0fms", model_name, p_tokens, c_tokens, latency_ms)
+        except Exception:
+            pass
 
     def describe_image(
         self,
@@ -57,7 +71,10 @@ class LangChainProvider(ImageVisionProvider):
         kwargs = {"temperature": temperature, "max_tokens": max_tokens}
         
         try:
+            start_t = time.perf_counter()
             res = self.llm.invoke(messages, **kwargs)
+            latency_ms = (time.perf_counter() - start_t) * 1000
+            self._log_llm_call(res, latency_ms)
             return res.content
         except Exception as e:
             for attempt in range(max_retries - 1):
@@ -87,7 +104,10 @@ class LangChainProvider(ImageVisionProvider):
         kwargs = {"temperature": temperature, "max_tokens": max_tokens}
         
         try:
+            start_t = time.perf_counter()
             res = self.llm.invoke(messages, **kwargs)
+            latency_ms = (time.perf_counter() - start_t) * 1000
+            self._log_llm_call(res, latency_ms)
             return res.content
         except Exception as e:
             for attempt in range(max_retries - 1):
@@ -159,7 +179,10 @@ class LangChainProvider(ImageVisionProvider):
                     try:
                         if attempt > 0:
                             time.sleep(retry_backoff_base ** attempt)
-                        return llm_with_struct.invoke(messages)
+                        start_t = time.perf_counter()
+                        result = llm_with_struct.invoke(messages)
+                        logger.info("LLM Struct call | latency=%.0fms", (time.perf_counter() - start_t) * 1000)
+                        return result
                     except Exception:
                         pass
             except NotImplementedError:
@@ -172,7 +195,10 @@ class LangChainProvider(ImageVisionProvider):
             try:
                 if attempt > 0:
                     time.sleep(retry_backoff_base ** attempt)
+                start_t = time.perf_counter()
                 res = self.llm.invoke(messages)
+                latency_ms = (time.perf_counter() - start_t) * 1000
+                self._log_llm_call(res, latency_ms)
                 return parser.invoke(res.content)
             except OutputParserException as e:
                 last_error = e
