@@ -25,7 +25,7 @@ from aicli.server.orchestrator.base import BaseOrchestrator, SSEProgressContext,
 # Backward compatibility alias
 ServerState = ServerSettings
 
-router = APIRouter(prefix="/analyze", tags=["analyze"])
+router = APIRouter()
 
 # Orchestrator singleton for SSE and background execution
 analyze_orch = BaseOrchestrator()
