@@ -10,6 +10,7 @@ from typing import Optional
 from PIL import Image
 
 from aicli.core.interfaces import ImageVisionProvider
+from aicli.config import config as app_config
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.language_models.chat_models import BaseChatModel
 
@@ -46,13 +47,17 @@ class LangChainProvider(ImageVisionProvider):
         prompt: str,
         system_prompt: Optional[str] = None,
         max_size: int = 1024,
-        temperature: float = 0.1,
-        max_tokens: int = 2000,
-        max_retries: int = 3,
-        retry_backoff_base: int = 2,
+        temperature: float = None,
+        max_tokens: int = None,
+        max_retries: int = None,
+        retry_backoff_base: int = None,
         allow_reasoning: bool = True,
         abort_event: Optional[object] = None,
     ) -> str:
+        temperature = temperature if temperature is not None else app_config.llm_default_temperature
+        max_tokens = max_tokens if max_tokens is not None else app_config.llm_default_max_tokens
+        max_retries = max_retries if max_retries is not None else app_config.llm_default_max_retries
+        retry_backoff_base = retry_backoff_base if retry_backoff_base is not None else app_config.llm_retry_backoff_base
         base64_image = self._encode_image(image_path, max_dim=max_size)
         mime_type = self._get_mime_type(image_path)
 
@@ -90,12 +95,16 @@ class LangChainProvider(ImageVisionProvider):
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
-        temperature: float = 0.1,
-        max_tokens: int = 2000,
-        max_retries: int = 1,
-        retry_backoff_base: int = 2,
+        temperature: float = None,
+        max_tokens: int = None,
+        max_retries: int = None,
+        retry_backoff_base: int = None,
         allow_reasoning: bool = True,
     ) -> str:
+        temperature = temperature if temperature is not None else app_config.llm_default_temperature
+        max_tokens = max_tokens if max_tokens is not None else app_config.llm_default_max_tokens
+        max_retries = max_retries if max_retries is not None else app_config.llm_default_max_retries
+        retry_backoff_base = retry_backoff_base if retry_backoff_base is not None else app_config.llm_retry_backoff_base
         messages = []
         if system_prompt:
             messages.append(SystemMessage(content=system_prompt))
@@ -123,13 +132,17 @@ class LangChainProvider(ImageVisionProvider):
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
-        temperature: float = 0.1,
-        max_tokens: int = 2000,
-        max_retries: int = 3,
-        retry_backoff_base: int = 2,
+        temperature: float = None,
+        max_tokens: int = None,
+        max_retries: int = None,
+        retry_backoff_base: int = None,
         allow_reasoning: bool = True,
     ) -> dict:
         """Text completion wrapper resolving into Dictionary structure natively."""
+        temperature = temperature if temperature is not None else app_config.llm_default_temperature
+        max_tokens = max_tokens if max_tokens is not None else app_config.llm_default_max_tokens
+        max_retries = max_retries if max_retries is not None else app_config.llm_default_max_retries
+        retry_backoff_base = retry_backoff_base if retry_backoff_base is not None else app_config.llm_retry_backoff_base
         last_error = None
         for attempt in range(max_retries):
             try:
@@ -159,11 +172,14 @@ class LangChainProvider(ImageVisionProvider):
         prompt: str,
         system_prompt: Optional[str] = None,
         allow_reasoning: bool = True,
-        max_retries: int = 3,
-        retry_backoff_base: int = 2,
+        max_retries: int = None,
+        retry_backoff_base: int = None,
     ) -> any:
         from langchain_core.output_parsers import PydanticOutputParser
         from langchain_core.exceptions import OutputParserException
+        
+        max_retries = max_retries if max_retries is not None else app_config.llm_default_max_retries
+        retry_backoff_base = retry_backoff_base if retry_backoff_base is not None else app_config.llm_retry_backoff_base
         
         parser = PydanticOutputParser(pydantic_object=schema)
         messages = []

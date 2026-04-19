@@ -22,6 +22,11 @@
 
         <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);" />
 
+        <h3 style="margin-bottom: 8px;">Advanced Configuration & Tuning</h3>
+        <p class="description">
+          Fine-tune pipeline thresholds, LLM parameters, and system timeouts.
+        </p>
+
         <div class="config-grid">
           <!-- Ollama Settings -->
           <template v-if="settings.provider_type === 'ollama'">
@@ -85,9 +90,94 @@
           </div>
         </div>
 
-        <div style="margin-top: 24px;">
+        <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);" />
+
+        <h3 style="margin-bottom: 8px;">Advanced Configuration & Tuning</h3>
+        <p class="description">
+          Fine-tune pipeline thresholds, LLM parameters, and system timeouts.
+        </p>
+
+        <div class="config-grid">
+          <!-- UPSC Analyze -->
+          <div class="form-group">
+            <label>Analyze Max Tokens</label>
+            <input type="number" v-model.number="settings.analyze_max_tokens" />
+          </div>
+          <div class="form-group">
+            <label>Analyze Temp</label>
+            <input type="number" step="0.1" v-model.number="settings.analyze_temperature" />
+          </div>
+
+          <!-- Segmenter -->
+          <div class="form-group">
+            <label>Segmenter Max Tokens</label>
+            <input type="number" v-model.number="settings.segmenter_max_tokens" />
+          </div>
+          <div class="form-group">
+            <label>Segmenter Retries</label>
+            <input type="number" v-model.number="settings.segmenter_max_retries" />
+          </div>
+
+          <!-- Aggregation -->
+          <div class="form-group">
+            <label>Agg. Chunk Size</label>
+            <input type="number" v-model.number="settings.aggregation_chunk_size" />
+          </div>
+
+          <!-- Video Notes -->
+          <div class="form-group">
+            <label>Notes Temp</label>
+            <input type="number" step="0.1" v-model.number="settings.notes_temperature" />
+          </div>
+          <div class="form-group">
+            <label>Notes Max Tokens</label>
+            <input type="number" v-model.number="settings.notes_max_tokens" />
+          </div>
+          <div class="form-group">
+            <label>Notes Chunk (Chars)</label>
+            <input type="number" v-model.number="settings.notes_chunk_size" />
+          </div>
+
+          <!-- News -->
+          <div class="form-group">
+            <label>News Batch Size</label>
+            <input type="number" v-model.number="settings.news_batch_size" />
+          </div>
+          <div class="form-group">
+            <label>News Merge Temp</label>
+            <input type="number" step="0.1" v-model.number="settings.news_merge_temperature" />
+          </div>
+
+          <!-- Whisper -->
+          <div class="form-group">
+            <label>Whisper Batch Size</label>
+            <input type="number" v-model.number="settings.whisper_batch_size" />
+          </div>
+
+          <!-- Defaults -->
+          <div class="form-group">
+            <label>Global Default Temp</label>
+            <input type="number" step="0.1" v-model.number="settings.llm_default_temperature" />
+          </div>
+          <div class="form-group">
+            <label>Global Default Retries</label>
+            <input type="number" v-model.number="settings.llm_default_max_retries" />
+          </div>
+
+          <!-- DB -->
+          <div class="form-group">
+            <label>DB Conn Timeout (s)</label>
+            <input type="number" v-model.number="settings.db_connect_timeout" />
+          </div>
+          <div class="form-group">
+            <label>DB Busy Timeout (ms)</label>
+            <input type="number" v-model.number="settings.db_busy_timeout_ms" />
+          </div>
+        </div>
+
+        <div style="margin-top: 32px;">
           <button class="btn btn-primary" style="font-size: 14px; padding: 12px 24px;" @click="saveSettings">
-            Save Configuration
+            Save Global Configuration
           </button>
         </div>
       </div>

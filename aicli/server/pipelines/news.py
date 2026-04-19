@@ -49,7 +49,7 @@ def _classify_batch(
 def parse_news(
     file_path: Path,
     output: Path = None,
-    batch_size: int = 10,
+    batch_size: int = config.news_batch_size,
     month: str = "Not Specified",
     year: str = "Not Specified",
     workers: int = 4,

@@ -12,10 +12,11 @@ class BaseSQLite:
     def _get_conn(self) -> sqlite3.Connection:
         conn = getattr(self._local, "conn", None)
         if conn is None:
-            conn = sqlite3.connect(str(self._db_path), timeout=30)
+            from aicli.config import config as app_config
+            conn = sqlite3.connect(str(self._db_path), timeout=app_config.db_connect_timeout)
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute(f"PRAGMA busy_timeout={app_config.db_busy_timeout_ms}")
             self._local.conn = conn
         return conn
 

@@ -14,6 +14,7 @@ from langchain_core.prompts import PromptTemplate
 from aicli.domains.analyze.database import AnalyzeDB
 from aicli.core.interfaces import ImageVisionProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
+from aicli.config import config as app_config
 
 class AnswerSegment(BaseModel):
     question_number: str = Field(description="The question number (e.g. Q.1)")
@@ -206,16 +207,16 @@ class AnswerSegmenterService:
                     image_path=cover["image_path"],
                     prompt=self.config.metadata_prompt,
                     max_size=self.config.image_max_size,
-                    temperature=0.0,
-                    max_tokens=500,
-                    max_retries=2,
+                    temperature=app_config.analyze_temperature,
+                    max_tokens=app_config.segmenter_max_tokens,
+                    max_retries=app_config.segmenter_max_retries,
                     allow_reasoning=allow_reasoning,
                 )
             else:
                 result = self.provider.complete_text_json(
                     prompt=self.config.metadata_prompt + f"\n\nText:\n{text_to_scan}",
-                    temperature=0.0,
-                    max_tokens=500,
+                    temperature=app_config.analyze_temperature,
+                    max_tokens=app_config.segmenter_max_tokens,
                     allow_reasoning=allow_reasoning,
                 )
 

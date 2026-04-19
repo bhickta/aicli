@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 from aicli.services.video.ffmpeg_utils import FFprobeClient, FFmpegClient
+from aicli.config import config as app_config
 
 class WhisperEngine:
     """Manages speech-to-text generation using faster-whisper."""
@@ -41,7 +42,11 @@ class WhisperEngine:
                 continue
                 
             segments, _ = whisper_model.transcribe(
-                audio, batch_size=24, beam_size=1, language=None, vad_filter=True
+                audio, 
+                batch_size=app_config.whisper_batch_size, 
+                beam_size=app_config.whisper_beam_size, 
+                language=None, 
+                vad_filter=True
             )
             text = " ".join(s.text.strip() for s in segments).strip()
             
@@ -61,7 +66,13 @@ class WhisperEngine:
     @staticmethod
     def transcribe_video_full_srt(video_path: Path, whisper_model, srt_path: Path) -> List[Dict[str, Any]]:
         """Fully transcribes the video, writes it to SRT, and returns sparse clips for LM Studio."""
-        segments, _ = whisper_model.transcribe(str(video_path), batch_size=24, beam_size=1, language=None, vad_filter=True)
+        segments, _ = whisper_model.transcribe(
+            str(video_path), 
+            batch_size=app_config.whisper_batch_size, 
+            beam_size=app_config.whisper_beam_size, 
+            language=None, 
+            vad_filter=True
+        )
         
         sample_clips = []
         # Store segments into a list since generators are consumed

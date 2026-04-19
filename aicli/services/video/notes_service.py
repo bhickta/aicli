@@ -8,13 +8,14 @@ from typing import Optional
 from langchain_core.prompts import PromptTemplate
 
 from aicli.providers import get_provider
+from aicli.config import config as app_config
 from aicli.services.video.prompts import NOTES_SYSTEM_PROMPT, CLEAN_SYSTEM_PROMPT
 
 
 class NotesService:
     """Generates compressed study notes from SRT files via Ollama."""
 
-    CHUNK_SIZE = 12000
+    CHUNK_SIZE = app_config.notes_chunk_size
 
     @staticmethod
     def has_subtitle_stream(video_path: Path) -> bool:
@@ -79,8 +80,8 @@ class NotesService:
         return provider.complete_text(
             prompt=rendered,
             system_prompt=sys_prompt,
-            temperature=0.2,
-            max_tokens=2048,
+            temperature=app_config.notes_temperature,
+            max_tokens=app_config.notes_max_tokens,
         )
 
     @staticmethod

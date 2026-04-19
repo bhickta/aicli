@@ -23,17 +23,9 @@ def get_available_providers():
 @router.post("")
 def update_settings(new_config: AppConfig):
     global config
-    config.provider_type = new_config.provider_type
-    config.ollama_base_url = new_config.ollama_base_url
-    config.ollama_api_key = new_config.ollama_api_key
-    config.vllm_base_url = new_config.vllm_base_url
-    config.vllm_api_key = new_config.vllm_api_key
-    config.lm_studio_base_url = new_config.lm_studio_base_url
-    config.lm_studio_api_key = new_config.lm_studio_api_key
-    config.openai_api_key = new_config.openai_api_key
-    config.anthropic_api_key = new_config.anthropic_api_key
-    config.gemini_api_key = new_config.gemini_api_key
-    config.model_name = new_config.model_name
+    # Dynamically update all fields in existing config from new_config
+    for key, value in new_config.model_dump().items():
+        setattr(config, key, value)
 
     save_config(config)
 

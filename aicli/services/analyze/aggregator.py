@@ -10,6 +10,7 @@ from langchain_core.prompts import PromptTemplate
 from aicli.domains.analyze.database import AnalyzeDB
 from aicli.core.interfaces import ImageVisionProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
+from aicli.config import config as app_config
 
 
 class AggregationService:
@@ -84,7 +85,7 @@ class AggregationService:
             aggregation = self.provider.complete_text_json(
                 prompt=prompt,
                 temperature=self.config.temperature,
-                max_tokens=8192,
+                max_tokens=app_config.analyze_max_tokens,
                 max_retries=self.config.max_retries,
                 retry_backoff_base=self.config.retry_backoff_base,
                 allow_reasoning=allow_reasoning,
@@ -131,7 +132,7 @@ class AggregationService:
 
         Splits results into chunks, summarizes each, then combines summaries.
         """
-        chunk_size = 50  # ~50 answers per chunk
+        chunk_size = app_config.aggregation_chunk_size
         chunks = [
             all_results[i : i + chunk_size]
             for i in range(0, len(all_results), chunk_size)
@@ -152,7 +153,7 @@ class AggregationService:
                 summary = self.provider.complete_text_json(
                     prompt=prompt,
                     temperature=self.config.temperature,
-                    max_tokens=8192,
+                    max_tokens=app_config.analyze_max_tokens,
                     max_retries=self.config.max_retries,
                     retry_backoff_base=self.config.retry_backoff_base,
                     allow_reasoning=allow_reasoning,
@@ -180,7 +181,7 @@ class AggregationService:
         merged = self.provider.complete_text_json(
             prompt=merge_prompt,
             temperature=self.config.temperature,
-            max_tokens=8192,
+            max_tokens=app_config.analyze_max_tokens,
             max_retries=self.config.max_retries,
             retry_backoff_base=self.config.retry_backoff_base,
             allow_reasoning=allow_reasoning,

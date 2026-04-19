@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import List
 from pydantic import BaseModel, Field
 from aicli.prompts.news_prompts import CLASSIFICATION_PROMPT, MERGE_PROMPT
+from aicli.config import config as app_config
 
 class NewsItemSchema(BaseModel):
     topic: str = Field(description="Exactly one topic from the STANDARD TOPICS list.")
@@ -45,8 +46,8 @@ class NewsReasoningService:
             return provider.complete_text(
                 prompt=user_str,
                 system_prompt=system_str,
-                temperature=0.0,
-                max_tokens=2048,
+                temperature=app_config.news_merge_temperature,
+                max_tokens=app_config.news_merge_max_tokens,
                 allow_reasoning=True,
             )
         except Exception as e:

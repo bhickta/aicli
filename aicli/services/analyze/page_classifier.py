@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from aicli.domains.analyze.database import AnalyzeDB
 from aicli.core.interfaces import ImageVisionProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
+from aicli.config import config as app_config
 
 from pydantic import BaseModel, Field
 from enum import Enum
@@ -35,7 +36,7 @@ class PageClassifierService:
     def classify_page(self, page_row: dict, allow_reasoning: bool = True) -> str:
         """Classify a single page from its transcription text. Returns classification string."""
         prompt = self.config.classification_prompt
-        max_tokens = 8192  # Generous ceiling to prevent cutoffs for models that ignore the reasoning=False flag
+        max_tokens = app_config.analyze_max_tokens  # Generous ceiling to prevent cutoffs for models that ignore the reasoning=False flag
 
         if not allow_reasoning:
             prompt = f"[SHORT RESPONSE MODE]\nRespond ONLY with the single word classification tag.\nDO NOT think step-by-step. DO NOT explain.\n\n{prompt}"
