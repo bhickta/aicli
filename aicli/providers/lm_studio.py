@@ -1,4 +1,7 @@
 import base64
+import json
+import time
+
 from openai import OpenAI
 from aicli.core.interfaces import ImageVisionProvider
 from aicli.config import config
@@ -13,7 +16,7 @@ class LMStudioProvider(ImageVisionProvider):
             api_key=config.lm_studio_api_key
         )
     
-    def _encode_image_to_base64(self, image_path: str) -> str:
+    def _encode_image_to_base64(self, image_path: str, max_dim: int = 512) -> str:
         """Helper to read an image file, safely compress/resize it, and encode as base64."""
         from PIL import Image
         import io
@@ -23,13 +26,10 @@ class LMStudioProvider(ImageVisionProvider):
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
                 
-            # Scale down large images (e.g. 4K pages) to max 512x512
-            # Even 1024x1024 parses into ~4000 tokens in some VLMs, which exceeds LM Studio's 
-            # default 2048 context window and instantly triggers a 'length' rejection.
-            # 512px guarantees it fits in context while keeping prominent text perfectly legible.
-            max_size = 512
-            if max(img.size) > max_size:
-                img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            # Scale down large images to fit in context window.
+            # Default 512px for general use; 1024px for handwriting legibility.
+            if max(img.size) > max_dim:
+                img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
                 
             buffer = io.BytesIO()
             img.save(buffer, format="JPEG", quality=85)
@@ -48,11 +48,19 @@ class LMStudioProvider(ImageVisionProvider):
             return "image/gif"
         return "image/jpeg"
 
-    def describe_image(self, image_path: str, prompt: str, system_prompt: str = None) -> str:
+    def describe_image(self, image_path: str, prompt: str, system_prompt: str = None,
+                       max_size: int = 512, temperature: float = 0.2,
+                       max_tokens: int = None, max_retries: int = 1,
+                       retry_backoff_base: int = 2) -> str:
         """
         Sends the base64 encoded image and the prompt to LM Studio.
+        
+        Args:
+            max_size: Max image dimension in pixels. 512 for general, 1024 for handwriting.
+            max_retries: Number of retry attempts on failure.
+            retry_backoff_base: Base for exponential backoff between retries.
         """
-        base64_image = self._encode_image_to_base64(image_path)
+        base64_image = self._encode_image_to_base64(image_path, max_dim=max_size)
         mime_type = self._get_mime_type(image_path)
         
         # Many local Vision models crash or return empty strings if a "system" role is passed 
@@ -75,16 +83,105 @@ class LMStudioProvider(ImageVisionProvider):
             }
         ]
         
-        response = self.client.chat.completions.create(
-            model=config.model_name,
-            messages=messages,
-            temperature=0.2 # Lower temperature for better accuracy/formatting
-        )
+        create_kwargs = {
+            "model": config.model_name,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if max_tokens:
+            create_kwargs["max_tokens"] = max_tokens
+
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                response = self.client.chat.completions.create(**create_kwargs)
+                content = response.choices[0].message.content
+                if not content:
+                    reason = response.choices[0].finish_reason
+                    raise ValueError(f"LM Studio aborted generation (finish_reason: '{reason}'). Image may be too complex, or context window exceeded.")
+                return content.strip()
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    wait = retry_backoff_base ** attempt
+                    time.sleep(wait)
         
-        content = response.choices[0].message.content
-        if not content:
-            # If the VLM crashes or fails to generate text, capture the internal API reason
-            reason = response.choices[0].finish_reason
-            raise ValueError(f"LM Studio aborted generation (finish_reason: '{reason}'). Image may be too complex, or context window exceeded.")
-            
-        return content.strip()
+        raise last_error
+
+    def complete_text(self, prompt: str, system_prompt: str = None,
+                      temperature: float = 0.1, max_tokens: int = 2000,
+                      max_retries: int = 1, retry_backoff_base: int = 2) -> str:
+        """
+        Text-only completion via LM Studio (no image). Used for analysis,
+        segmentation, and aggregation steps.
+        """
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        
+        create_kwargs = {
+            "model": config.model_name,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                response = self.client.chat.completions.create(**create_kwargs)
+                content = response.choices[0].message.content
+                if not content:
+                    reason = response.choices[0].finish_reason
+                    raise ValueError(f"LM Studio aborted generation (finish_reason: '{reason}').")
+                return content.strip()
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    wait = retry_backoff_base ** attempt
+                    time.sleep(wait)
+        
+        raise last_error
+
+    def complete_text_json(self, prompt: str, system_prompt: str = None,
+                           temperature: float = 0.1, max_tokens: int = 2000,
+                           max_retries: int = 3, retry_backoff_base: int = 2) -> dict:
+        """
+        Text completion that parses the response as JSON. Retries with a
+        stricter prompt prefix on parse failure.
+        """
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                prefix = ""
+                if attempt > 0:
+                    prefix = "IMPORTANT: Return ONLY valid JSON, no markdown fences, no explanation.\n\n"
+                
+                raw = self.complete_text(
+                    prompt=prefix + prompt,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    max_retries=1,
+                )
+                
+                # Strip markdown code fences if present
+                cleaned = raw.strip()
+                if cleaned.startswith("```"):
+                    lines = cleaned.split("\n")
+                    # Remove first and last fence lines
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].strip() == "```":
+                        lines = lines[:-1]
+                    cleaned = "\n".join(lines)
+                
+                return json.loads(cleaned)
+            except (json.JSONDecodeError, ValueError) as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    wait = retry_backoff_base ** attempt
+                    time.sleep(wait)
+        
+        raise ValueError(f"Failed to parse JSON after {max_retries} attempts: {last_error}")
