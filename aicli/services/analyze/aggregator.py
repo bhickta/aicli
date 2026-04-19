@@ -3,21 +3,24 @@
 For each dimension, collects all per-answer results and sends them to
 the LM for pattern identification across candidates.
 """
+
 import json
 
 from aicli.domains.analyze.database import AnalyzeDB
-from aicli.providers.lm_studio import LMStudioProvider
+from aicli.providers.ollama import OllamaProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
 
 
 class AggregationService:
     """Aggregate dimension results across all PDFs to find reusable patterns."""
 
-    def __init__(self, provider: LMStudioProvider, config: AnalyzeConfig):
+    def __init__(self, provider: OllamaProvider, config: AnalyzeConfig):
         self.provider = provider
         self.config = config
 
-    def aggregate_dimension(self, dimension_name: str, db: AnalyzeDB, allow_reasoning: bool = True) -> dict:
+    def aggregate_dimension(
+        self, dimension_name: str, db: AnalyzeDB, allow_reasoning: bool = True
+    ) -> dict:
         """Aggregate all results for one dimension.
 
         Returns:
@@ -33,13 +36,15 @@ class AggregationService:
             try:
                 parsed = json.loads(r["result_json"])
                 if "error" not in parsed:
-                    valid_results.append({
-                        "candidate": r.get("candidate_name", "unknown"),
-                        "pdf_file": r.get("pdf_file", ""),
-                        "question_number": r.get("question_number", ""),
-                        "question_directive": r.get("question_directive", ""),
-                        "analysis": parsed,
-                    })
+                    valid_results.append(
+                        {
+                            "candidate": r.get("candidate_name", "unknown"),
+                            "pdf_file": r.get("pdf_file", ""),
+                            "question_number": r.get("question_number", ""),
+                            "question_directive": r.get("question_directive", ""),
+                            "analysis": parsed,
+                        }
+                    )
             except (json.JSONDecodeError, TypeError):
                 continue
 
@@ -68,7 +73,11 @@ class AggregationService:
         max_prompt_chars = 24000
         if len(prompt) > max_prompt_chars:
             aggregation = self._chunked_aggregation(
-                dimension_name, valid_results, candidates, db, allow_reasoning=allow_reasoning
+                dimension_name,
+                valid_results,
+                candidates,
+                db,
+                allow_reasoning=allow_reasoning,
             )
         else:
             aggregation = self.provider.complete_text_json(
@@ -90,7 +99,9 @@ class AggregationService:
 
         return aggregation
 
-    def aggregate_all(self, db: AnalyzeDB, progress=None, task_id=None, allow_reasoning: bool = True) -> int:
+    def aggregate_all(
+        self, db: AnalyzeDB, progress=None, task_id=None, allow_reasoning: bool = True
+    ) -> int:
         """Run aggregation for all enabled dimensions.
 
         Returns:
@@ -121,7 +132,7 @@ class AggregationService:
         """
         chunk_size = 50  # ~50 answers per chunk
         chunks = [
-            all_results[i: i + chunk_size]
+            all_results[i : i + chunk_size]
             for i in range(0, len(all_results), chunk_size)
         ]
 

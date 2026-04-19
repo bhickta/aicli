@@ -3,22 +3,25 @@
 Each dimension is defined in prompts.yaml and analyzed independently.
 Adding a new dimension requires only editing the YAML — no code changes.
 """
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 
 from aicli.domains.analyze.database import AnalyzeDB
-from aicli.providers.lm_studio import LMStudioProvider
+from aicli.providers.ollama import OllamaProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
 
 
 class DimensionAnalyzerService:
     """Run modular dimension analysis on answer units."""
 
-    def __init__(self, provider: LMStudioProvider, config: AnalyzeConfig):
+    def __init__(self, provider: OllamaProvider, config: AnalyzeConfig):
         self.provider = provider
         self.config = config
 
-    def analyze_answer(self, answer: dict, dimension_name: str, allow_reasoning: bool = True) -> dict:
+    def analyze_answer(
+        self, answer: dict, dimension_name: str, allow_reasoning: bool = True
+    ) -> dict:
         """Analyze one answer for one dimension.
 
         Args:
@@ -63,7 +66,9 @@ class DimensionAnalyzerService:
         count = 0
 
         def _process_one(answer):
-            result = self.analyze_answer(answer, dimension_name, allow_reasoning=allow_reasoning)
+            result = self.analyze_answer(
+                answer, dimension_name, allow_reasoning=allow_reasoning
+            )
             db.insert_dimension_result(
                 answer_id=answer["id"],
                 dimension_name=dimension_name,
@@ -116,8 +121,6 @@ class DimensionAnalyzerService:
         """
         results = {}
         for dim_name in self.config.enabled_dimensions:
-            count = self.analyze_dimension(
-                dim_name, db, workers, progress, task_id
-            )
+            count = self.analyze_dimension(dim_name, db, workers, progress, task_id)
             results[dim_name] = count
         return results

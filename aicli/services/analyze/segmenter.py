@@ -3,22 +3,25 @@
 Groups pages by question boundaries. Each question + its continuation
 pages = one answer unit stored in the answers table.
 """
+
 import json
 from pathlib import Path
 
 from aicli.domains.analyze.database import AnalyzeDB
-from aicli.providers.lm_studio import LMStudioProvider
+from aicli.providers.ollama import OllamaProvider
 from aicli.services.analyze.config_loader import AnalyzeConfig
 
 
 class AnswerSegmenterService:
     """Group transcribed pages into answer units by question number."""
 
-    def __init__(self, provider: LMStudioProvider, config: AnalyzeConfig):
+    def __init__(self, provider: OllamaProvider, config: AnalyzeConfig):
         self.provider = provider
         self.config = config
 
-    def segment_pdf(self, pdf_file: str, db: AnalyzeDB, allow_reasoning: bool = True) -> int:
+    def segment_pdf(
+        self, pdf_file: str, db: AnalyzeDB, allow_reasoning: bool = True
+    ) -> int:
         """Segment all pages of a PDF into answer units.
 
         Args:
@@ -31,7 +34,8 @@ class AnswerSegmenterService:
         # Get all transcribed answer/continuation pages for this PDF
         pages = db.get_pages_for_pdf(pdf_file)
         content_pages = [
-            p for p in pages
+            p
+            for p in pages
             if p["classification"] in ("answer", "continuation")
             and p["transcription"]
             and not p["transcription"].startswith("[TRANSCRIPTION_ERROR")
@@ -116,6 +120,7 @@ class AnswerSegmenterService:
                 raw_text = "\n\n".join(raw_text_parts)
                 # Backup: Strip common boilerplate via regex if LLM failed to clean
                 import re
+
                 boilerplate = [
                     r"\(Please do not write anything.*?\)",
                     r"कृप्या इस स्थान में.*?लिखें",
@@ -127,10 +132,12 @@ class AnswerSegmenterService:
                     r"Page \| \d+",
                     r"- Page \d+ -",
                     r"amBlitz",
-                    r"UPSC"
+                    r"UPSC",
                 ]
                 for pattern in boilerplate:
-                    raw_text = re.sub(pattern, "", raw_text, flags=re.IGNORECASE | re.DOTALL)
+                    raw_text = re.sub(
+                        pattern, "", raw_text, flags=re.IGNORECASE | re.DOTALL
+                    )
                 raw_text = raw_text.strip()
 
             db.insert_answer(
@@ -138,7 +145,7 @@ class AnswerSegmenterService:
                 candidate_name=candidate_name,
                 upsc_id=upsc_id,
                 test_code=test_code,
-                question_number=seg.get("question_number") or f"Q.{count+1}",
+                question_number=seg.get("question_number") or f"Q.{count + 1}",
                 question_text=seg.get("question_text"),
                 question_directive=seg.get("question_directive"),
                 word_limit=seg.get("word_limit"),
@@ -150,8 +157,14 @@ class AnswerSegmenterService:
         db.log_processing(pdf_file, "segmentation", "done")
         return count
 
-    def segment_all(self, db: AnalyzeDB, progress=None, task_id=None, 
-                    allow_reasoning: bool = True, pdf_paths: list[Path] | None = None) -> int:
+    def segment_all(
+        self,
+        db: AnalyzeDB,
+        progress=None,
+        task_id=None,
+        allow_reasoning: bool = True,
+        pdf_paths: list[Path] | None = None,
+    ) -> int:
         """Segment unsegmented PDFs or specific paths.
 
         Returns:
@@ -162,7 +175,7 @@ class AnswerSegmenterService:
             pdfs = [p.name for p in pdf_paths]
         else:
             pdfs = db.get_unsegmented_pdfs()
-            
+
         total = 0
 
         for pdf_file in pdfs:
@@ -173,7 +186,9 @@ class AnswerSegmenterService:
 
         return total
 
-    def _extract_metadata(self, pages: list[dict], db: AnalyzeDB, allow_reasoning: bool = True) -> dict:
+    def _extract_metadata(
+        self, pages: list[dict], db: AnalyzeDB, allow_reasoning: bool = True
+    ) -> dict:
         """Try to extract candidate metadata from the cover page."""
         cover_pages = [p for p in pages if p.get("classification") == "cover"]
         if not cover_pages:
@@ -182,7 +197,7 @@ class AnswerSegmenterService:
         # If cover page has a transcription, try to parse metadata
         cover = cover_pages[0]
         text_to_scan = cover.get("transcription")
-        
+
         # If no transcription yet, describe image with metadata prompt
         try:
             if not text_to_scan:
@@ -202,10 +217,11 @@ class AnswerSegmenterService:
                     max_tokens=500,
                     allow_reasoning=allow_reasoning,
                 )
-            
+
             if isinstance(result, str):
                 try:
                     import json
+
                     return json.loads(result)
                 except:
                     return {}
