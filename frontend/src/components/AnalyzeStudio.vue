@@ -69,11 +69,8 @@
             </div>
           </div>
           <div class="tabs">
-            <button :class="['tab', { active: activeTab === 'pages' }]" @click="activeTab = 'pages'">
-              Pages ({{ pages.length }})
-            </button>
             <button :class="['tab', { active: activeTab === 'answers' }]" @click="activeTab = 'answers'">
-              Answers ({{ answers.length }})
+              Questions ({{ answers.length }})
             </button>
             <button :class="['tab', { active: activeTab === 'aggregation' }]" @click="activeTab = 'aggregation'">
               Aggregation
@@ -85,35 +82,6 @@
         </div>
 
         <div class="content-body">
-          <!-- Pages Tab -->
-          <div v-if="activeTab === 'pages'" class="page-grid">
-            <div v-for="page in pages" :key="page.id" class="page-card">
-              <div class="page-card-header">
-                <span class="page-number">Page {{ page.page_number }}</span>
-                <span :class="['classification-badge', badgeClass(page.classification)]">
-                  {{ page.classification || 'pending' }}
-                </span>
-              </div>
-              <div class="page-card-body">
-                <div class="page-image-col">
-                  <img
-                    :src="getImageUrl(page)"
-                    :alt="'Page ' + page.page_number"
-                    @click="openPageInspector(page)"
-                    loading="lazy"
-                  />
-                </div>
-                <div class="page-text-col">
-                  <pre v-if="page.transcription && !page.transcription.startsWith('[TRANSCRIPTION_ERROR')">{{ page.transcription }}</pre>
-                  <div v-else-if="page.transcription && page.transcription.startsWith('[TRANSCRIPTION_ERROR')" class="no-text" style="color: var(--danger);">
-                    ✖ {{ page.transcription }}
-                  </div>
-                  <div v-else class="no-text">Not yet transcribed</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <!-- Answers Tab -->
           <div v-if="activeTab === 'answers'" class="answer-list">
             <div v-if="!answers.length" class="empty-state">
@@ -130,6 +98,18 @@
                   {{ answer.question_text }}
                 </div>
                 <div class="answer-text">{{ answer.raw_text }}</div>
+
+                <div class="answer-page-strip" v-if="answer.page_ids">
+                  <div 
+                    v-for="pageNum in getPageNumbers(answer.page_ids)" 
+                    :key="pageNum"
+                    class="answer-thumbnail"
+                    @click="openInspectorByPageNumber(pageNum)"
+                  >
+                    <img :src="imageUrl(selectedPdf.filename, pageNum)" loading="lazy" />
+                    <span class="thumb-label">Page {{ pageNum }}</span>
+                  </div>
+                </div>
 
                 <!-- Dimensions -->
                 <div class="dimensions-grid" v-if="answerDimensions[answer.id]?.length">
@@ -196,10 +176,7 @@
                     <label>Workers</label>
                     <input type="number" v-model.number="runConfig.workers" min="1" max="16" :disabled="pipelineRunning" />
                   </div>
-                  <div class="form-group">
-                    <label>DPI</label>
-                    <input type="number" v-model.number="runConfig.dpi" min="50" max="600" :disabled="pipelineRunning" />
-                  </div>
+                  <!-- DPI is now forced to high quality (300) -->
                   <div class="form-group span-full" style="grid-column: span 2;">
                     <label>LLM Model ID</label>
                     <input type="text" v-model="runConfig.llm_model" placeholder="Model for vision & reasoning" :disabled="pipelineRunning" />
@@ -412,7 +389,7 @@ export default {
       answers: [],
       answerDimensions: {},
       aggregations: [],
-      activeTab: 'pages',
+      activeTab: 'answers',
       expandedAnswers: new Set(),
       lightboxImage: null,
       showResetModal: false,
@@ -422,7 +399,7 @@ export default {
       // Runner State
       runConfig: {
         workers: 4,
-        dpi: 200,
+        dpi: 300,
         llm_model: 'gemma-4-26b-a4b',
         mode: 'all',
         target_steps: []
@@ -596,6 +573,20 @@ export default {
       const idx = this.pages.findIndex(p => p.id === this.inspectedPage.id)
       if (idx > 0) this.inspectedPage = this.pages[idx - 1]
     },
+    getPageNumbers(pageIdsStr) {
+      if (!pageIdsStr) return []
+      try {
+        const ids = JSON.parse(pageIdsStr).map(id => parseInt(id))
+        return ids.map(id => {
+          const page = this.pages.find(p => p.id === id)
+          return page ? page.page_number : null
+        }).filter(n => n !== null)
+      } catch(e) { return [] }
+    },
+    openInspectorByPageNumber(pageNum) {
+      const page = this.pages.find(p => p.page_number === pageNum)
+      if (page) this.openPageInspector(page)
+    },
     getAnswersForPage(pageId) {
       return this.answers.filter(a => {
         try {
@@ -615,6 +606,7 @@ export default {
       }
       return map[classification] || 'badge-pending'
     },
+    imageUrl: imageUrl,
     formatKey(key) {
       return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
     },

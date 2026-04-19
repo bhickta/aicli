@@ -428,12 +428,66 @@ body {
 }
 
 .answer-text {
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-primary);
   white-space: pre-wrap;
-  max-height: 300px;
+  max-height: 500px;
   overflow-y: auto;
+  margin-bottom: 24px;
+}
+
+.answer-page-strip {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 8px 0 16px;
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Custom scrollbar for strip */
+.answer-page-strip::-webkit-scrollbar { height: 6px; }
+.answer-page-strip::-webkit-scrollbar-track { background: transparent; }
+.answer-page-strip::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+
+.answer-thumbnail {
+  flex-shrink: 0;
+  width: 140px;
+  cursor: pointer;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  transition: all 0.2s ease;
+  background: var(--bg-body);
+  position: relative;
+}
+
+.answer-thumbnail:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.answer-thumbnail img {
+  width: 100%;
+  aspect-ratio: 3/4;
+  object-fit: cover;
+  display: block;
+}
+
+.thumb-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  padding: 4px;
+  color: var(--text-muted);
+  background: rgba(0,0,0,0.2);
+}
+
+.answer-thumbnail:hover .thumb-label {
+  color: var(--accent);
 }
 
 .answer-question {

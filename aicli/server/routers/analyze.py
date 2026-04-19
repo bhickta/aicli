@@ -137,7 +137,7 @@ def get_pdf_answers(pdf_id: int):
         pdf_name = pdfs[pdf_id - 1]["filename"]
         
         ans = conn.execute(
-            "SELECT id, question_number, question_directive, question_text, raw_text "
+            "SELECT id, question_number, question_directive, question_text, raw_text, page_ids "
             "FROM answers WHERE pdf_file = ? ORDER BY CAST(question_number AS INTEGER)",
             (pdf_name,)
         ).fetchall()
@@ -237,7 +237,7 @@ def delete_pdf(pdf_file: str):
 
 class RunRequest(BaseModel):
     workers: int = 4
-    dpi: int = 200
+    dpi: int = 300
     llm_model: str = "gemma-4-26b-a4b"
     target_steps: list[int] | None = None
     page_id: int | None = None
