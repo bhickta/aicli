@@ -327,13 +327,15 @@ class VideoOrchestratorService:
 
     @staticmethod
     def run_phase4_merge(
-        target_dir: Path,
-        slideshow_files: list[tuple[Path, Path]],
-        max_merge_hours: float,
+        target_dir: Path, slideshow_files: list[tuple[Path, Path]], max_merge_hours: float
     ):
-        cache_dir = target_dir / ".aicli_cache"
+        # 1. Prepare Output Directory and Base Name
+        course_dir = target_dir / "Course"
+        course_dir.mkdir(exist_ok=True)
+        
+        folder_name = target_dir.name
         max_sec = max_merge_hours * 3600 if max_merge_hours > 0 else float("inf")
-
+        
         chunks = []
         current_chunk = []
         current_sec = 0
@@ -364,14 +366,15 @@ class VideoOrchestratorService:
         for i, chunk in enumerate(chunks, 1):
             if not chunk:
                 continue
-            part_suffix = f"_Part{i}" if is_multipart else ""
-
-            merged_vid = target_dir / f"Course_Merged_Slideshow{part_suffix}.mp4"
-            merged_vid_tmp = (
-                target_dir / f"Course_Merged_Slideshow_tmp{part_suffix}.mp4"
-            )
-            merged_srt = target_dir / f"Course_Merged{part_suffix}.srt"
-            merged_txt = target_dir / f"Course_Merged{part_suffix}.txt"
+            suffix = f"_Part{i}" if is_multipart else ""
+            
+            # Final output paths inside the Course/ folder
+            merged_vid = course_dir / f"{folder_name}{suffix}_Slideshow.mp4"
+            merged_srt = course_dir / f"{folder_name}{suffix}.srt"
+            merged_txt = course_dir / f"{folder_name}{suffix}.txt"
+            
+            # Temporary working paths
+            merged_vid_tmp = course_dir / f"{folder_name}{suffix}_tmp.mp4"
 
             if merged_vid.exists() and merged_srt.exists() and merged_txt.exists():
                 console.print(f"[dim]Already merged → {merged_vid.name}[/dim]")
