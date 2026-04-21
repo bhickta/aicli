@@ -8,9 +8,9 @@ class VideoCourseRequestDTO(BaseModel):
     target_dir: str
     whisper_model: str = "large-v3"
     cleanup: str = "keep"
-    w1: int = 2
+    w1: int = 1
     w2: int = 12
-    w3: int = 12
+    w3: int = 4
     llm_model: str = "gemma-4-26b-a4b"
 
 
