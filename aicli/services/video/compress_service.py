@@ -75,7 +75,7 @@ class CompressService:
                 res_suffix = f"_{resolution}p" if resolution > 0 else "_slideshow"
                 output_path = video_path.parent / f"{stem}{res_suffix}.mp4"
 
-        cmd = ["ffmpeg", "-y", "-v", "quiet", "-stats"]
+        cmd = ["ffmpeg", "-y", "-v", "error", "-stats"]
 
         if resolution > 0:
             # Full GPU pipeline: decode on GPU → scale on GPU → encode on GPU
@@ -173,7 +173,9 @@ class CompressService:
             # If we reach here, it's either a different error or we ran out of retries
             if output_path.exists():
                 output_path.unlink()
-            stderr_tail = stderr[-500:]
+            
+            full_log = (result.stdout or "") + "\n" + (result.stderr or "")
+            stderr_tail = full_log[-1000:]
             raise RuntimeError(f"FFmpeg compression failed after {retry_count} attempts. Final error: {stderr_tail}")
 
         if overwrite:

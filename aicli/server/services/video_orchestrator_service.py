@@ -212,6 +212,8 @@ class VideoOrchestratorService:
     def run_phase3_compress(
         renamed_files: list[Path], workers: int
     ) -> list[tuple[Path, Path]]:
+        # Hard cap for NVENC stability on consumer GPUs (usually limited to 5-8 sessions)
+        workers = min(workers, 4)
         slideshow_files = []
         with Progress(
             SpinnerColumn(),
