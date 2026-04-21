@@ -342,7 +342,8 @@ class VideoOrchestratorService:
             except Exception:
                 dur = 0
 
-            if current_chunk and current_sec + dur > max_sec:
+            if current_chunk and (current_sec + dur) > max_sec:
+                console.print(f"[dim]Merge: Part {len(chunks)+1} limit reached ({current_sec/3600:.1f}h). Starting next part...[/dim]")
                 chunks.append(current_chunk)
                 current_chunk = []
                 current_sec = 0
