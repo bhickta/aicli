@@ -190,6 +190,20 @@ class VideoOrchestratorService:
             f"[green]✔ Logical LLM Course Reordering Complete ({len(renamed_files)} videos sequenced)[/green]\n"
         )
 
+        # Purge LLM from VRAM before Phase 3 (Compression)
+        try:
+            import torch, gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            # If using LM Studio, tell it to unload via CLI
+            if aicli_config.provider_type == "lmstudio" and shutil.which("lms"):
+                console.print("[dim]LM Studio: Purging model from VRAM...[/dim]")
+                subprocess.run(["lms", "unload", aicli_config.model_name], capture_output=True)
+        except Exception:
+            pass
+
         console.print("[cyan]NVENC compression phase...[/cyan]")
 
         return renamed_files
