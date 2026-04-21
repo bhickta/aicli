@@ -366,6 +366,17 @@ class VideoOrchestratorService:
                     merged_vid_tmp.rename(merged_vid)
                     console.print(f"[bold green]✔ Saved {merged_vid.name}[/bold green]")
 
+                # Sanity Check: Verify duration
+                try:
+                    final_dur = MergeService.get_video_duration(merged_vid)
+                    diff = abs(final_dur - current_sec)
+                    if diff > 1.0: # Allow 1 second tolerance for container overhead
+                        console.print(f"[bold yellow]⚠️ Warning: Duration mismatch in {merged_vid.name}. Expected {current_sec:.2f}s, got {final_dur:.2f}s (diff: {diff:.2f}s)[/bold yellow]")
+                    else:
+                        console.print(f"[green]✔ Duration verified: {final_dur:.2f}s matches parts sum.[/green]")
+                except Exception:
+                    pass
+
             console.print(
                 f"[cyan]Appending raw text transcripts{(' (Part ' + str(i) + ')') if is_multipart else ''}...[/cyan]"
             )

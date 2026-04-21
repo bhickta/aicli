@@ -7,11 +7,11 @@ from pydantic import BaseModel
 class VideoCourseRequestDTO(BaseModel):
     target_dir: str
     whisper_model: str = "large-v3"
-    cleanup: str = "keep"
+    cleanup: str = "trash"
     w1: int = 1
     w2: int = 12
     w3: int = 4
-    llm_model: str = "gemma-4-26b-a4b"
+    llm_model: str = "gemma-4-e4b"
 
 
 class VideoCompressRequestDTO(BaseModel):
