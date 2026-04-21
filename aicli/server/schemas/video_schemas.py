@@ -12,6 +12,7 @@ class VideoCourseRequestDTO(BaseModel):
     w2: int = 12
     w3: int = 4
     llm_model: str = "gemma-4-e4b"
+    max_merge_hours: float = 11.0
 
 
 class VideoCompressRequestDTO(BaseModel):

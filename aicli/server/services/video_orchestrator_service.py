@@ -304,7 +304,8 @@ class VideoOrchestratorService:
         for item in slideshow_files:
             out_dest, f = item
             try:
-                dur = MergeService.get_video_duration(out_dest)
+                # We calculate expected duration from the ORIGINAL source to ensure 100% integrity
+                dur = MergeService.get_video_duration(f)
             except Exception:
                 dur = 0
 
