@@ -45,7 +45,7 @@ def process_course(
     # 3. Phase 2: Tag and Sort
     print_header(f"Phase 2: Intelligent Tagging & Renaming ({w2} workers)")
     renamed_files = VideoOrchestratorService.run_phase2_tag_and_sort(
-        raw_files, llm_model, w2
+        raw_files, llm_model, w2, llm_thinking
     )
 
     # 4. Phase 3: Compress

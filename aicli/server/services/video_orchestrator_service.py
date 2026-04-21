@@ -113,7 +113,7 @@ class VideoOrchestratorService:
 
     @staticmethod
     def run_phase2_tag_and_sort(
-        raw_files: list[Path], llm_model: str, workers: int
+        raw_files: list[Path], llm_model: str, workers: int, llm_thinking: bool = False
     ) -> list[Path]:
         from aicli.providers import get_provider
         try:
@@ -163,6 +163,7 @@ class VideoOrchestratorService:
                         transcribe_only=False,
                         progress=progress,
                         task_id=task_p2,
+                        allow_reasoning=llm_thinking,
                     ): f
                     for f in raw_files
                 }
@@ -192,7 +193,7 @@ class VideoOrchestratorService:
             {"path": str(p), "ai": MetadataBackupManager.load_cache(p).get("ai", {})}
             for p in renamed_files
         ]
-        sorted_strings = VideoTaggerService.global_course_sort(payload_meta)
+        sorted_strings = VideoTaggerService.global_course_sort(payload_meta, allow_reasoning=llm_thinking)
 
         path_map = {str(p): p for p in renamed_files}
         sorted_files = [path_map[s] for s in sorted_strings if s in path_map]

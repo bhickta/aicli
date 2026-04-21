@@ -14,7 +14,7 @@ class VideoTaggerService:
 
     @staticmethod
     def ask_ollama(
-        clips: List[Dict[str, Any]], path_hint: str
+        clips: List[Dict[str, Any]], path_hint: str, allow_reasoning: bool = False
     ) -> Dict[str, Any]:
         
         class TaggerSchema(BaseModel):
@@ -49,14 +49,14 @@ CRUCIAL: Output ONLY valid data per the schema instructions."""
                 schema=TaggerSchema,
                 prompt=rendered_prompt,
                 system_prompt=system,
-                allow_reasoning=False,
+                allow_reasoning=allow_reasoning,
             )
             return result.model_dump()
         except Exception as e:
             raise ValueError(f"Failed to fetch or parse video tags: {e}")
 
     @staticmethod
-    def global_course_sort(videos: List[Dict[str, Any]]) -> List[str]:
+    def global_course_sort(videos: List[Dict[str, Any]], allow_reasoning: bool = False) -> List[str]:
         """
         Pass filenames to Provider for intelligent chronological ordering.
         """
@@ -82,7 +82,7 @@ Use lesson numbers (L02, L23, LESSON_12), unit numbers (UNIT_1, unit-8), and par
                 schema=SortSchema,
                 prompt=rendered_prompt,
                 system_prompt=system,
-                allow_reasoning=False,
+                allow_reasoning=allow_reasoning,
             )
             
             sorted_indices = result.sorted_indices

@@ -154,6 +154,7 @@ class VideoBatchProcessor:
         transcribe_only: bool,
         progress: Progress,
         task_id,
+        allow_reasoning: bool = False,
     ) -> tuple[Path, dict, Exception]:
         """Workflow sequence to strictly use LM Studio and Mux tags into the container."""
         if transcribe_only:
@@ -244,7 +245,7 @@ class VideoBatchProcessor:
                             {"start_sec": 0, "text": f"Lecture video: {clean_name}"}
                         ]
 
-                ai = VideoTaggerService.ask_ollama(clips, str(video_path.parent))
+                ai = VideoTaggerService.ask_ollama(clips, str(video_path.parent), allow_reasoning=allow_reasoning)
                 if not ai:
                     return (
                         video_path,
