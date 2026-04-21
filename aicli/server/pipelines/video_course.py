@@ -17,6 +17,7 @@ def process_course(
     w2: int = 12,
     w3: int = 12,
     llm_model: str = None,
+    llm_thinking: bool = False,
     max_merge_hours: float = 0.0,
     notes_llm: str = None,
 ):

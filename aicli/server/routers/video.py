@@ -30,7 +30,8 @@ def _video_course_worker(orch: BaseOrchestrator, data_dir: Path, req: VideoCours
             cleanup=req.cleanup,
             w1=req.w1, w2=req.w2, w3=req.w3,
             llm_model=req.llm_model,
-            max_merge_hours=0.0,
+            llm_thinking=req.llm_thinking,
+            max_merge_hours=req.max_merge_hours,
             notes_llm=req.llm_model,
         )
 
