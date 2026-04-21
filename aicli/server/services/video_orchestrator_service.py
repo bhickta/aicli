@@ -334,6 +334,7 @@ class VideoOrchestratorService:
         course_dir.mkdir(exist_ok=True)
         
         folder_name = target_dir.name
+        cache_dir = target_dir / ".aicli_cache"
         max_sec = max_merge_hours * 3600 if max_merge_hours > 0 else float("inf")
         
         chunks = []
@@ -407,6 +408,17 @@ class VideoOrchestratorService:
                 else:
                     merged_vid_tmp.rename(merged_vid)
                     console.print(f"[bold green]✔ Saved {merged_vid.name}[/bold green]")
+
+            console.print(
+                f"[cyan]Appending raw text transcripts{(' (Part ' + str(i) + ')') if is_multipart else ''}...[/cyan]"
+            )
+            txt_paths = []
+            for _, orig_f in chunk:
+                txt = cache_dir / f"{orig_f.stem}.txt"
+                if txt.exists():
+                    txt_paths.append(txt)
+            if MergeService.merge_transcripts(txt_paths, merged_txt):
+                console.print(f"[bold green]✔ Saved {merged_txt.name}[/bold green]")
 
                 # Duration Sanity Check
                 try:
