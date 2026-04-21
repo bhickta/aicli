@@ -8,7 +8,10 @@
     <div class="config-grid config-grid--3col">
       <div class="form-group span-full">
         <label>Target File/Directory (Absolute Path)</label>
-        <input type="text" v-model="config.target_path" placeholder="/home/bhickta/Videos/Raw/" />
+        <div class="select-wrapper">
+          <input type="text" v-model="config.target_path" placeholder="/home/bhickta/Videos/Raw/" />
+          <button @click="showExplorer = true" class="btn btn-secondary" style="padding: 8px 16px;">📂 Browse</button>
+        </div>
       </div>
       
       <div class="form-group">

@@ -24,19 +24,26 @@ def list_directory(path: str = "/"):
             raise HTTPException(status_code=400, detail="Path is not a directory")
             
         items = []
-        # Sort so directories appear first
-        for item in sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
-            # Skip hidden files
-            if item.name.startswith("."):
-                continue
-                
-            is_dir = item.is_dir()
-            items.append(FSItem(
-                name=item.name,
-                path=str(item.absolute()),
-                is_dir=is_dir,
-                size=item.stat().st_size if not is_dir else 0
-            ))
+        try:
+            # Sort so directories appear first
+            for item in sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+                # Skip hidden files
+                if item.name.startswith("."):
+                    continue
+                    
+                try:
+                    is_dir = item.is_dir()
+                    items.append(FSItem(
+                        name=item.name,
+                        path=str(item.absolute()),
+                        is_dir=is_dir,
+                        size=item.stat().st_size if not is_dir else 0
+                    ))
+                except (PermissionError, OSError):
+                    continue # Skip items we can't access
+        except PermissionError:
+            raise HTTPException(status_code=403, detail="Permission denied")
+            
         return {"items": items, "parent": str(p.parent), "current": str(p)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

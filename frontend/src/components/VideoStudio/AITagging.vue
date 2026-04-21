@@ -8,7 +8,10 @@
     <div class="config-grid config-grid--3col">
       <div class="form-group span-full">
         <label>Target File/Directory (Absolute Path)</label>
-        <input type="text" v-model="config.target_path" placeholder="/home/bhickta/Videos/Raw/" />
+        <div class="select-wrapper">
+          <input type="text" v-model="config.target_path" placeholder="/home/bhickta/Videos/Raw/" />
+          <button @click="showExplorer = true" class="btn btn-secondary" style="padding: 8px 16px;">📂 Browse</button>
+        </div>
       </div>
       
       <div class="form-group">
@@ -44,13 +47,31 @@
         </label>
       </div>
     </div>
+
+    <FileExplorer 
+      :show="showExplorer" 
+      :initialPath="config.target_path" 
+      @close="showExplorer = false" 
+      @select="config.target_path = $event" 
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import FileExplorer from '../common/FileExplorer.vue'
+
 const props = defineProps<{ modelValue: any, pipelineRunning: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: any): void, (e: 'start'): void }>()
 const config = ref(props.modelValue)
+const showExplorer = ref(false)
 </script>
+
+<style scoped>
+.select-wrapper {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+</style>
 
