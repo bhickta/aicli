@@ -97,13 +97,30 @@ class VideoOrchestratorService:
     def run_phase2_tag_and_sort(
         raw_files: list[Path], llm_model: str, workers: int
     ) -> list[Path]:
+        from aicli.providers import get_provider
         try:
-            console.print(f"[cyan]Using Ollama model: {llm_model}...[/cyan]")
             aicli_config.model_name = llm_model
-            console.print(f"[green]✔ Ollama model ready: {llm_model}[/green]")
+            provider = get_provider()
+            p_name = provider.__class__.__name__.replace("Provider", "")
+            
+            console.print(f"[cyan]Using {p_name} model: {llm_model}...[/cyan]")
+            
+            # Pre-check: try a dummy call to see if the model is actually loaded
+            # This prevents 12 workers from all failing simultaneously with 400 errors
+            try:
+                # Minimal check
+                from langchain_core.messages import HumanMessage
+                if hasattr(provider, 'llm'):
+                    provider.llm.invoke([HumanMessage(content="hi")], config={"timeout": 5})
+                console.print(f"[green]✔ {p_name} model ready: {llm_model}[/green]")
+            except Exception as e:
+                console.print(f"[bold yellow]⚠️ Warning: {p_name} model '{llm_model}' might not be loaded or reachable.[/bold yellow]")
+                console.print(f"[dim]Detail: {e}[/dim]")
+                if "No models loaded" in str(e):
+                    console.print("[bold red]ERROR: LM Studio has no model loaded. Please load a model in LM Studio GUI or via 'lms load'.[/bold red]")
         except Exception as e:
             console.print(
-                f"[dim]Note: Could not set Ollama model ({e}). Continuing.[/dim]"
+                f"[dim]Note: Could not verify LLM provider ({e}). Continuing.[/dim]"
             )
 
         renamed_files = []
@@ -142,8 +159,12 @@ class VideoOrchestratorService:
                         renamed_files.append(new_path)
                     progress.advance(task_p2)
 
+        from aicli.providers import get_provider
+        provider = get_provider()
+        p_name = provider.__class__.__name__.replace("Provider", "")
+        
         progress_sort = Status(
-            "Calling LM Studio for logical chronological course sequence...",
+            f"Calling {p_name} for logical chronological course sequence...",
             spinner="dots",
             console=console,
         )

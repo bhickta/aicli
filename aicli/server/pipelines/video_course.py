@@ -60,7 +60,9 @@ def process_course(
         VideoOrchestratorService.run_phase6_cleanup(target_dir, slideshow_files)
 
     # Final Teardown
-    console.print("[cyan]Done with Ollama inference...[/cyan]")
+    from aicli.providers import get_provider
+    p_name = get_provider().__class__.__name__.replace("Provider", "")
+    console.print(f"[cyan]Done with {p_name} inference...[/cyan]")
 
     console.print(
         "\n[bold magenta]===== GOD-MODE PIPELINE COMPLETE =====[/bold magenta]"
