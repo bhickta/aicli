@@ -31,13 +31,31 @@
         <input type="checkbox" v-model="config.overwrite" /> Overwrite Existing
       </label>
     </div>
+
+    <FileExplorer 
+      :show="showExplorer" 
+      :initialPath="config.target_path" 
+      @close="showExplorer = false" 
+      @select="config.target_path = $event" 
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import FileExplorer from '../common/FileExplorer.vue'
+
 const props = defineProps<{ modelValue: any, pipelineRunning: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: any): void, (e: 'start'): void }>()
 const config = ref(props.modelValue)
+const showExplorer = ref(false)
 </script>
+
+<style scoped>
+.select-wrapper {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+</style>
 
