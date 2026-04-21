@@ -230,7 +230,6 @@ class VideoOrchestratorService:
                 futures = {}
                 for f in renamed_files:
                     cache = MetadataBackupManager.load_cache(f)
-                    cache = MetadataBackupManager.load_cache(f)
                     ai_tags = cache.get("ai", {})
                     raw_target = ai_tags.get("filename", f.stem)
                     # Sanitize filename: remove colons, slashes, and other illegal characters
