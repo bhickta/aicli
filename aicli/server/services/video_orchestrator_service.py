@@ -230,8 +230,13 @@ class VideoOrchestratorService:
                 futures = {}
                 for f in renamed_files:
                     cache = MetadataBackupManager.load_cache(f)
+                    cache = MetadataBackupManager.load_cache(f)
                     ai_tags = cache.get("ai", {})
-                    target_name = ai_tags.get("filename", f.stem)
+                    raw_target = ai_tags.get("filename", f.stem)
+                    # Sanitize filename: remove colons, slashes, and other illegal characters
+                    target_name = "".join(c for c in raw_target if c.isalnum() or c in (" ", ".", "_", "-")).strip()
+                    if not target_name:
+                        target_name = f.stem
                     ext_srt = f.parent / ".aicli_cache" / f"{f.stem}.srt"
 
                     slideshows_dir = f.parent / ".aicli_cache" / "slideshows"
@@ -278,7 +283,11 @@ class VideoOrchestratorService:
         ordered_slideshows = []
         for f in renamed_files:
             cache = MetadataBackupManager.load_cache(f)
-            target_name = cache.get("ai", {}).get("filename", f.stem)
+            raw_target = cache.get("ai", {}).get("filename", f.stem)
+            target_name = "".join(c for c in raw_target if c.isalnum() or c in (" ", ".", "_", "-")).strip()
+            if not target_name:
+                target_name = f.stem
+                
             out_dest = (
                 f.parent
                 / ".aicli_cache"
