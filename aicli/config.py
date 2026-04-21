@@ -17,7 +17,7 @@ class AppConfig(BaseModel):
     """Configuration based on JSON settings."""
 
     # --- Provider Connection ---
-    provider_type: str = "ollama"
+    provider_type: str = "lmstudio"
     ollama_base_url: str = "http://localhost:11434"
     ollama_api_key: str = "ollama"
     vllm_base_url: str = "http://localhost:8000"
