@@ -33,6 +33,9 @@ def process_course(
     state = VideoCacheRepository.evaluate_pipeline_state(raw_files, target_dir)
     VideoCacheRepository.print_preflight_dashboard(state, target_dir)
 
+    # 0. Preflight Purge (Nuclear)
+    VideoOrchestratorService.run_phase0_preflight_purge()
+
     # 2. Phase 1: Transcribe
     print_header(f"Phase 1: Transcribe {len(raw_files)} files")
     VideoOrchestratorService.run_phase1_transcribe(

@@ -26,6 +26,24 @@ from aicli.config import config as aicli_config
 
 class VideoOrchestratorService:
     @staticmethod
+    def run_phase0_preflight_purge():
+        """Nuclear VRAM purge to ensure a clean slate before Phase 1."""
+        try:
+            import torch, gc, time
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            # Wipe LM Studio
+            from aicli.config import config as aicli_config
+            if aicli_config.provider_type == "lmstudio" and shutil.which("lms"):
+                console.print("[dim]Pre-flight: Nuclear VRAM Purge (lms unload --all)...[/dim]")
+                subprocess.run(["lms", "unload", "--all"], capture_output=True)
+                time.sleep(1)
+        except Exception:
+            pass
+
+    @staticmethod
     def run_phase1_transcribe(
         needs_transcription: list[Path], whisper_model: str, workers: int
     ):
@@ -190,18 +208,17 @@ class VideoOrchestratorService:
             f"[green]✔ Logical LLM Course Reordering Complete ({len(renamed_files)} videos sequenced)[/green]\n"
         )
 
-        # Purge LLM from VRAM before Phase 3 (Compression)
+        # Purge ALL LLMs from VRAM before Phase 3 (Compression)
         try:
             import torch, gc, time
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             
-            # If using LM Studio, tell it to unload via CLI
-            target_model = llm_model if llm_model else aicli_config.model_name
+            # The Nuclear Option: Unload everything
             if aicli_config.provider_type == "lmstudio" and shutil.which("lms"):
-                console.print(f"[dim]LM Studio: Unloading '{target_model}'...[/dim]")
-                subprocess.run(["lms", "unload", target_model], capture_output=True)
+                console.print("[dim]LM Studio: Nuclear VRAM Purge (lms unload --all)...[/dim]")
+                subprocess.run(["lms", "unload", "--all"], capture_output=True)
                 time.sleep(2) # Give GPU driver time to clear VRAM
         except Exception:
             pass
