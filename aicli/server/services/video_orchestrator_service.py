@@ -305,7 +305,8 @@ class VideoOrchestratorService:
         for f in renamed_files:
             cache = MetadataBackupManager.load_cache(f)
             raw_target = cache.get("ai", {}).get("filename", f.stem)
-            target_name = "".join(c for c in raw_target if c.isalnum() or c in (" ", ".", "_", "-")).strip()
+            sanitized = "".join(c for c in raw_target if c.isalnum() or c in (" ", ".", "_", "-")).strip()
+            target_name = f"{sanitized}_{f.stem[-15:]}"
             if not target_name:
                 target_name = f.stem
                 
