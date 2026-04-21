@@ -15,6 +15,16 @@ from aicli.server.routers.news import router as news_router
 from aicli.server.routers.image import router as image_router
 from aicli.server.routers.settings import router as settings_router
 from fastapi import HTTPException
+import logging
+
+# Silence high-frequency log noise from status polling
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Suppress any log lines containing these high-frequency paths
+        msg = record.getMessage()
+        return "/api/analyze/status" not in msg and "/api/health" not in msg and "/api/video/course/stream" not in msg
+
+logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
 
 app = FastAPI(title="AICLI Unified Control Center", description="Web API for all AICLI features")
 

@@ -431,19 +431,13 @@ class VideoOrchestratorService:
                         console.print(
                             f"⚠️ Warning: Duration mismatch in {merged_vid.name}. Expected {chunk_expected:.2f}s, got {actual_dur:.2f}s (diff: {diff:.2f}s)"
                         )
-                    else:
-                        console.print(
-                            f"[green]✔ Duration verified: {actual_dur:.2f}s matches part sum.[/green]"
-                        )
+                    console.print(
+                        f"[green]✔ Duration verified: {actual_dur:.2f}s matches part sum.[/green]"
+                    )
                 except Exception:
                     pass
+            # End of loop iteration
 
-            console.print(
-                f"[cyan]Appending raw text transcripts{(' (Part ' + str(i) + ')') if is_multipart else ''}...[/cyan]"
-            )
-            txt_files = [cache_dir / f"{orig_f.stem}.txt" for _, orig_f in chunk]
-            if MergeService.merge_txts(txt_files, merged_txt):
-                console.print(f"[bold green]✔ Saved {merged_txt.name}[/bold green]")
 
     @staticmethod
     def run_phase6_cleanup(target_dir: Path, slideshow_files: list[tuple[Path, Path]]):
