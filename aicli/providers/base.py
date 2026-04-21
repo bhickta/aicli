@@ -183,8 +183,15 @@ class LangChainProvider(ImageVisionProvider):
         
         parser = PydanticOutputParser(pydantic_object=schema)
         messages = []
-        if system_prompt:
-            messages.append(SystemMessage(content=system_prompt))
+        
+        # Enforce no-reasoning if requested
+        effective_system = system_prompt or ""
+        if not allow_reasoning:
+            effective_system += "\nIMPORTANT: DO NOT think step-by-step. DO NOT use <think> tags. Output ONLY valid JSON."
+            
+        if effective_system:
+            messages.append(SystemMessage(content=effective_system.strip()))
+            
         messages.append(HumanMessage(content=prompt))
 
         # Try native structured output first

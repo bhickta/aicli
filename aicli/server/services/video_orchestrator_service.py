@@ -251,10 +251,13 @@ class VideoOrchestratorService:
                     cache = MetadataBackupManager.load_cache(f)
                     ai_tags = cache.get("ai", {})
                     raw_target = ai_tags.get("filename", f.stem)
-                    # Sanitize filename: remove colons, slashes, and other illegal characters
-                    target_name = "".join(c for c in raw_target if c.isalnum() or c in (" ", ".", "_", "-")).strip()
+                    # Sanitize filename
+                    sanitized = "".join(c for c in raw_target if c.isalnum() or c in (" ", ".", "_", "-")).strip()
+                    # Ensure uniqueness by incorporating the original stem's end (often contains unique IDs)
+                    target_name = f"{sanitized}_{f.stem[-15:]}"
                     if not target_name:
                         target_name = f.stem
+                    
                     ext_srt = f.parent / ".aicli_cache" / f"{f.stem}.srt"
 
                     slideshows_dir = f.parent / ".aicli_cache" / "slideshows"
