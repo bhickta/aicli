@@ -192,15 +192,17 @@ class VideoOrchestratorService:
 
         # Purge LLM from VRAM before Phase 3 (Compression)
         try:
-            import torch, gc
+            import torch, gc, time
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             
             # If using LM Studio, tell it to unload via CLI
+            target_model = llm_model if llm_model else aicli_config.model_name
             if aicli_config.provider_type == "lmstudio" and shutil.which("lms"):
-                console.print("[dim]LM Studio: Purging model from VRAM...[/dim]")
-                subprocess.run(["lms", "unload", aicli_config.model_name], capture_output=True)
+                console.print(f"[dim]LM Studio: Unloading '{target_model}'...[/dim]")
+                subprocess.run(["lms", "unload", target_model], capture_output=True)
+                time.sleep(2) # Give GPU driver time to clear VRAM
         except Exception:
             pass
 
