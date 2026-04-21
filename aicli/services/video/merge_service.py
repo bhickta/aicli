@@ -52,7 +52,7 @@ class MergeService:
         return res.returncode == 0 and output_path.exists()
 
     @staticmethod
-    def merge_txts(txt_paths: List[Path], output_path: Path) -> bool:
+    def merge_transcripts(txt_paths: List[Path], output_path: Path) -> bool:
         """Simple text concatenation with proper spacing."""
         with open(output_path, 'w', encoding='utf-8') as out_f:
             for tp in txt_paths:
