@@ -19,6 +19,21 @@ class LMStudioProvider(LangChainProvider):
             model=model_name
         ))
 
+    @staticmethod
+    def list_models() -> list[str]:
+        """Returns a list of available model identifiers from LM Studio."""
+        if not shutil.which("lms"):
+            return []
+        try:
+            res = subprocess.run(["lms", "ls"], capture_output=True, text=True)
+            models = []
+            for line in res.stdout.splitlines():
+                if "/" in line:
+                    models.append(line.split()[0].strip())
+            return models
+        except Exception:
+            return []
+
     def _ensure_model_loaded(self, model_name: str):
         """Uses 'lms' CLI to verify if a model is loaded; if not, attempts to load it."""
         if not shutil.which("lms"):

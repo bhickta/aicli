@@ -20,6 +20,20 @@ def get_available_providers():
     return {"providers": PROVIDER_TYPE_CHOICES}
 
 
+@router.get("/models")
+def get_available_models():
+    """Dynamically list models from the active local provider."""
+    from aicli.providers.lm_studio import LMStudioProvider
+    from aicli.providers.ollama import OllamaProvider
+    
+    if config.provider_type == "lmstudio":
+        return {"models": LMStudioProvider.list_models()}
+    elif config.provider_type == "ollama":
+        return {"models": OllamaProvider.list_models()}
+    
+    return {"models": []}
+
+
 @router.post("")
 def update_settings(new_config: AppConfig):
     global config

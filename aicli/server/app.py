@@ -14,6 +14,7 @@ from aicli.server.routers.video import router as video_router
 from aicli.server.routers.news import router as news_router
 from aicli.server.routers.image import router as image_router
 from aicli.server.routers.settings import router as settings_router
+from aicli.server.routers.fs import router as fs_router
 from fastapi import HTTPException
 import logging
 
@@ -43,6 +44,7 @@ app.include_router(video_router, prefix="/api/video", tags=["Video"])
 app.include_router(news_router, prefix="/api/news", tags=["News"])
 app.include_router(image_router, prefix="/api/image", tags=["Image"])
 app.include_router(settings_router, prefix="/api/settings", tags=["Settings"])
+app.include_router(fs_router, prefix="/api/fs", tags=["FS"])
 
 @app.get("/api/health")
 def health_check():
