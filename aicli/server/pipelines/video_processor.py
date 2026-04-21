@@ -51,27 +51,45 @@ class VideoBatchProcessor:
                     legacy_srt = video_path.with_suffix(".srt")
                     if legacy_srt.exists():
                         shutil.copy(str(legacy_srt), str(ext_srt))
-                if ext_srt.exists() and not retranscribe:
-                    progress.console.print(
-                        f"[green]\\[{video_path.name}] Reading context directly from existing .srt...[/green]"
-                    )
-                    clips = WhisperEngine.extract_clips_from_existing_srt(ext_srt)
-                    if full_cc:
-                        shutil.copy(ext_srt, srt_path)
-                elif full_cc:
-                    progress.console.print(
-                        f"[purple]\\[{video_path.name}] Fully Transcribing to container CCs...[/purple]"
-                    )
-                    clips = WhisperEngine.transcribe_video_full_srt(
-                        video_path, whisper_model, srt_path
-                    )
-                else:
-                    progress.console.print(
-                        f"[cyan]\\[{video_path.name}] Extracting sparse transcript samples...[/cyan]"
-                    )
-                    clips = WhisperEngine.transcribe_video_sparse(
-                        video_path, whisper_model, clip_every, clip_len
-                    )
+            import time
+            max_retries = 3
+            retry_count = 0
+            clips = None
+
+            while retry_count < max_retries:
+                try:
+                    if ext_srt.exists() and not retranscribe:
+                        progress.console.print(
+                            f"[green]\\[{video_path.name}] Reading context directly from existing .srt...[/green]"
+                        )
+                        clips = WhisperEngine.extract_clips_from_existing_srt(ext_srt)
+                        if full_cc:
+                            shutil.copy(ext_srt, srt_path)
+                    elif full_cc:
+                        progress.console.print(
+                            f"[purple]\\[{video_path.name}] Fully Transcribing to container CCs...[/purple]"
+                        )
+                        clips = WhisperEngine.transcribe_video_full_srt(
+                            video_path, whisper_model, srt_path
+                        )
+                    else:
+                        progress.console.print(
+                            f"[cyan]\\[{video_path.name}] Extracting sparse transcript samples...[/cyan]"
+                        )
+                        clips = WhisperEngine.transcribe_video_sparse(
+                            video_path, whisper_model, clip_every, clip_len
+                        )
+                    break
+                except Exception as e:
+                    retry_count += 1
+                    error_msg = str(e).lower()
+                    if ("out of memory" in error_msg or "cuda" in error_msg) and retry_count < max_retries:
+                        progress.console.print(
+                            f"[yellow]\\[{video_path.name}] CUDA OOM/Error detected. Retrying {retry_count}/{max_retries} after {5 * retry_count}s wait...[/yellow]"
+                        )
+                        time.sleep(5 * retry_count)
+                    else:
+                        raise e
 
                 if not clips:
                     return video_path, ValueError("No speech or text detected.")

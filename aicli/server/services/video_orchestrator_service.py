@@ -14,7 +14,7 @@ from rich.progress import (
 from rich.status import Status
 
 from aicli.cli.tui import print_header, console
-from aicli.cli.commands.video_processor import VideoBatchProcessor
+from aicli.server.pipelines.video_processor import VideoBatchProcessor
 from aicli.services.video.compress_service import CompressService
 from aicli.services.video.merge_service import MergeService
 from aicli.services.video.notes_service import NotesService

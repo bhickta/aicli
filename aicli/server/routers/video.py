@@ -2,7 +2,7 @@
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import EventSourceResponse
+from sse_starlette.sse import EventSourceResponse
 
 from aicli.server.orchestrator.base import BaseOrchestrator
 from aicli.server.orchestrator.console_patcher import ConsolePatcher
