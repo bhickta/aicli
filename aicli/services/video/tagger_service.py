@@ -69,13 +69,21 @@ Given a numbered list of lecture video filenames, output their integer IDs sorte
 Use lesson numbers (L02, L23, LESSON_12), unit numbers (UNIT_1, unit-8), and part numbers to determine sequence."""
 
         filenames = [v["path"] for v in videos]
-        numbered = "\n".join(f"{i}: {Path(f).stem}" for i, f in enumerate(filenames))
+        numbered_list = []
+        for i, v in enumerate(videos):
+            ai = v.get("ai", {})
+            title = ai.get("title", "Unknown")
+            lesson = ai.get("lesson_number", "??")
+            stem = Path(v["path"]).stem
+            numbered_list.append(f"ID {i}: [Lesson {lesson}] {title} (File: {stem})")
+        
+        context_block = "\n".join(numbered_list)
 
         provider = get_provider()
-        user_prompt = "{numbered}\n\nSort by ID. Output struct:"
+        user_prompt = "COURSE CONTENT TO SEQUENCE:\n{context_block}\n\nTASK: Output the integer IDs in strict chronological order. Output struct:"
         
         prompt_template = PromptTemplate.from_template(user_prompt)
-        rendered_prompt = prompt_template.format(numbered=numbered)
+        rendered_prompt = prompt_template.format(context_block=context_block)
 
         try:
             result = provider.structured_invoke(

@@ -206,8 +206,11 @@ class VideoOrchestratorService:
 
         progress_sort.stop()
         console.print(
-            f"[green]✔ Logical LLM Course Reordering Complete ({len(renamed_files)} videos sequenced)[/green]\n"
+            f"[green]✔ Logical LLM Course Reordering Complete ({len(renamed_files)} videos sequenced)[/green]"
         )
+
+        # Immediate VRAM Purge after LLM tasks are done
+        VideoOrchestratorService.run_phase0_preflight_purge()
 
         # Purge ALL LLMs from VRAM before Phase 3 (Compression)
         try:
