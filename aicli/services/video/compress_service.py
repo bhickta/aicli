@@ -144,13 +144,37 @@ class CompressService:
 
         cmd += [str(output_path)]
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        import time
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            result = subprocess.run(cmd, capture_output=True, text=True)
 
-        if result.returncode != 0 or not output_path.exists():
+            if result.returncode == 0 and output_path.exists():
+                break # Success!
+            
+            retry_count += 1
+            stderr = result.stderr or ""
+            error_msg = stderr.lower()
+            
+            # Specific check for NVENC session limits or hardware busy errors
+            if ("too many concurrent sessions" in error_msg or 
+                "no nvenc capable devices" in error_msg or
+                "out of memory" in error_msg):
+                
+                if retry_count < max_retries:
+                    wait_time = 5 * retry_count
+                    # We don't have direct access to the rich progress console here, so we use print 
+                    # but the Orchestrator will catch it if we re-raise or we can just wait silently
+                    time.sleep(wait_time)
+                    continue
+            
+            # If we reach here, it's either a different error or we ran out of retries
             if output_path.exists():
                 output_path.unlink()
-            stderr_tail = (result.stderr or "")[-500:]
-            raise RuntimeError(f"FFmpeg compression failed: {stderr_tail}")
+            stderr_tail = stderr[-500:]
+            raise RuntimeError(f"FFmpeg compression failed after {retry_count} attempts. Final error: {stderr_tail}")
 
         if overwrite:
             video_path.unlink()
