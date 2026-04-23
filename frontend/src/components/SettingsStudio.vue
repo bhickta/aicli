@@ -313,7 +313,11 @@ async function loadSettings() {
   try {
     const res = await fetch(`${API_BASE}/api/settings`)
     if (res.ok) {
-      settings.value = await res.json()
+      const data = await res.json()
+      if (!data.analyze_step_models) {
+        data.analyze_step_models = {}
+      }
+      settings.value = data
     }
   } catch (err) {
     console.error('Failed to load settings:', err)
