@@ -40,7 +40,14 @@ async function refreshModels() {
     availableModels.value = models;
     if (models.length > 0 && !props.runConfig.llm_model) {
       const bestModel = models.find(m => m.includes('31b') || m.includes('70b') || m.includes('qwen') || m.includes('vision')) || models[0];
-      emit('update:run-config', { ...props.runConfig, llm_model: bestModel });
+      const fastModel = models.find(m => m.includes('e4b') || m.includes('8b') || m.includes('9b') || m.includes('mini')) || models[0];
+      
+      const defaultStepModels: Record<string, string> = props.runConfig.step_models || {};
+      if (bestModel !== fastModel && !defaultStepModels['3']) {
+        defaultStepModels['3'] = fastModel; // Classification is simple, use fast model
+      }
+
+      emit('update:run-config', { ...props.runConfig, llm_model: bestModel, step_models: defaultStepModels });
     }
   } catch (e) {
     console.error('Failed to fetch models:', e);
