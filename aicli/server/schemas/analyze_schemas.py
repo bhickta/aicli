@@ -51,6 +51,7 @@ class RunPipelineRequestDTO(BaseModel):
     allow_reasoning: bool = True
     target_steps: Optional[List[int]] = None
     step_reasoning: Optional[Dict[str, bool]] = None
+    step_models: Optional[Dict[str, str]] = None
     page_id: Optional[int] = None
 
 class ResetPipelineRequestDTO(BaseModel):

@@ -28,6 +28,7 @@ transcription:
     ### Content to Capture:
     - Handwritten cursive English (Answers are usually here)
     - Printed English headers and questions
+    - Flowcharts/Block Diagrams: Describe the text inside boxes and how they are connected [FLOWCHART: Box A -> Box B]
     - Diagrams: Describe them briefly [DIAGRAM: labels, description]
     - Margin notes or official stamps
 
@@ -83,7 +84,7 @@ segmentation:
     - Ensure the text flows logically across page boundaries without repetition.
 
     For each answer, return:
-    - question_number: e.g., "Q.1", "1(a)"
+    - question_number: Normalize to standard format (e.g., "Q.1", "Q.2", "Q.15"). Fix any OCR artifacts like "Q.0.11" -> "Q.11", "Q.09" -> "Q.9".
     - question_text: the full printed question text
     - question_directive: the verb (e.g., "Discuss", "Comment")
     - word_limit: if specified (e.g., 150)
@@ -236,7 +237,7 @@ dimensions:
       Answer text:
       ---
       {answer_text}
-      ---
+      Note: The answer text is an OCR transcription. Look closely for markers like [DIAGRAM: ...], [FLOWCHART: ...], or text that is clearly structured as a flowchart, schematic, block diagram, or map. Sometimes diagrams are just text with arrows (->). If any of these are present, has_diagram MUST be true.
 
       Return strict JSON:
       {{
@@ -289,49 +290,31 @@ aggregation:
 
     {dimension_data}
 
-    Your task: identify patterns that appear across multiple candidates, backed by concrete examples.
+    Your task: identify high-quality, non-obvious insights and patterns across multiple candidates.
+    - Insights must be flexible, meaning you should not force a pattern if none exists.
+    - You MUST provide concrete examples from the text to back up each insight.
+    - If there are no high-quality insights, return an empty "insights" list.
 
     Return strict JSON:
     {{
       "dimension": "{dimension_name}",
       "total_analyzed": 0,
-      "patterns": [
+      "insights": [
         {{
-          "pattern_name": "",
+          "insight_name": "",
           "description": "",
-          "frequency": 0,
-          "percentage": 0.0,
-          "reusable_template": "",
           "examples": [
             {{
               "candidate": "",
-              "question_directive": "",
               "exact_text": "",
-              "what_makes_it_work": ""
+              "why_it_works": ""
             }}
-          ],
-          "when_to_use": "",
-          "when_NOT_to_use": ""
-        }}
-      ],
-      "anti_patterns": [
-        {{
-          "pattern": "",
-          "why_avoid": "",
-          "seen_in": 0
-        }}
-      ],
-      "actionable_rules": [
-        {{
-          "rule": "",
-          "evidence": "",
-          "template": ""
+          ]
         }}
       ]
     }}
 
-    Only include patterns seen in minimum 10% of answers.
-    Every pattern must have minimum 3 examples from different candidates.
-    Templates must be immediately reusable.
+    Only include insights seen in multiple answers.
+    Every insight must have minimum 3 examples from different candidates.
 
     Return ONLY valid JSON, no other text.

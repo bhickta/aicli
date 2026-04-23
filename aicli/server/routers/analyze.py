@@ -161,6 +161,7 @@ def _analyze_worker(
             allow_reasoning=req.allow_reasoning,
             target_steps=req.target_steps,
             step_reasoning=req.step_reasoning,
+            step_models=req.step_models,
             target_page_id=req.page_id,
             progress_callback=progress,
             log_callback=log_cb,

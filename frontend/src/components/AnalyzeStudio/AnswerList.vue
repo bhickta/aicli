@@ -119,17 +119,28 @@ function imageUrl(pdfFile: string, pageNum: number) {
       </div>
       <div v-for="agg in aggregations" :key="agg.dimension_name" class="agg-section">
         <h3>{{ agg.dimension_name }} ({{ agg.answer_count }} answers)</h3>
-        <template v-if="typeof agg.aggregation_json === 'object' && agg.aggregation_json.patterns">
+        <template v-if="typeof agg.aggregation_json === 'object' && (agg.aggregation_json.insights || agg.aggregation_json.patterns)">
           <div
-            v-for="pattern in agg.aggregation_json.patterns"
-            :key="pattern.pattern_name"
+            v-for="insight in (agg.aggregation_json.insights || agg.aggregation_json.patterns)"
+            :key="insight.insight_name || insight.pattern_name"
             class="pattern-card"
           >
-            <h4>{{ pattern.pattern_name }}</h4>
-            <div class="desc">{{ pattern.description }}</div>
-            <div class="meta">
-              Frequency: {{ pattern.frequency }} ({{ pattern.percentage }}%)
-              · Template: {{ pattern.reusable_template }}
+            <h4>{{ insight.insight_name || insight.pattern_name }}</h4>
+            <div class="desc">{{ insight.description }}</div>
+            
+            <div v-if="insight.examples && insight.examples.length" style="margin-top: 8px; font-size: 13px; color: var(--text-secondary);">
+              <strong>Examples:</strong>
+              <ul style="margin: 4px 0 0 20px; padding: 0;">
+                <li v-for="(ex, i) in insight.examples" :key="i" style="margin-bottom: 4px;">
+                  <em>"{{ ex.exact_text }}"</em> <span v-if="ex.why_it_works || ex.what_makes_it_work"> - {{ ex.why_it_works || ex.what_makes_it_work }}</span>
+                </li>
+              </ul>
+            </div>
+
+            <div class="meta" style="margin-top: 8px;" v-if="insight.frequency || insight.reusable_template">
+              <span v-if="insight.frequency">Frequency: {{ insight.frequency }} <span v-if="insight.percentage">({{ insight.percentage }}%)</span></span>
+              <span v-if="insight.frequency && insight.reusable_template"> · </span>
+              <span v-if="insight.reusable_template">Template: {{ insight.reusable_template }}</span>
             </div>
           </div>
         </template>

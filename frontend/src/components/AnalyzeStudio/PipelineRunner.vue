@@ -28,6 +28,29 @@ const emit = defineEmits<{
 }>();
 
 // local state removed, using props.runConfig
+import { settingsApi } from '../../api/SettingsApiClient';
+
+const availableModels = ref<string[]>([]);
+const loadingModels = ref(false);
+
+async function refreshModels() {
+  loadingModels.value = true;
+  try {
+    const { models } = await settingsApi.fetchModels();
+    availableModels.value = models;
+    if (models.length > 0 && !props.runConfig.llm_model) {
+      emit('update:run-config', { ...props.runConfig, llm_model: models[0] });
+    }
+  } catch (e) {
+    console.error('Failed to fetch models:', e);
+  } finally {
+    loadingModels.value = false;
+  }
+}
+
+onMounted(() => {
+  refreshModels();
+});
 
 const terminalRef = ref<HTMLElement | null>(null);
 
@@ -82,8 +105,24 @@ watch(() => props.parsedLogs.length, () => {
             <input type="number" :value="runConfig.workers" @input="emit('update:run-config', { ...runConfig, workers: Number(($event.target as HTMLInputElement).value) })" min="1" max="16" :disabled="pipelineRunning" />
           </div>
           <div class="form-group span-full" style="grid-column: span 2;">
-            <label>LLM Model ID</label>
-            <input type="text" :value="runConfig.llm_model" @input="emit('update:run-config', { ...runConfig, llm_model: ($event.target as HTMLInputElement).value })" placeholder="Model for vision & reasoning" :disabled="pipelineRunning" />
+            <label>LLM Model (Default)</label>
+            <div class="select-wrapper" style="display: flex; gap: 8px; align-items: center;">
+              <select 
+                class="form-select" 
+                style="flex: 1; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-primary); padding: 8px 12px; border-radius: 6px; outline: none;"
+                :value="runConfig.llm_model" 
+                @change="emit('update:run-config', { ...runConfig, llm_model: ($event.target as HTMLSelectElement).value })"
+                :disabled="pipelineRunning"
+              >
+                <option disabled value="">Select a model...</option>
+                <option v-for="m in availableModels" :key="m" :value="m">{{ m }}</option>
+                <option v-if="availableModels.length === 0" disabled>No models found</option>
+              </select>
+              <button @click="refreshModels" class="btn btn-secondary" title="Refresh Models" :disabled="loadingModels" style="padding: 8px;">
+                <span v-if="!loadingModels">🔄</span>
+                <span v-else class="spin" style="display: inline-block; animation: spin 1s linear infinite;">⏳</span>
+              </button>
+            </div>
           </div>
           <div class="form-group span-full" style="grid-column: span 2; display: flex; align-items: center; justify-content: center; padding: 12px; background: var(--bg-input); border-radius: var(--radius); margin-top: 8px;">
             <label class="toggle-control" style="display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none;">
