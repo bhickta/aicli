@@ -35,6 +35,7 @@ class AppConfig(BaseModel):
     segmenter_max_tokens: int = 500         # Smaller ceiling for segment extraction
     segmenter_max_retries: int = 2          # Retry attempts for segmentation LLM calls
     aggregation_chunk_size: int = 50        # Answers per aggregation LLM chunk
+    analyze_step_models: dict[str, str] = {} # Step-specific default models (e.g., {"3": "gemma-4-e4b"})
 
     # --- LLM Tuning (Video Notes) ---
     notes_temperature: float = 0.2          # Slightly creative for note compression
