@@ -32,15 +32,14 @@ transcription:
     - Diagrams: Describe them briefly [DIAGRAM: labels, description]
     - Margin notes or official stamps
 
-    ### Rules:
+    ### Strict Formatting Rules (CRITICAL):
     - Transcribe EXACTLY what is written — never correct spelling or grammar.
     - Unreadable words: write [?]
-    - Underlines: <u>underline these words</u>
-    - Boxes: [BOX: text]
+    - Underlines: ANY word or phrase with a line under it MUST be enclosed in <u>...</u> (e.g., <u>Agriculture</u>)
+    - Boxes/Rectangles: ANY text enclosed in a drawn box MUST be formatted as [BOX: text inside]
+    - Diagrams/Flowcharts: If you see structural drawings, block diagrams, or arrows connecting text, output [DIAGRAM: brief description of the structure and text].
     - Numbered lists: Keep original numbering (1, 1.1, ①, etc.)
-
-    OUTPUT FORMAT:
-    Simply provide the full text as it appears on the page. Use markdown headers (##) only if there is a very clear visual section break.
+    - Do not add any conversational text or markdown code blocks. Output raw text. as it appears on the page. Use markdown headers (##) only if there is a very clear visual section break.
 
 # --- Step 3: Page Classification (Text-Based) ---
 classification:
@@ -194,10 +193,13 @@ dimensions:
 
       Return strict JSON:
       {{
-        "intro_to_body_phrase": "exact phrase or null",
-        "between_sections_phrases": [],
-        "body_to_conclusion_phrase": "exact phrase or null",
-        "transition_style": "abrupt|smooth|formulaic"
+        "transitions": [
+          {{
+            "location": "intro_to_body|between_sections|body_to_conclusion",
+            "exact_phrase": "exact phrase used to transition",
+            "transition_style": "abrupt|smooth|formulaic"
+          }}
+        ]
       }}
 
       Return ONLY valid JSON, no other text.
@@ -214,17 +216,15 @@ dimensions:
 
       Return strict JSON:
       {{
-        "numbering_style": "decimal|circled|bullet|mixed|none",
-        "uses_boxes": false,
-        "boxed_texts": [],
-        "uses_underlines": false,
-        "underlined_count": 0,
-        "what_gets_underlined": [],
-        "uses_strikethrough": false,
+        "formatting_elements": [
+          {{
+            "element_type": "numbering_style|box|underline|strikethrough|section_header",
+            "description": "what was formatted (e.g. 'Underlined keyword: Agriculture')",
+            "exact_text": "the text that was formatted"
+          }}
+        ],
         "body_format": "numbered_points|paragraphs|mixed",
-        "avg_lines_per_point": 0.0,
-        "has_section_headers": false,
-        "header_style": null
+        "avg_lines_per_point": 0.0
       }}
 
       Return ONLY valid JSON, no other text.
@@ -267,14 +267,18 @@ dimensions:
       {answer_text}
       ---
 
-      Look for: unusual statistics, specific report citations, constitutional article references, international comparisons, recent policy examples, elegant phrasing.
+      Identify the most impressive or distinctive elements of this UPSC answer that would likely impress an examiner. There can be MULTIPLE selling points. Look for: unusual statistics, specific report citations, constitutional article references, international comparisons, recent policy examples, elegant phrasing.
 
       Return strict JSON:
       {{
-        "selling_point_type": "statistic|report_citation|constitutional_ref|international_comparison|policy_example|elegant_phrasing|other",
-        "exact_text": "the exact impressive text",
-        "why_impressive": "brief explanation",
-        "rarity": "common|uncommon|rare"
+        "selling_points": [
+          {{
+            "selling_point_type": "statistic|report_citation|constitutional_ref|international_comparison|policy_example|elegant_phrasing|other",
+            "exact_text": "the exact impressive text",
+            "why_impressive": "brief explanation",
+            "rarity": "common|uncommon|rare"
+          }}
+        ]
       }}
 
       Return ONLY valid JSON, no other text.

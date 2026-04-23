@@ -67,43 +67,68 @@ function imageUrl(pdfFile: string, pageNum: number) {
           <span class="answer-directive">{{ answer.question_directive || '' }}</span>
         </div>
         <div class="answer-card-body" v-if="expandedAnswers.has(answer.id)">
-          <div class="answer-question" v-if="answer.question_text">
+          <div class="answer-question" v-if="answer.question_text" style="font-size: 14px; color: var(--text-primary); font-weight: 500; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border);">
             {{ answer.question_text }}
           </div>
-          <div class="answer-text">{{ answer.raw_text }}</div>
-
-          <div class="answer-page-strip" v-if="answer.page_ids">
-            <div 
-              v-for="pageId in getPageNumbers(answer.page_ids)" 
-              :key="pageId"
-              class="answer-thumbnail"
-              @click="$emit('open-inspector', getPhysicalPage(pageId))"
-            >
-              <img v-if="getPhysicalPage(pageId)" :src="imageUrl(selectedPdf.filename, getPhysicalPage(pageId)!)" loading="lazy" />
-              <span class="thumb-label">Page {{ getPhysicalPage(pageId) || '...' }}</span>
-            </div>
-          </div>
-
-          <!-- Dimensions -->
-          <div class="dimensions-grid" v-if="answerDimensions[answer.id]?.length">
-            <div
-              v-for="dim in answerDimensions[answer.id]"
-              :key="dim.dimension_name"
-              class="dim-card"
-            >
-              <h4>{{ dim.dimension_name }}</h4>
-              <div class="dim-content">
-                <template v-if="typeof dim.result_json === 'object'">
-                  <div
-                    v-for="(value, key) in dim.result_json"
-                    :key="key"
-                    class="dim-field"
-                  >
-                    <span class="label">{{ formatKey(String(key)) }}</span>
-                    <span class="value">{{ formatValue(value) }}</span>
+          
+          <div class="answer-layout" style="display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap;">
+            <div class="answer-main-col" style="flex: 1; min-width: 300px;">
+              <div class="answer-text" style="max-height: none; background: var(--bg-input); padding: 16px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 24px;">{{ answer.raw_text }}</div>
+              
+              <!-- Dimensions -->
+              <div class="dimensions-grid" v-if="answerDimensions[answer.id]?.length" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px;">
+                <div 
+                  v-for="dim in answerDimensions[answer.id]" 
+                  :key="dim.id"
+                  class="dim-card"
+                  style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"
+                >
+                  <h4 style="font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">{{ dim.dimension_name }}</h4>
+                  <div class="dim-content">
+                    <template v-if="typeof dim.result_json === 'object'">
+                      <div
+                        v-for="(value, key) in dim.result_json"
+                        :key="key"
+                      >
+                        <div v-if="Array.isArray(value)" class="dim-list" style="margin-bottom: 12px;">
+                          <strong style="text-transform: uppercase; font-size: 11px; color: var(--text-muted); letter-spacing: 0.05em;">{{ formatKey(String(key)) }}</strong>
+                          <div v-for="(item, i) in value" :key="i" class="dim-list-item" style="background: rgba(0,0,0,0.1); padding: 8px 12px; margin-top: 6px; border-radius: 6px; border-left: 3px solid var(--accent);">
+                            <template v-if="typeof item === 'object'">
+                              <div v-for="(v, k) in item" :key="k" class="dim-field" style="border: none; padding: 3px 0; display: flex; justify-content: space-between;">
+                                <span class="label" style="font-size: 11px; color: var(--text-muted);">{{ formatKey(String(k)) }}</span>
+                                <span class="value" style="font-size: 12px; font-weight: 500; text-align: right; max-width: 60%;">{{ formatValue(v) }}</span>
+                              </div>
+                            </template>
+                            <template v-else>
+                              <div style="font-size: 12px; color: var(--text-primary);">{{ item }}</div>
+                            </template>
+                          </div>
+                        </div>
+                        <div v-else class="dim-field" style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
+                          <span class="label" style="font-size: 11px; color: var(--text-muted);">{{ formatKey(String(key)) }}</span>
+                          <span class="value" style="font-size: 12px; font-weight: 500; text-align: right; max-width: 60%;">{{ formatValue(value) }}</span>
+                        </div>
+                      </div>
+                    </template>
+                    <pre v-else style="font-size: 11px; white-space: pre-wrap;">{{ dim.result_json }}</pre>
                   </div>
-                </template>
-                <pre v-else>{{ dim.result_json }}</pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="answer-side-col" v-if="answer.page_ids" style="width: 260px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; background: var(--bg-input); padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
+              <h4 style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin: 0; letter-spacing: 0.05em; text-align: center;">Source Pages</h4>
+              <div class="answer-page-strip" style="margin: 0; padding: 0; border: none; display: flex; flex-direction: column; gap: 16px; max-height: 800px; overflow-y: auto;">
+                <div 
+                  v-for="pageId in getPageNumbers(answer.page_ids)" 
+                  :key="pageId"
+                  class="answer-thumbnail"
+                  style="width: 100%; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;"
+                  @click="$emit('open-inspector', getPhysicalPage(pageId))"
+                >
+                  <img v-if="getPhysicalPage(pageId)" :src="imageUrl(selectedPdf.filename, getPhysicalPage(pageId)!)" loading="lazy" style="width: 100%; display: block;" />
+                  <span class="thumb-label" style="display: block; padding: 6px; text-align: center; font-size: 11px; font-weight: 600; background: rgba(0,0,0,0.5); color: #fff;">Page {{ getPhysicalPage(pageId) || '...' }}</span>
+                </div>
               </div>
             </div>
           </div>

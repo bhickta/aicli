@@ -82,6 +82,8 @@ class AnalyzePipelineService:
             dpi=dpi,
             db=db,
             resolver=resolver,
+            step_models=step_models or {},
+            default_model=llm_model,
             target_page_id=target_page_id,
             progress=progress_callback,
             log_cb=log_callback,
@@ -89,18 +91,25 @@ class AnalyzePipelineService:
         )
 
         if self._should_run(1, target_steps):
+            self._set_step_model(1, ctx)
             self._step_pdf_to_images(ctx)
         if self._should_run(2, target_steps):
+            self._set_step_model(2, ctx)
             self._step_ocr_transcribe(ctx)
         if self._should_run(3, target_steps):
+            self._set_step_model(3, ctx)
             self._step_page_classify(ctx)
         if self._should_run(4, target_steps):
+            self._set_step_model(4, ctx)
             self._step_answer_segment(ctx)
         if self._should_run(5, target_steps):
+            self._set_step_model(5, ctx)
             self._step_dimension_analyze(ctx)
         if self._should_run(6, target_steps):
+            self._set_step_model(6, ctx)
             self._step_aggregate(ctx)
         if self._should_run(7, target_steps):
+            self._set_step_model(7, ctx)
             self._step_report_generate(ctx)
 
         return time.time() - start_t
@@ -255,6 +264,14 @@ class AnalyzePipelineService:
 
     # ── Utility ─────────────────────────────────────────────────────
 
+    def _set_step_model(self, step_id: int, ctx: "_PipelineContext") -> None:
+        model = ctx.step_models.get(str(step_id), ctx.default_model)
+        if model:
+            from aicli.config import config as aicli_config
+            if aicli_config.model_name != model:
+                aicli_config.model_name = model
+                self._log(ctx.log_cb, f"🔄 Switched to model: {model} for Step {step_id}")
+
     def _get_target_answers(self, dim_name: str, ctx: "_PipelineContext") -> List[Dict]:
         """Fetch answers for analysis, optionally filtered by page ID."""
         if not ctx.target_page_id:
@@ -316,6 +333,8 @@ class _PipelineContext:
         "dpi",
         "db",
         "resolver",
+        "step_models",
+        "default_model",
         "target_page_id",
         "progress",
         "log_cb",
@@ -330,6 +349,8 @@ class _PipelineContext:
         dpi: int,
         db: Any,
         resolver: ReasoningResolver,
+        step_models: Dict[str, str],
+        default_model: str,
         target_page_id: Optional[int],
         progress: Optional[Any],
         log_cb: Optional[Callable],
@@ -341,6 +362,8 @@ class _PipelineContext:
         self.dpi = dpi
         self.db = db
         self.resolver = resolver
+        self.step_models = step_models
+        self.default_model = default_model
         self.target_page_id = target_page_id
         self.progress = progress
         self.log_cb = log_cb

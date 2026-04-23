@@ -39,7 +39,8 @@ async function refreshModels() {
     const { models } = await settingsApi.fetchModels();
     availableModels.value = models;
     if (models.length > 0 && !props.runConfig.llm_model) {
-      emit('update:run-config', { ...props.runConfig, llm_model: models[0] });
+      const bestModel = models.find(m => m.includes('31b') || m.includes('70b') || m.includes('qwen') || m.includes('vision')) || models[0];
+      emit('update:run-config', { ...props.runConfig, llm_model: bestModel });
     }
   } catch (e) {
     console.error('Failed to fetch models:', e);
@@ -66,12 +67,26 @@ function toggleStep(stepId: number) {
   emit('update:run-config', config);
 }
 
-function toggleStepReasoning(stepId: number) {
-  if (props.pipelineRunning || !props.runConfig.allow_reasoning) return;
-  const config = { ...props.runConfig };
-  config.step_reasoning = { ...config.step_reasoning };
-  config.step_reasoning[stepId] = !config.step_reasoning[stepId];
-  emit('update:run-config', config);
+function toggleStepReasoning(stepId: number, value: boolean) {
+  const current = props.runConfig.step_reasoning || {};
+  emit('update:run-config', {
+    ...props.runConfig,
+    step_reasoning: { ...current, [stepId.toString()]: value }
+  });
+}
+
+function setStepModel(stepId: number, modelName: string) {
+  const currentModels = props.runConfig.step_models || {};
+  const newModels = { ...currentModels };
+  if (!modelName) {
+    delete newModels[stepId.toString()];
+  } else {
+    newModels[stepId.toString()] = modelName;
+  }
+  emit('update:run-config', {
+    ...props.runConfig,
+    step_models: newModels
+  });
 }
 
 function handleStart() {
@@ -80,7 +95,8 @@ function handleStart() {
     llm_model: props.runConfig.llm_model,
     allow_reasoning: props.runConfig.allow_reasoning,
     target_steps: props.runConfig.mode === 'all' ? null : props.runConfig.target_steps,
-    step_reasoning: props.runConfig.step_reasoning
+    step_reasoning: props.runConfig.step_reasoning,
+    step_models: props.runConfig.step_models
   };
   emit('start-pipeline', config);
 }
@@ -152,34 +168,35 @@ watch(() => props.parsedLogs.length, () => {
           </div>
           
           <div v-if="runConfig.mode === 'custom'" class="steps-list">
-            <div 
-              v-for="step in PIPELINE_STEPS" 
-              :key="step.id" 
-              class="step-row"
-              :class="[selectedPdf.progress ? selectedPdf.progress[step.id] : '', { disabled: pipelineRunning }]"
-              @click="toggleStep(step.id)"
-            >
-              <input 
-                type="checkbox" 
-                :value="step.id" 
-                :checked="runConfig.target_steps.includes(step.id)" 
-                @click.stop="toggleStep(step.id)"
-                :disabled="pipelineRunning" 
-              />
-              <span class="step-name">{{ step.id }}: {{ step.fullname }}</span>
-              
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <div 
-                  v-if="step.id > 1"
-                  class="reasoning-toggle" 
-                  :class="{ active: runConfig.step_reasoning[step.id], disabled: !runConfig.allow_reasoning || pipelineRunning }" 
-                  @click.stop="toggleStepReasoning(step.id)"
-                  :title="runConfig.step_reasoning[step.id] ? 'Reasoning ENABLED' : 'Reasoning DISABLED'"
-                >
-                  🧠
+            <div v-for="step in PIPELINE_STEPS" :key="step.id" class="step-item" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 12px; background: var(--bg-body); border-radius: var(--radius); border: 1px solid var(--border);">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; font-weight: 600;">
+                  <input type="checkbox" :value="step.id" :checked="runConfig.target_steps?.includes(step.id)" @change="toggleStep(step.id)" :disabled="pipelineRunning" />
+                  <span>Step {{ step.id }}: {{ step.fullname }}</span>
+                </label>
+                
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <label class="toggle-control" title="Enable/disable reasoning for this step" style="display: flex; align-items: center; gap: 6px; font-size: 11px;">
+                    <input type="checkbox" :checked="runConfig.step_reasoning?.[step.id.toString()] ?? true" @change="toggleStepReasoning(step.id, ($event.target as HTMLInputElement).checked)" :disabled="pipelineRunning || !runConfig.allow_reasoning" />
+                    Deep Thinking
+                  </label>
+                  <button class="reset-step-btn" :class="{ disabled: pipelineRunning }" @click.stop="$emit('reset-step', step.id)" style="font-size: 10px; padding: 2px 6px;">↻ Reset</button>
+                  <span class="step-badge" v-if="selectedPdf?.progress">{{ selectedPdf.progress[step.id] }}</span>
                 </div>
-                <button class="reset-step-btn" :class="{ disabled: pipelineRunning }" @click.stop="$emit('reset-step', step.id)">↻ Reset</button>
-                <span class="step-badge" v-if="selectedPdf.progress">{{ selectedPdf.progress[step.id] }}</span>
+              </div>
+              
+              <div style="display: flex; align-items: center; gap: 8px; padding-left: 24px;">
+                <label style="font-size: 11px; color: var(--text-muted); width: 60px;">Model:</label>
+                <select 
+                  class="form-select" 
+                  style="flex: 1; font-size: 11px; padding: 4px 8px; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;"
+                  :value="runConfig.step_models?.[step.id.toString()] || ''"
+                  @change="setStepModel(step.id, ($event.target as HTMLSelectElement).value)"
+                  :disabled="pipelineRunning"
+                >
+                  <option value="">Use Default Model</option>
+                  <option v-for="m in availableModels" :key="m" :value="m">{{ m }}</option>
+                </select>
               </div>
             </div>
           </div>
