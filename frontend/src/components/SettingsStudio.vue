@@ -146,16 +146,18 @@
               <label>Agg. Chunk Size</label>
               <input type="number" v-model.number="settings.aggregation_chunk_size" />
             </div>
-            <div class="form-group span-full" style="margin-top: 16px; background: var(--bg-surface); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color);">
-              <h4 style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px;">Step-wise Model Overrides</h4>
-              <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 16px;">Optionally assign a specific model to individual pipeline steps. Leave as 'Use Global Default' to use the Preferred Base Model.</p>
+            <div class="form-group span-full" style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+              <h4 style="font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Step-wise Model Overrides</h4>
+              <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 20px;">Optionally assign a specific model to individual pipeline steps. Leave as 'Use Global Default' to use the Preferred Base Model.</p>
               
-              <div v-for="step in PIPELINE_STEPS" :key="step.id" style="display: flex; gap: 12px; margin-bottom: 8px; align-items: center;">
-                <span style="font-size: 13px; font-weight: 500; width: 180px; color: var(--text-secondary);">Step {{ step.id }}: {{ step.fullname || step.name }}</span>
-                <select class="form-select" style="flex: 1; padding: 6px 10px; font-size: 13px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;" v-model="settings.analyze_step_models[step.id.toString()]">
-                  <option value="">Use Global Default</option>
-                  <option v-for="m in availableModels" :key="m" :value="m">{{ m }}</option>
-                </select>
+              <div class="step-overrides-grid" style="display: grid; gap: 16px;">
+                <div v-for="step in PIPELINE_STEPS.filter(s => [2,3,4,5,6].includes(s.id))" :key="step.id" style="display: flex; gap: 16px; align-items: center; background: var(--bg-body); padding: 12px 16px; border-radius: 6px; border: 1px solid var(--border-color);">
+                  <div style="font-size: 13px; font-weight: 600; width: 220px; color: var(--text-primary);">Step {{ step.id }}: {{ step.fullname || step.name }}</div>
+                  <select class="form-select" style="flex: 1; padding: 8px 12px; font-size: 13px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px; outline: none; cursor: pointer;" v-model="settings.analyze_step_models[step.id.toString()]">
+                    <option value="">Use Global Default</option>
+                    <option v-for="m in availableModels" :key="m" :value="m">{{ m }}</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
