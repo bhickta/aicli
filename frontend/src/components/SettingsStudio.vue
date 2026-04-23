@@ -92,13 +92,12 @@
 
         <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);" />
 
-        <h3 style="margin-bottom: 8px;">Advanced Configuration & Tuning</h3>
-        <p class="description">
-          Fine-tune pipeline thresholds, LLM parameters, and system timeouts.
+        <!-- 1. UPSC Analyze Settings -->
+        <h3 style="margin-bottom: 8px; color: var(--accent);">UPSC Analyze Settings</h3>
+        <p class="description" style="margin-bottom: 16px;">
+          Configuration for the answer extraction and grading pipeline.
         </p>
-
         <div class="config-grid">
-          <!-- UPSC Analyze -->
           <div class="form-group">
             <label>Analyze Max Tokens</label>
             <input type="number" v-model.number="settings.analyze_max_tokens" />
@@ -107,8 +106,6 @@
             <label>Analyze Temp</label>
             <input type="number" step="0.1" v-model.number="settings.analyze_temperature" />
           </div>
-
-          <!-- Segmenter -->
           <div class="form-group">
             <label>Segmenter Max Tokens</label>
             <input type="number" v-model.number="settings.segmenter_max_tokens" />
@@ -117,14 +114,20 @@
             <label>Segmenter Retries</label>
             <input type="number" v-model.number="settings.segmenter_max_retries" />
           </div>
-
-          <!-- Aggregation -->
           <div class="form-group">
             <label>Agg. Chunk Size</label>
             <input type="number" v-model.number="settings.aggregation_chunk_size" />
           </div>
+        </div>
 
-          <!-- Video Notes -->
+        <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);" />
+
+        <!-- 2. Video Notes Settings -->
+        <h3 style="margin-bottom: 8px; color: var(--accent);">Video Notes Settings</h3>
+        <p class="description" style="margin-bottom: 16px;">
+          Configuration for audio transcription and YouTube note generation.
+        </p>
+        <div class="config-grid">
           <div class="form-group">
             <label>Notes Temp</label>
             <input type="number" step="0.1" v-model.number="settings.notes_temperature" />
@@ -137,8 +140,20 @@
             <label>Notes Chunk (Chars)</label>
             <input type="number" v-model.number="settings.notes_chunk_size" />
           </div>
+          <div class="form-group">
+            <label>Whisper Batch Size</label>
+            <input type="number" v-model.number="settings.whisper_batch_size" />
+          </div>
+        </div>
 
-          <!-- News -->
+        <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);" />
+
+        <!-- 3. News & Curation Settings -->
+        <h3 style="margin-bottom: 8px; color: var(--accent);">News & Curation Settings</h3>
+        <p class="description" style="margin-bottom: 16px;">
+          Configuration for the RSS news summarization pipeline.
+        </p>
+        <div class="config-grid">
           <div class="form-group">
             <label>News Batch Size</label>
             <input type="number" v-model.number="settings.news_batch_size" />
@@ -147,14 +162,16 @@
             <label>News Merge Temp</label>
             <input type="number" step="0.1" v-model.number="settings.news_merge_temperature" />
           </div>
+        </div>
 
-          <!-- Whisper -->
-          <div class="form-group">
-            <label>Whisper Batch Size</label>
-            <input type="number" v-model.number="settings.whisper_batch_size" />
-          </div>
+        <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);" />
 
-          <!-- Defaults -->
+        <!-- 4. Global System Settings -->
+        <h3 style="margin-bottom: 8px; color: var(--accent);">Global System Settings</h3>
+        <p class="description" style="margin-bottom: 16px;">
+          Base LLM fallback parameters and database timeouts.
+        </p>
+        <div class="config-grid">
           <div class="form-group">
             <label>Global Default Temp</label>
             <input type="number" step="0.1" v-model.number="settings.llm_default_temperature" />
@@ -163,8 +180,6 @@
             <label>Global Default Retries</label>
             <input type="number" v-model.number="settings.llm_default_max_retries" />
           </div>
-
-          <!-- DB -->
           <div class="form-group">
             <label>DB Conn Timeout (s)</label>
             <input type="number" v-model.number="settings.db_connect_timeout" />
