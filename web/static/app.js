@@ -153,7 +153,8 @@ function renderWorkflows() {
           <option value="/api/workflows/audio/analyze">Audio: analyze/playlists</option>
         </select>
         <select id="provider">${providers.map((p) => `<option value="${p.id}">${p.name || p.id}</option>`).join("")}</select>
-        <input id="model" placeholder="model name" value="${state.settings.default_model || ""}" />
+        <select id="model"><option value="${state.settings.default_model || ""}">${state.settings.default_model || "Load models..."}</option></select>
+        <button id="refresh-models">Refresh models</button>
       </div>
       <div class="row">
         <select id="mode">
@@ -181,6 +182,10 @@ function renderWorkflows() {
       <div id="file-browser" class="browser hidden"></div>
     </div>
   `;
+  const providerSelect = document.querySelector("#provider");
+  providerSelect.addEventListener("change", () => populateModelSelect(providerSelect.value, "#model"));
+  document.querySelector("#refresh-models").addEventListener("click", () => populateModelSelect(providerSelect.value, "#model", true));
+  populateModelSelect(providerSelect.value, "#model");
   document.querySelector("#pick-path").addEventListener("click", () => openBrowser("path"));
   document.querySelector("#pick-output").addEventListener("click", () => openBrowser("output"));
   document.querySelector("#run").addEventListener("click", async () => {
