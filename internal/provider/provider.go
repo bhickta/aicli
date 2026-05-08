@@ -61,7 +61,7 @@ type Registry struct {
 
 func NewRegistry(configs []config.ProviderConfig) *Registry {
 	providers := make(map[string]Provider, len(configs))
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Minute}
 	for _, cfg := range configs {
 		switch cfg.Type {
 		case "ollama":

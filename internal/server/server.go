@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/bhickta/aicli/internal/config"
@@ -64,7 +65,7 @@ func (s *Server) withLogging(next http.Handler) http.Handler {
 		started := time.Now()
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(recorder, r)
-		if s.deps.Logger != nil {
+		if s.deps.Logger != nil && shouldLogRequest(r) {
 			s.deps.Logger.Info(
 				"http request",
 				"method", r.Method,
@@ -74,6 +75,10 @@ func (s *Server) withLogging(next http.Handler) http.Handler {
 			)
 		}
 	})
+}
+
+func shouldLogRequest(r *http.Request) bool {
+	return !(r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/jobs/"))
 }
 
 type statusRecorder struct {
