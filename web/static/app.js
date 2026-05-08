@@ -142,6 +142,7 @@ function renderWorkflows() {
           <option value="/api/workflows/image/rename">Image: apply safe rename</option>
           <option value="/api/workflows/image/prune-refs">Image: prune stale refs</option>
           <option value="/api/workflows/ocr/run">OCR: ZIP images to Markdown</option>
+          <option value="/api/workflows/ocr/pdf">OCR: PDF to Markdown</option>
           <option value="/api/workflows/analyze/run">Analyze: PDF to report</option>
           <option value="/api/workflows/news/run">News: dedupe/merge JSON/XLSX</option>
           <option value="/api/workflows/video/info">Video: info</option>
@@ -178,6 +179,7 @@ function renderWorkflows() {
       </div>
       <textarea id="text" placeholder="transcript, notes, or JSON array input for advanced workflows"></textarea>
       <button id="run">Run</button>
+      <div id="workflow-status" class="status-line">Ready</div>
       <pre id="workflow-result"></pre>
       <div id="file-browser" class="browser hidden"></div>
     </div>
@@ -191,6 +193,8 @@ function renderWorkflows() {
   document.querySelector("#run").addEventListener("click", async () => {
     const endpoint = document.querySelector("#workflow").value;
     const output = document.querySelector("#workflow-result");
+    const runButton = document.querySelector("#run");
+    const status = document.querySelector("#workflow-status");
     const payload = {
       provider_id: document.querySelector("#provider").value,
       model: document.querySelector("#model").value,
@@ -207,15 +211,21 @@ function renderWorkflows() {
       apply: document.querySelector("#apply").checked,
       use_llm: Boolean(document.querySelector("#model").value),
     };
-    output.textContent = "running...";
+    runButton.disabled = true;
+    status.textContent = "Running workflow...";
+    output.textContent = "";
     try {
       const result = await api(endpoint, {
         method: "POST",
         body: JSON.stringify(payload),
       });
+      status.textContent = "Completed";
       output.textContent = JSON.stringify(result, null, 2);
     } catch (error) {
+      status.textContent = "Failed";
       output.textContent = error.message;
+    } finally {
+      runButton.disabled = false;
     }
   });
 }

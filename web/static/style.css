@@ -40,6 +40,11 @@ button {
   text-align: left;
 }
 
+button:disabled {
+  cursor: progress;
+  opacity: 0.55;
+}
+
 section {
   padding: 24px;
   overflow: auto;
@@ -110,6 +115,13 @@ h1 {
 
 .browser-entry.dir {
   color: #9ed0ff;
+}
+
+.status-line {
+  border-left: 3px solid #6ea8fe;
+  padding: 8px 10px;
+  background: #10141b;
+  color: #cbd5e1;
 }
 
 code {

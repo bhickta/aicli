@@ -61,6 +61,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/workflows/image/prune-refs", s.runImagePruneRefs)
 	s.mux.HandleFunc("POST /api/workflows/news/run", s.runNews)
 	s.mux.HandleFunc("POST /api/workflows/ocr/run", s.runOCR)
+	s.mux.HandleFunc("POST /api/workflows/ocr/pdf", s.runPDFOCR)
 	s.mux.HandleFunc("POST /api/workflows/analyze/run", s.runAnalyze)
 	s.mux.HandleFunc("POST /api/workflows/video/info", s.runVideoInfo)
 	s.mux.HandleFunc("POST /api/workflows/video/compress", s.runVideoCompress)
@@ -404,6 +405,32 @@ func (s *Server) runOCR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := ocr.New(p).Run(r.Context(), req.Request)
+	s.finishJob(w, r, job, result, err)
+}
+
+func (s *Server) runPDFOCR(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ProviderID string `json:"provider_id"`
+		ocr.Request
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	p, ok := s.providerFor(req.ProviderID)
+	if !ok {
+		writeError(w, http.StatusNotFound, errors.New("provider not found"))
+		return
+	}
+	job := s.newJob("pdf-ocr", req.Path)
+	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	result, err := ocr.New(
+		p,
+		ocr.WithPDFRenderer(s.deps.Settings.Tools, tool.ExecRunner{}),
+	).RunPDF(r.Context(), req.Request)
 	s.finishJob(w, r, job, result, err)
 }
 

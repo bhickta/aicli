@@ -3,14 +3,12 @@ package analyze
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/bhickta/aicli/internal/config"
 	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/tool"
+	"github.com/bhickta/aicli/internal/workflow/document"
 )
 
 type Service struct {
@@ -43,48 +41,34 @@ func (s *Service) Run(ctx context.Context, req Request) (Response, error) {
 	if strings.TrimSpace(req.Path) == "" {
 		return Response{}, errors.New("path is required")
 	}
-	dpi := req.DPI
-	if dpi == 0 {
-		dpi = 200
-	}
-	workDir, err := os.MkdirTemp("", "aicli-analyze-*")
+	images, cleanup, err := document.RenderPDFToImages(ctx, s.tools, s.runner, req.Path, req.DPI)
 	if err != nil {
 		return Response{}, err
 	}
-	defer os.RemoveAll(workDir)
+	defer cleanup()
 
-	prefix := filepath.Join(workDir, "page")
-	out, err := s.runner.CombinedOutput(ctx, s.tools.PDFToPPM, "-jpeg", "-r", itoa(dpi), req.Path, prefix)
-	if err != nil {
-		return Response{}, errors.New(strings.TrimSpace(string(out)) + ": " + err.Error())
-	}
-	images, err := filepath.Glob(prefix + "-*.jpg")
-	if err != nil {
-		return Response{}, err
-	}
-	sort.Strings(images)
-	if len(images) == 0 {
-		return Response{}, errors.New("no page images were produced")
-	}
-
-	pages := make([]Page, 0, len(images))
-	for _, imagePath := range images {
-		data, err := os.ReadFile(imagePath)
-		if err != nil {
-			return Response{}, err
-		}
-		res, err := s.provider.Vision(ctx, provider.VisionRequest{
-			Model:       req.Model,
-			Prompt:      "Extract UPSC answer-script page text as Markdown. Preserve answer numbers and visible structure. Output Markdown only.",
-			Image:       data,
-			MIMEType:    "image/jpeg",
-			Temperature: 0,
-			MaxTokens:   1800,
+	inputs := make([]document.ImageInput, 0, len(images))
+	for i, imagePath := range images {
+		inputs = append(inputs, document.ImageInput{
+			Name:     "page-" + itoa(i+1),
+			Path:     imagePath,
+			MIMEType: "image/jpeg",
 		})
-		if err != nil {
-			return Response{}, err
-		}
-		pages = append(pages, Page{Path: imagePath, Text: strings.TrimSpace(res.Content)})
+	}
+	ocrPages, err := document.OCRImages(
+		ctx,
+		s.provider,
+		req.Model,
+		inputs,
+		"Extract UPSC answer-script page text as Markdown. Preserve answer numbers and visible structure. Output Markdown only.",
+		4,
+	)
+	if err != nil {
+		return Response{}, err
+	}
+	pages := make([]Page, 0, len(ocrPages))
+	for _, page := range ocrPages {
+		pages = append(pages, Page{Path: page.Path, Text: page.Text})
 	}
 
 	report, err := s.report(ctx, req.Model, pages)

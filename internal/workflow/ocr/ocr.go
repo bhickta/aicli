@@ -9,16 +9,23 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bhickta/aicli/internal/config"
 	"github.com/bhickta/aicli/internal/provider"
+	"github.com/bhickta/aicli/internal/tool"
+	"github.com/bhickta/aicli/internal/workflow/document"
 )
 
 type Service struct {
 	provider provider.Provider
+	tools    config.ToolConfig
+	runner   tool.Runner
 }
 
 type Request struct {
-	Model string `json:"model"`
-	Path  string `json:"path"`
+	Model   string `json:"model"`
+	Path    string `json:"path"`
+	DPI     int    `json:"dpi"`
+	Workers int    `json:"workers"`
 }
 
 type Page struct {
@@ -31,8 +38,21 @@ type Response struct {
 	Pages    []Page `json:"pages"`
 }
 
-func New(provider provider.Provider) *Service {
-	return &Service{provider: provider}
+func New(provider provider.Provider, options ...Option) *Service {
+	svc := &Service{provider: provider}
+	for _, option := range options {
+		option(svc)
+	}
+	return svc
+}
+
+type Option func(*Service)
+
+func WithPDFRenderer(tools config.ToolConfig, runner tool.Runner) Option {
+	return func(s *Service) {
+		s.tools = tools
+		s.runner = runner
+	}
 }
 
 func (s *Service) Run(ctx context.Context, req Request) (Response, error) {
@@ -46,31 +66,64 @@ func (s *Service) Run(ctx context.Context, req Request) (Response, error) {
 	defer reader.Close()
 
 	files := imageFiles(reader.File)
-	pages := make([]Page, 0, len(files))
+	inputs := make([]document.ImageInput, 0, len(files))
 	for _, file := range files {
 		data, err := readZipFile(file)
 		if err != nil {
 			return Response{}, err
 		}
-		res, err := s.provider.Vision(ctx, provider.VisionRequest{
-			Model:       req.Model,
-			Prompt:      "Extract all text from this page image as Markdown. Preserve headings, lists, tables, and reading order. Output Markdown only.",
-			Image:       data,
-			MIMEType:    mimeForName(file.Name),
-			Temperature: 0,
-			MaxTokens:   1800,
+		inputs = append(inputs, document.ImageInput{
+			Name:     file.Name,
+			Data:     data,
+			MIMEType: mimeForName(file.Name),
 		})
-		if err != nil {
-			return Response{}, err
-		}
-		pages = append(pages, Page{Name: file.Name, Markdown: strings.TrimSpace(res.Content)})
 	}
+	pages, err := s.ocrInputs(ctx, req, inputs)
+	if err != nil {
+		return Response{}, err
+	}
+	return responseFromDocumentPages(pages), nil
+}
 
-	parts := make([]string, 0, len(pages))
-	for i, page := range pages {
-		parts = append(parts, "<!-- Page "+itoa(i+1)+" "+page.Name+" -->\n"+page.Markdown)
+func (s *Service) RunPDF(ctx context.Context, req Request) (Response, error) {
+	images, cleanup, err := document.RenderPDFToImages(ctx, s.tools, s.runner, req.Path, req.DPI)
+	if err != nil {
+		return Response{}, err
 	}
-	return Response{Markdown: strings.Join(parts, "\n\n---\n\n"), Pages: pages}, nil
+	defer cleanup()
+
+	inputs := make([]document.ImageInput, 0, len(images))
+	for i, imagePath := range images {
+		inputs = append(inputs, document.ImageInput{
+			Name:     "page-" + itoa(i+1),
+			Path:     imagePath,
+			MIMEType: "image/jpeg",
+		})
+	}
+	pages, err := s.ocrInputs(ctx, req, inputs)
+	if err != nil {
+		return Response{}, err
+	}
+	return responseFromDocumentPages(pages), nil
+}
+
+func (s *Service) ocrInputs(ctx context.Context, req Request, inputs []document.ImageInput) ([]document.OCRPage, error) {
+	return document.OCRImages(
+		ctx,
+		s.provider,
+		req.Model,
+		inputs,
+		"Extract all text from this page image as Markdown. Preserve headings, lists, tables, and reading order. Output Markdown only.",
+		req.Workers,
+	)
+}
+
+func responseFromDocumentPages(pages []document.OCRPage) Response {
+	out := make([]Page, 0, len(pages))
+	for _, page := range pages {
+		out = append(out, Page{Name: page.Name, Markdown: page.Text})
+	}
+	return Response{Markdown: document.AssembleMarkdown(pages), Pages: out}
 }
 
 func imageFiles(files []*zip.File) []*zip.File {

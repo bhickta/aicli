@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/bhickta/aicli/internal/config"
 	"github.com/bhickta/aicli/internal/provider"
 )
 
@@ -48,6 +49,33 @@ func TestRunProcessesImageZip(t *testing.T) {
 	}
 	if len(res.Pages) != 2 || res.Markdown == "" {
 		t.Fatalf("Response = %#v, want pages and markdown", res)
+	}
+}
+
+type fakeRunner struct{}
+
+func (fakeRunner) CombinedOutput(_ context.Context, _ string, args ...string) ([]byte, error) {
+	prefix := args[len(args)-1]
+	return []byte("ok"), os.WriteFile(prefix+"-1.jpg", []byte("image"), 0o600)
+}
+
+func TestRunPDFProcessesRenderedPages(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "doc.pdf")
+	if err := os.WriteFile(path, []byte("pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fp := &fakeVisionProvider{}
+	res, err := New(
+		fp,
+		WithPDFRenderer(config.ToolConfig{PDFToPPM: "pdftoppm"}, fakeRunner{}),
+	).RunPDF(context.Background(), Request{Path: path, Model: "vision", Workers: 2})
+	if err != nil {
+		t.Fatalf("RunPDF() error = %v", err)
+	}
+	if fp.count != 1 || res.Markdown == "" || len(res.Pages) != 1 {
+		t.Fatalf("count=%d response=%#v, want one OCR page", fp.count, res)
 	}
 }
 
