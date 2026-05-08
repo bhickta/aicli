@@ -1,11 +1,14 @@
 package document
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -46,6 +49,16 @@ func RenderPDFToImages(ctx context.Context, tools config.ToolConfig, runner tool
 	}
 
 	prefix := filepath.Join(workDir, "page")
+	pages, countErr := pdfPageCount(ctx, runner, tools.PDFToPPM, pdfPath)
+	if countErr == nil && pages > 1 {
+		images, err := renderPDFPagesParallel(ctx, tools, runner, pdfPath, prefix, dpi, pages)
+		if err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+		return images, cleanup, nil
+	}
+
 	out, err := runner.CombinedOutput(ctx, tools.PDFToPPM, "-jpeg", "-r", itoa(dpi), pdfPath, prefix)
 	if err != nil {
 		cleanup()
@@ -62,6 +75,202 @@ func RenderPDFToImages(ctx context.Context, tools config.ToolConfig, runner tool
 		return nil, nil, errors.New("no page images were produced")
 	}
 	return images, cleanup, nil
+}
+
+func renderPDFPagesParallel(
+	ctx context.Context,
+	tools config.ToolConfig,
+	runner tool.Runner,
+	pdfPath string,
+	prefix string,
+	dpi int,
+	pages int,
+) ([]string, error) {
+	workers := renderWorkers(pages, dpi)
+	jobs := make(chan int)
+	errCh := make(chan error, 1)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for page := range jobs {
+				pagePrefix := prefix + "-" + zeroPad(page)
+				out, err := runner.CombinedOutput(
+					ctx,
+					tools.PDFToPPM,
+					"-jpeg",
+					"-r",
+					itoa(dpi),
+					"-f",
+					itoa(page),
+					"-l",
+					itoa(page),
+					pdfPath,
+					pagePrefix,
+				)
+				if err != nil {
+					message := strings.TrimSpace(string(out))
+					if message == "" {
+						message = err.Error()
+					} else {
+						message += ": " + err.Error()
+					}
+					sendErr(errCh, errors.New(message), cancel)
+				}
+			}
+		}()
+	}
+sendPages:
+	for page := 1; page <= pages; page++ {
+		select {
+		case <-ctx.Done():
+			break sendPages
+		case jobs <- page:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+
+	select {
+	case err := <-errCh:
+		return nil, err
+	default:
+	}
+	images, err := filepath.Glob(prefix + "-*.jpg")
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(images)
+	if len(images) == 0 {
+		return nil, errors.New("no page images were produced")
+	}
+	return images, nil
+}
+
+func pdfPageCount(ctx context.Context, runner tool.Runner, pdfToPPM string, pdfPath string) (int, error) {
+	out, err := runner.CombinedOutput(ctx, pdfInfoCommand(pdfToPPM), pdfPath)
+	if err != nil {
+		return 0, err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && strings.EqualFold(strings.TrimSuffix(fields[0], ":"), "Pages") {
+			pages, err := strconv.Atoi(fields[1])
+			if err != nil {
+				return 0, err
+			}
+			if pages <= 0 {
+				return 0, errors.New("pdf has no pages")
+			}
+			return pages, nil
+		}
+	}
+	return 0, errors.New("pdf page count not found")
+}
+
+func pdfInfoCommand(pdfToPPM string) string {
+	if dir := filepath.Dir(pdfToPPM); dir != "." && dir != "" {
+		return filepath.Join(dir, "pdfinfo")
+	}
+	return "pdfinfo"
+}
+
+func renderWorkers(pages int, dpi int) int {
+	if pages <= 1 {
+		return 1
+	}
+	cpuWorkers := runtime.NumCPU() / 2
+	if cpuWorkers < 1 {
+		cpuWorkers = 1
+	}
+	if cpuWorkers > 4 {
+		cpuWorkers = 4
+	}
+
+	workers := minInt(cpuWorkers, pages)
+	if memoryWorkers := renderWorkersByMemory(dpi); memoryWorkers > 0 {
+		workers = minInt(workers, memoryWorkers)
+	}
+	if workers < 1 {
+		return 1
+	}
+	return workers
+}
+
+func renderWorkersByMemory(dpi int) int {
+	available, ok := availableMemoryBytes()
+	if !ok {
+		return 0
+	}
+	perPage := estimatedRenderBytes(dpi)
+	if perPage <= 0 {
+		return 0
+	}
+	workers := int(available / perPage)
+	if workers < 1 {
+		return 1
+	}
+	return workers
+}
+
+func estimatedRenderBytes(dpi int) uint64 {
+	if dpi <= 0 {
+		dpi = 200
+	}
+	// A4-ish page, RGB pixels, plus headroom for poppler buffers.
+	width := uint64(9 * dpi)
+	height := uint64(12 * dpi)
+	return width * height * 3 * 2
+}
+
+func availableMemoryBytes() (uint64, bool) {
+	file, err := os.Open("/proc/meminfo")
+	if err != nil {
+		return 0, false
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "MemAvailable:") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return 0, false
+		}
+		kb, err := strconv.ParseUint(fields[1], 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		return kb * 1024, true
+	}
+	return 0, false
+}
+
+func minInt(a int, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func zeroPad(value int) string {
+	if value < 10 {
+		return "000" + itoa(value)
+	}
+	if value < 100 {
+		return "00" + itoa(value)
+	}
+	if value < 1000 {
+		return "0" + itoa(value)
+	}
+	return itoa(value)
 }
 
 func OCRImages(
