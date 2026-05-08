@@ -103,7 +103,7 @@ func (p *OpenAICompatible) Health(ctx context.Context) error {
 }
 
 func (p *OpenAICompatible) ListModels(ctx context.Context) ([]Model, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(p.cfg.BaseURL, "/")+"/models", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, openAIURL(p.cfg.BaseURL, "/models"), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func (p *OpenAICompatible) Chat(ctx context.Context, req ChatRequest) (ChatRespo
 	httpReq, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		strings.TrimRight(p.cfg.BaseURL, "/")+"/chat/completions",
+		openAIURL(p.cfg.BaseURL, "/chat/completions"),
 		bytes.NewReader(data),
 	)
 	if err != nil {
@@ -217,7 +217,7 @@ func (p *OpenAICompatible) ChatStream(ctx context.Context, req ChatRequest, yiel
 	httpReq, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		strings.TrimRight(p.cfg.BaseURL, "/")+"/chat/completions",
+		openAIURL(p.cfg.BaseURL, "/chat/completions"),
 		bytes.NewReader(data),
 	)
 	if err != nil {
@@ -311,7 +311,7 @@ func (p *OpenAICompatible) chatRaw(ctx context.Context, body map[string]any) (Ch
 	httpReq, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		strings.TrimRight(p.cfg.BaseURL, "/")+"/chat/completions",
+		openAIURL(p.cfg.BaseURL, "/chat/completions"),
 		bytes.NewReader(data),
 	)
 	if err != nil {
@@ -351,6 +351,14 @@ func (p *OpenAICompatible) authorize(req *http.Request) {
 	for key, value := range p.cfg.Headers {
 		req.Header.Set(key, value)
 	}
+}
+
+func openAIURL(baseURL string, path string) string {
+	baseURL = strings.TrimRight(baseURL, "/")
+	if strings.HasSuffix(baseURL, "/v1") {
+		return baseURL + path
+	}
+	return baseURL + "/v1" + path
 }
 
 type Ollama struct {

@@ -181,7 +181,27 @@ function renderWorkflows() {
 
 async function renderProviders() {
   const payload = await api("/api/providers");
-  view.innerHTML = `<div class="panel"><pre>${JSON.stringify(payload.providers, null, 2)}</pre></div>`;
+  view.innerHTML = `
+    <div class="panel grid">
+      <div class="row">
+        <select id="provider-list">${payload.providers.map((p) => `<option value="${p.id}">${p.name || p.id}</option>`).join("")}</select>
+        <button id="load-models">Load models</button>
+      </div>
+      <pre id="provider-config">${JSON.stringify(payload.providers, null, 2)}</pre>
+      <pre id="provider-models"></pre>
+    </div>
+  `;
+  document.querySelector("#load-models").addEventListener("click", async () => {
+    const id = document.querySelector("#provider-list").value;
+    const output = document.querySelector("#provider-models");
+    output.textContent = "loading...";
+    try {
+      const result = await api(`/api/providers/${encodeURIComponent(id)}/models`);
+      output.textContent = JSON.stringify(result.models, null, 2);
+    } catch (error) {
+      output.textContent = error.message;
+    }
+  });
 }
 
 async function renderTools() {
