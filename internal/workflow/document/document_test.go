@@ -97,7 +97,7 @@ func TestRenderPDFToImages(t *testing.T) {
 	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	images, cleanup, err := RenderPDFToImages(context.Background(), config.ToolConfig{PDFToPPM: "pdftoppm"}, fakeRunner{}, pdf, 200)
+	images, cleanup, err := RenderPDFToImages(context.Background(), config.ToolConfig{PDFToPPM: "pdftoppm"}, fakeRunner{}, pdf, 200, 1)
 	if err != nil {
 		t.Fatalf("RenderPDFToImages() error = %v", err)
 	}
@@ -115,7 +115,7 @@ func TestRenderPDFToImagesRendersPagesWithDynamicParallelism(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := &pageRunner{}
-	images, cleanup, err := RenderPDFToImages(context.Background(), config.ToolConfig{PDFToPPM: "pdftoppm"}, runner, pdf, 200)
+	images, cleanup, err := RenderPDFToImages(context.Background(), config.ToolConfig{PDFToPPM: "pdftoppm"}, runner, pdf, 200, 3)
 	if err != nil {
 		t.Fatalf("RenderPDFToImages() error = %v", err)
 	}
@@ -126,8 +126,8 @@ func TestRenderPDFToImagesRendersPagesWithDynamicParallelism(t *testing.T) {
 	if runner.renderedPages != 6 {
 		t.Fatalf("renderedPages = %d, want 6", runner.renderedPages)
 	}
-	if runner.maxActive > renderWorkers(6, 200) {
-		t.Fatalf("maxActive = %d, want <= %d", runner.maxActive, renderWorkers(6, 200))
+	if runner.maxActive > 3 {
+		t.Fatalf("maxActive = %d, want <= 3", runner.maxActive)
 	}
 }
 

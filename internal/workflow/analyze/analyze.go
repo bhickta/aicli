@@ -18,9 +18,11 @@ type Service struct {
 }
 
 type Request struct {
-	Model string `json:"model"`
-	Path  string `json:"path"`
-	DPI   int    `json:"dpi"`
+	Model         string `json:"model"`
+	Path          string `json:"path"`
+	DPI           int    `json:"dpi"`
+	RenderWorkers int    `json:"render_workers"`
+	Workers       int    `json:"workers"`
 }
 
 type Page struct {
@@ -41,7 +43,7 @@ func (s *Service) Run(ctx context.Context, req Request) (Response, error) {
 	if strings.TrimSpace(req.Path) == "" {
 		return Response{}, errors.New("path is required")
 	}
-	images, cleanup, err := document.RenderPDFToImages(ctx, s.tools, s.runner, req.Path, req.DPI)
+	images, cleanup, err := document.RenderPDFToImages(ctx, s.tools, s.runner, req.Path, req.DPI, req.RenderWorkers)
 	if err != nil {
 		return Response{}, err
 	}
@@ -61,7 +63,7 @@ func (s *Service) Run(ctx context.Context, req Request) (Response, error) {
 		req.Model,
 		inputs,
 		"Extract UPSC answer-script page text as Markdown. Preserve answer numbers and visible structure. Output Markdown only.",
-		4,
+		req.Workers,
 	)
 	if err != nil {
 		return Response{}, err

@@ -173,6 +173,10 @@ function renderWorkflows() {
         <button id="pick-path">Choose input</button>
         <button id="pick-output">Choose output / sidecar / asset dir</button>
       </div>
+      <div class="row">
+        <label>PDF render workers<input id="render-workers" type="number" min="1" max="64" value="2" /></label>
+        <label>OCR workers<input id="ocr-workers" type="number" min="1" max="64" value="1" /></label>
+      </div>
       <div id="drop-zone" class="drop-zone" tabindex="0">
         <strong>Drop a PDF here</strong>
         <span>PDFs auto-select OCR. ZIPs, images, audio, and video files are accepted too.</span>
@@ -221,6 +225,8 @@ function renderWorkflows() {
       transcript: document.querySelector("#text").value,
       notes: document.querySelector("#text").value,
       track_text: document.querySelector("#text").value ? document.querySelector("#text").value.split("\\n---\\n") : [],
+      render_workers: numberValue("#render-workers"),
+      workers: numberValue("#ocr-workers"),
       apply: document.querySelector("#apply").checked,
       use_llm: Boolean(document.querySelector("#model").value),
     };
@@ -248,6 +254,11 @@ function renderWorkflows() {
       runButton.disabled = false;
     }
   });
+}
+
+function numberValue(selector) {
+  const value = Number.parseInt(document.querySelector(selector)?.value || "", 10);
+  return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 async function pollWorkflowJob(jobID, status, progressBar, output) {

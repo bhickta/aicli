@@ -1,12 +1,10 @@
 package document
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,7 +28,7 @@ type ImageInput struct {
 	MIMEType string
 }
 
-func RenderPDFToImages(ctx context.Context, tools config.ToolConfig, runner tool.Runner, pdfPath string, dpi int) ([]string, func(), error) {
+func RenderPDFToImages(ctx context.Context, tools config.ToolConfig, runner tool.Runner, pdfPath string, dpi int, workers int) ([]string, func(), error) {
 	if strings.TrimSpace(pdfPath) == "" {
 		return nil, nil, errors.New("path is required")
 	}
@@ -50,8 +48,8 @@ func RenderPDFToImages(ctx context.Context, tools config.ToolConfig, runner tool
 
 	prefix := filepath.Join(workDir, "page")
 	pages, countErr := pdfPageCount(ctx, runner, tools.PDFToPPM, pdfPath)
-	if countErr == nil && pages > 1 {
-		images, err := renderPDFPagesParallel(ctx, tools, runner, pdfPath, prefix, dpi, pages)
+	if countErr == nil && pages > 1 && workers != 1 {
+		images, err := renderPDFPagesParallel(ctx, tools, runner, pdfPath, prefix, dpi, pages, workers)
 		if err != nil {
 			cleanup()
 			return nil, nil, err
@@ -85,8 +83,9 @@ func renderPDFPagesParallel(
 	prefix string,
 	dpi int,
 	pages int,
+	workers int,
 ) ([]string, error) {
-	workers := renderWorkers(pages, dpi)
+	workers = normalizeWorkers(workers, pages)
 	jobs := make(chan int)
 	errCh := make(chan error, 1)
 	ctx, cancel := context.WithCancel(ctx)
@@ -179,85 +178,17 @@ func pdfInfoCommand(pdfToPPM string) string {
 	return "pdfinfo"
 }
 
-func renderWorkers(pages int, dpi int) int {
-	if pages <= 1 {
+func normalizeWorkers(workers int, jobs int) int {
+	if jobs <= 1 {
 		return 1
-	}
-	cpuWorkers := runtime.NumCPU() / 2
-	if cpuWorkers < 1 {
-		cpuWorkers = 1
-	}
-	if cpuWorkers > 4 {
-		cpuWorkers = 4
-	}
-
-	workers := minInt(cpuWorkers, pages)
-	if memoryWorkers := renderWorkersByMemory(dpi); memoryWorkers > 0 {
-		workers = minInt(workers, memoryWorkers)
 	}
 	if workers < 1 {
 		return 1
 	}
-	return workers
-}
-
-func renderWorkersByMemory(dpi int) int {
-	available, ok := availableMemoryBytes()
-	if !ok {
-		return 0
-	}
-	perPage := estimatedRenderBytes(dpi)
-	if perPage <= 0 {
-		return 0
-	}
-	workers := int(available / perPage)
-	if workers < 1 {
-		return 1
+	if workers > jobs {
+		return jobs
 	}
 	return workers
-}
-
-func estimatedRenderBytes(dpi int) uint64 {
-	if dpi <= 0 {
-		dpi = 200
-	}
-	// A4-ish page, RGB pixels, plus headroom for poppler buffers.
-	width := uint64(9 * dpi)
-	height := uint64(12 * dpi)
-	return width * height * 3 * 2
-}
-
-func availableMemoryBytes() (uint64, bool) {
-	file, err := os.Open("/proc/meminfo")
-	if err != nil {
-		return 0, false
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "MemAvailable:") {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			return 0, false
-		}
-		kb, err := strconv.ParseUint(fields[1], 10, 64)
-		if err != nil {
-			return 0, false
-		}
-		return kb * 1024, true
-	}
-	return 0, false
-}
-
-func minInt(a int, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func zeroPad(value int) string {

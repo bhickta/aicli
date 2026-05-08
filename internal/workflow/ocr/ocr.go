@@ -22,10 +22,11 @@ type Service struct {
 }
 
 type Request struct {
-	Model   string `json:"model"`
-	Path    string `json:"path"`
-	DPI     int    `json:"dpi"`
-	Workers int    `json:"workers"`
+	Model         string `json:"model"`
+	Path          string `json:"path"`
+	DPI           int    `json:"dpi"`
+	RenderWorkers int    `json:"render_workers"`
+	Workers       int    `json:"workers"`
 }
 
 type Page struct {
@@ -86,7 +87,7 @@ func (s *Service) Run(ctx context.Context, req Request) (Response, error) {
 }
 
 func (s *Service) RunPDF(ctx context.Context, req Request) (Response, error) {
-	images, cleanup, err := document.RenderPDFToImages(ctx, s.tools, s.runner, req.Path, req.DPI)
+	images, cleanup, err := document.RenderPDFToImages(ctx, s.tools, s.runner, req.Path, req.DPI, req.RenderWorkers)
 	if err != nil {
 		return Response{}, err
 	}
