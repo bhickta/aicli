@@ -28,6 +28,9 @@ func (s *Server) providerModels(w http.ResponseWriter, r *http.Request) {
 	}
 	models, err := p.ListModels(r.Context())
 	if err != nil {
+		if s.deps.Logger != nil {
+			s.deps.Logger.Warn("provider model list failed", "provider", parts[0], "error", err)
+		}
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}

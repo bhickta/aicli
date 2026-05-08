@@ -103,7 +103,8 @@ func (p *OpenAICompatible) Health(ctx context.Context) error {
 }
 
 func (p *OpenAICompatible) ListModels(ctx context.Context) ([]Model, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, openAIURL(p.cfg.BaseURL, "/models"), nil)
+	modelsURL := openAIURL(p.cfg.BaseURL, "/models")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -111,11 +112,12 @@ func (p *OpenAICompatible) ListModels(ctx context.Context) ([]Model, error) {
 
 	res, err := p.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list models %s: %w", modelsURL, err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return nil, fmt.Errorf("list models: %s", res.Status)
+		msg, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return nil, fmt.Errorf("list models %s: %s: %s", modelsURL, res.Status, strings.TrimSpace(string(msg)))
 	}
 
 	var payload struct {
