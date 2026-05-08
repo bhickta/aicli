@@ -2,6 +2,10 @@ const state = {
   view: "chat",
   settings: null,
   models: {},
+  browser: {
+    target: null,
+    path: "",
+  },
 };
 
 const view = document.querySelector("#view");
@@ -152,29 +156,46 @@ function renderWorkflows() {
         <input id="model" placeholder="model name" value="${state.settings.default_model || ""}" />
       </div>
       <div class="row">
-        <input id="path" placeholder="file path" />
-        <input id="mode" placeholder="mode, e.g. rename | junk | digitize | notes | tags | course" />
-        <input id="output" placeholder="output path, sidecar, markdown path, or asset dir" />
+        <select id="mode">
+          <option value="">Default mode</option>
+          <option value="rename">rename</option>
+          <option value="junk">junk</option>
+          <option value="digitize">digitize</option>
+          <option value="notes">notes</option>
+          <option value="tags">tags</option>
+          <option value="course">course</option>
+        </select>
+        <label><input id="apply" type="checkbox" /> apply filesystem changes</label>
+      </div>
+      <div class="row">
+        <button id="pick-path">Choose input</button>
+        <button id="pick-output">Choose output / sidecar / asset dir</button>
+      </div>
+      <div class="row">
+        <code id="path-display">No input selected</code>
+        <code id="output-display">No output selected</code>
       </div>
       <textarea id="text" placeholder="transcript, notes, or JSON array input for advanced workflows"></textarea>
-      <label><input id="apply" type="checkbox" /> apply filesystem changes</label>
       <button id="run">Run</button>
       <pre id="workflow-result"></pre>
+      <div id="file-browser" class="browser hidden"></div>
     </div>
   `;
+  document.querySelector("#pick-path").addEventListener("click", () => openBrowser("path"));
+  document.querySelector("#pick-output").addEventListener("click", () => openBrowser("output"));
   document.querySelector("#run").addEventListener("click", async () => {
     const endpoint = document.querySelector("#workflow").value;
     const output = document.querySelector("#workflow-result");
     const payload = {
       provider_id: document.querySelector("#provider").value,
       model: document.querySelector("#model").value,
-      path: document.querySelector("#path").value,
+      path: document.querySelector("#path-display").dataset.path || "",
       mode: document.querySelector("#mode").value,
-      output: document.querySelector("#output").value,
-      output_path: document.querySelector("#output").value,
-      sidecar: document.querySelector("#output").value,
-      markdown_path: document.querySelector("#path").value,
-      asset_dir: document.querySelector("#output").value,
+      output: document.querySelector("#output-display").dataset.path || "",
+      output_path: document.querySelector("#output-display").dataset.path || "",
+      sidecar: document.querySelector("#output-display").dataset.path || "",
+      markdown_path: document.querySelector("#path-display").dataset.path || "",
+      asset_dir: document.querySelector("#output-display").dataset.path || "",
       transcript: document.querySelector("#text").value,
       notes: document.querySelector("#text").value,
       track_text: document.querySelector("#text").value ? document.querySelector("#text").value.split("\\n---\\n") : [],
@@ -192,6 +213,60 @@ function renderWorkflows() {
       output.textContent = error.message;
     }
   });
+}
+
+async function openBrowser(target, path = "") {
+  state.browser.target = target;
+  state.browser.path = path || state.browser.path;
+  const browser = document.querySelector("#file-browser");
+  browser.classList.remove("hidden");
+  browser.innerHTML = `<p class="muted">Loading files...</p>`;
+  try {
+    const query = state.browser.path ? `?path=${encodeURIComponent(state.browser.path)}` : "";
+    const result = await api(`/api/fs/list${query}`);
+    state.browser.path = result.path;
+    browser.innerHTML = `
+      <div class="browser-header">
+        <strong>${target === "path" ? "Choose input" : "Choose output / sidecar / asset dir"}</strong>
+        ${target === "output" ? `<button id="use-current-directory">Use current directory</button>` : ""}
+        <button id="close-browser">Close</button>
+      </div>
+      <code>${result.path}</code>
+      <div class="browser-list">
+        ${(result.entries || []).map((entry) => `
+          <button class="browser-entry ${entry.is_dir ? "dir" : "file"}" data-path="${entry.path}" data-dir="${entry.is_dir}">
+            ${entry.is_dir ? "▸" : "•"} ${entry.name}
+          </button>
+        `).join("")}
+      </div>
+    `;
+    document.querySelector("#close-browser").addEventListener("click", () => browser.classList.add("hidden"));
+    const useCurrentDirectory = document.querySelector("#use-current-directory");
+    if (useCurrentDirectory) {
+      useCurrentDirectory.addEventListener("click", () => selectBrowserPath(target, result.path));
+    }
+    browser.querySelectorAll(".browser-entry").forEach((button) => {
+      button.addEventListener("click", () => {
+        const selectedPath = button.dataset.path;
+        const isDir = button.dataset.dir === "true";
+        if (isDir) {
+          openBrowser(target, selectedPath);
+          return;
+        }
+        selectBrowserPath(target, selectedPath);
+      });
+      button.addEventListener("dblclick", () => selectBrowserPath(target, button.dataset.path));
+    });
+  } catch (error) {
+    browser.innerHTML = `<pre>${error.message}</pre>`;
+  }
+}
+
+function selectBrowserPath(target, selectedPath) {
+  const display = document.querySelector(target === "path" ? "#path-display" : "#output-display");
+  display.dataset.path = selectedPath;
+  display.textContent = selectedPath;
+  document.querySelector("#file-browser").classList.add("hidden");
 }
 
 async function renderProviders() {

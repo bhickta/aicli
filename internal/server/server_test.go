@@ -82,6 +82,19 @@ func TestCreateAndGetJob(t *testing.T) {
 	}
 }
 
+func TestListFiles(t *testing.T) {
+	t.Parallel()
+
+	handler := testHandler()
+	req := httptest.NewRequest(http.MethodGet, "/api/fs/list?path=.", nil)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", res.Code, res.Body.String())
+	}
+}
+
 func testHandler() http.Handler {
 	settings := config.DefaultSettings()
 	return New(Dependencies{

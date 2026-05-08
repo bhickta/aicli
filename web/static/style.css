@@ -76,6 +76,52 @@ h1 {
   gap: 10px;
 }
 
+.hidden {
+  display: none;
+}
+
+.browser {
+  border: 1px solid #343b46;
+  border-radius: 8px;
+  background: #10141b;
+  padding: 12px;
+}
+
+.browser-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.browser-list {
+  display: grid;
+  gap: 4px;
+  max-height: 360px;
+  overflow: auto;
+  margin-top: 10px;
+}
+
+.browser-entry {
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.browser-entry.dir {
+  color: #9ed0ff;
+}
+
+code {
+  display: block;
+  min-height: 20px;
+  padding: 9px 10px;
+  border: 1px solid #343b46;
+  border-radius: 6px;
+  background: #0d1015;
+  overflow-wrap: anywhere;
+}
+
 .grid {
   display: grid;
   gap: 12px;
