@@ -173,6 +173,10 @@ function renderWorkflows() {
         <button id="pick-path">Choose input</button>
         <button id="pick-output">Choose output / sidecar / asset dir</button>
       </div>
+      <div id="drop-zone" class="drop-zone" tabindex="0">
+        <strong>Drop a PDF here</strong>
+        <span>PDFs auto-select OCR. ZIPs, images, audio, and video files are accepted too.</span>
+      </div>
       <div class="row">
         <code id="path-display">No input selected</code>
         <code id="output-display">No output selected</code>
@@ -190,6 +194,7 @@ function renderWorkflows() {
   populateModelSelect(providerSelect.value, "#model");
   document.querySelector("#pick-path").addEventListener("click", () => openBrowser("path"));
   document.querySelector("#pick-output").addEventListener("click", () => openBrowser("output"));
+  setupDropZone();
   document.querySelector("#run").addEventListener("click", async () => {
     const endpoint = document.querySelector("#workflow").value;
     const output = document.querySelector("#workflow-result");
@@ -228,6 +233,72 @@ function renderWorkflows() {
       runButton.disabled = false;
     }
   });
+}
+
+function setupDropZone() {
+  const dropZone = document.querySelector("#drop-zone");
+  if (!dropZone) return;
+  const stop = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  ["dragenter", "dragover"].forEach((eventName) => {
+    dropZone.addEventListener(eventName, (event) => {
+      stop(event);
+      dropZone.classList.add("dragover");
+    });
+  });
+  ["dragleave", "drop"].forEach((eventName) => {
+    dropZone.addEventListener(eventName, (event) => {
+      stop(event);
+      dropZone.classList.remove("dragover");
+    });
+  });
+  dropZone.addEventListener("drop", async (event) => {
+    const files = Array.from(event.dataTransfer.files || []);
+    if (!files.length) return;
+    await uploadWorkflowFile(files[0]);
+  });
+}
+
+async function uploadWorkflowFile(file) {
+  const status = document.querySelector("#workflow-status");
+  const output = document.querySelector("#workflow-result");
+  const dropZone = document.querySelector("#drop-zone");
+  const form = new FormData();
+  form.append("file", file);
+  status.textContent = `Uploading ${file.name}...`;
+  output.textContent = "";
+  dropZone.classList.add("uploading");
+  try {
+    const response = await fetch("/api/fs/upload", { method: "POST", body: form });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(payload.error || response.statusText);
+    }
+    const result = await response.json();
+    const uploaded = (result.files || [])[0];
+    if (!uploaded) throw new Error("upload finished without a stored file");
+    selectBrowserPath("path", uploaded.path, false);
+    autoSelectWorkflow(uploaded.name || file.name);
+    status.textContent = `Ready: ${uploaded.name || file.name}`;
+  } catch (error) {
+    status.textContent = "Upload failed";
+    output.textContent = error.message;
+  } finally {
+    dropZone.classList.remove("uploading");
+  }
+}
+
+function autoSelectWorkflow(name) {
+  const lower = name.toLowerCase();
+  const workflow = document.querySelector("#workflow");
+  if (!workflow) return;
+  if (lower.endsWith(".pdf")) workflow.value = "/api/workflows/ocr/pdf";
+  else if (lower.endsWith(".zip")) workflow.value = "/api/workflows/ocr/run";
+  else if (/\.(png|jpe?g|webp|gif|bmp|tiff?)$/.test(lower)) workflow.value = "/api/workflows/image/run";
+  else if (/\.(mp3|wav|m4a|flac|ogg|opus)$/.test(lower)) workflow.value = "/api/workflows/audio/transcribe";
+  else if (/\.(mp4|mov|mkv|webm|avi)$/.test(lower)) workflow.value = "/api/workflows/video/info";
 }
 
 async function openBrowser(target, path = "") {
@@ -277,11 +348,12 @@ async function openBrowser(target, path = "") {
   }
 }
 
-function selectBrowserPath(target, selectedPath) {
+function selectBrowserPath(target, selectedPath, hideBrowser = true) {
   const display = document.querySelector(target === "path" ? "#path-display" : "#output-display");
   display.dataset.path = selectedPath;
   display.textContent = selectedPath;
-  document.querySelector("#file-browser").classList.add("hidden");
+  const browser = document.querySelector("#file-browser");
+  if (hideBrowser && browser) browser.classList.add("hidden");
 }
 
 async function renderProviders() {

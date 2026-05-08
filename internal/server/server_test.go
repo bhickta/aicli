@@ -1,11 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -95,10 +98,57 @@ func TestListFiles(t *testing.T) {
 	}
 }
 
+func TestUploadFilesStoresDroppedFile(t *testing.T) {
+	t.Parallel()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	fileWriter, err := writer.CreateFormFile("file", "sample.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fileWriter.Write([]byte("%PDF-1.7\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := testHandlerWithDataDir(t.TempDir())
+	req := httptest.NewRequest(http.MethodPost, "/api/fs/upload", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body=%s", res.Code, res.Body.String())
+	}
+	var payload struct {
+		Files []uploadEntry `json:"files"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Files) != 1 {
+		t.Fatalf("files len = %d, want 1", len(payload.Files))
+	}
+	if payload.Files[0].Name != "sample.pdf" {
+		t.Fatalf("name = %q, want sample.pdf", payload.Files[0].Name)
+	}
+	if _, err := os.Stat(payload.Files[0].Path); err != nil {
+		t.Fatalf("uploaded file was not stored: %v", err)
+	}
+}
+
 func testHandler() http.Handler {
+	return testHandlerWithDataDir("")
+}
+
+func testHandlerWithDataDir(dataDir string) http.Handler {
 	settings := config.DefaultSettings()
 	return New(Dependencies{
 		Logger:    slog.Default(),
+		DataDir:   dataDir,
 		Settings:  settings,
 		Store:     &memoryStore{jobs: map[string]storage.Job{}},
 		Providers: provider.NewRegistry(settings.Providers),

@@ -53,6 +53,7 @@ func New(opts Options, logger *slog.Logger) (*App, error) {
 	handler := server.New(server.Dependencies{
 		Logger:       logger,
 		SettingsPath: opts.ConfigPath,
+		DataDir:      opts.DataDir,
 		Settings:     settings,
 		Store:        store,
 		Providers:    registry,
