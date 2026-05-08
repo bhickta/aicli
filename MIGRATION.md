@@ -6,10 +6,10 @@ The Go app is intended to replace the Frappe implementation with a local single-
 
 - Single Go binary entrypoint at `cmd/aicli`.
 - Embedded local web UI.
-- JSON settings with LM Studio, Ollama, OpenRouter, and custom OpenAI-compatible provider shape.
+- JSON settings with LMS, Ollama, OpenRouter, and custom OpenAI-compatible provider shape.
 - SQLite job store.
 - Health/settings/provider/model/chat/job APIs.
-- LM Studio/OpenAI-compatible chat and model-list adapter.
+- LMS/OpenAI-compatible chat and model-list adapter.
 - Ollama chat and model-list adapter.
 - Tool readiness API for FFmpeg, FFprobe, Poppler `pdftoppm`, and `whisper-cli`.
 - UPSC Recall workflow with job persistence.
@@ -36,5 +36,5 @@ The Go app is intended to replace the Frappe implementation with a local single-
 
 - Every workflow starts with a failing unit test around observable behavior.
 - External tools are wrapped behind interfaces and tested with fakes.
-- Real LM Studio/Ollama/OpenRouter/tool tests must be build-tagged as integration tests.
+- Real LMS/Ollama/OpenRouter/tool tests must be build-tagged as integration tests.
 - `go test ./...` must pass before each committed slice.

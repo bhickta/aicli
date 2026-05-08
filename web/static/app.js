@@ -1,6 +1,7 @@
 const state = {
   view: "chat",
   settings: null,
+  models: {},
 };
 
 const view = document.querySelector("#view");
@@ -55,13 +56,20 @@ function renderChat() {
   const providers = state.settings.providers || [];
   view.innerHTML = `
     <div class="panel grid">
-      <select id="provider">${providers.map((p) => `<option value="${p.id}">${p.name || p.id}</option>`).join("")}</select>
-      <input id="model" placeholder="model name" value="${state.settings.default_model || ""}" />
+      <div class="row">
+        <select id="provider">${providers.map((p) => `<option value="${p.id}">${p.name || p.id}</option>`).join("")}</select>
+        <select id="model"><option value="${state.settings.default_model || ""}">${state.settings.default_model || "Load models..."}</option></select>
+        <button id="refresh-models">Refresh models</button>
+      </div>
       <textarea id="prompt" placeholder="Ask a local model..."></textarea>
       <button id="send">Send</button>
       <pre id="answer"></pre>
     </div>
   `;
+  const providerSelect = document.querySelector("#provider");
+  providerSelect.addEventListener("change", () => populateModelSelect(providerSelect.value, "#model"));
+  document.querySelector("#refresh-models").addEventListener("click", () => populateModelSelect(providerSelect.value, "#model", true));
+  populateModelSelect(providerSelect.value, "#model");
   document.querySelector("#send").addEventListener("click", async () => {
     const answer = document.querySelector("#answer");
     answer.textContent = "thinking...";
@@ -86,13 +94,20 @@ function renderRecall() {
   const providers = state.settings.providers || [];
   view.innerHTML = `
     <div class="panel grid">
-      <select id="provider">${providers.map((p) => `<option value="${p.id}">${p.name || p.id}</option>`).join("")}</select>
-      <input id="model" placeholder="model name" value="${state.settings.default_model || ""}" />
+      <div class="row">
+        <select id="provider">${providers.map((p) => `<option value="${p.id}">${p.name || p.id}</option>`).join("")}</select>
+        <select id="model"><option value="${state.settings.default_model || ""}">${state.settings.default_model || "Load models..."}</option></select>
+        <button id="refresh-models">Refresh models</button>
+      </div>
       <textarea id="notes" placeholder="Paste UPSC notes..."></textarea>
       <button id="generate">Generate recall triggers</button>
       <pre id="triggers"></pre>
     </div>
   `;
+  const providerSelect = document.querySelector("#provider");
+  providerSelect.addEventListener("change", () => populateModelSelect(providerSelect.value, "#model"));
+  document.querySelector("#refresh-models").addEventListener("click", () => populateModelSelect(providerSelect.value, "#model", true));
+  populateModelSelect(providerSelect.value, "#model");
   document.querySelector("#generate").addEventListener("click", async () => {
     const output = document.querySelector("#triggers");
     output.textContent = "generating...";
@@ -191,7 +206,7 @@ async function renderProviders() {
       <pre id="provider-models"></pre>
     </div>
   `;
-  document.querySelector("#load-models").addEventListener("click", async () => {
+  const load = async () => {
     const id = document.querySelector("#provider-list").value;
     const output = document.querySelector("#provider-models");
     output.textContent = "loading...";
@@ -201,7 +216,31 @@ async function renderProviders() {
     } catch (error) {
       output.textContent = error.message;
     }
-  });
+  };
+  document.querySelector("#provider-list").addEventListener("change", load);
+  document.querySelector("#load-models").addEventListener("click", load);
+  load();
+}
+
+async function populateModelSelect(providerID, selector, force = false) {
+  const select = document.querySelector(selector);
+  if (!select || !providerID) return;
+  if (!state.models[providerID] || force) {
+    select.innerHTML = `<option>Loading models...</option>`;
+    try {
+      const result = await api(`/api/providers/${encodeURIComponent(providerID)}/models`);
+      state.models[providerID] = result.models || [];
+    } catch (error) {
+      select.innerHTML = `<option value="">${error.message}</option>`;
+      return;
+    }
+  }
+  const models = state.models[providerID];
+  if (!models.length) {
+    select.innerHTML = `<option value="">No models returned</option>`;
+    return;
+  }
+  select.innerHTML = models.map((m) => `<option value="${m.id}">${m.name || m.id}</option>`).join("");
 }
 
 async function renderTools() {

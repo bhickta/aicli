@@ -14,8 +14,8 @@ func TestLoadCreatesDefaultSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if settings.DefaultProvider != "lmstudio" {
-		t.Fatalf("DefaultProvider = %q, want lmstudio", settings.DefaultProvider)
+	if settings.DefaultProvider != "lms" {
+		t.Fatalf("DefaultProvider = %q, want lms", settings.DefaultProvider)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("settings file was not created: %v", err)

@@ -41,15 +41,15 @@ func DefaultDataDir() (string, error) {
 
 func DefaultSettings() Settings {
 	return Settings{
-		DefaultProvider: "lmstudio",
+		DefaultProvider: "lms",
 		DefaultModel:    "",
 		Providers: []ProviderConfig{
 			{
-				ID:      "lmstudio",
+				ID:      "lms",
 				Type:    "openai-compatible",
-				Name:    "LM Studio",
+				Name:    "LMS",
 				BaseURL: "http://localhost:1234/v1",
-				APIKey:  "lm-studio",
+				APIKey:  "lms",
 			},
 			{
 				ID:      "ollama",

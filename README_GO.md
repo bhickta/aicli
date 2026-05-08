@@ -18,7 +18,7 @@ External tools are detected at runtime. On this machine, FFmpeg, FFprobe, and Po
 - Embedded local web UI.
 - JSON settings.
 - SQLite job storage.
-- LM Studio/OpenAI-compatible provider adapter.
+- LMS/OpenAI-compatible provider adapter.
 - Ollama provider adapter.
 - OpenRouter/custom endpoint support through the OpenAI-compatible adapter.
 - Health, settings, provider, chat, and jobs APIs.
