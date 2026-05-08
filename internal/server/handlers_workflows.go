@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/bhickta/aicli/internal/provider"
@@ -185,13 +186,13 @@ func (s *Server) runPDFOCR(w http.ResponseWriter, r *http.Request) {
 	}
 	job := s.newJob("pdf-ocr", req.Path)
 	s.startWorkflow(w, r, job, func(ctx context.Context, progress progressFunc) (any, error) {
-		progress("rendering PDF pages", 2, 5)
-		progress("OCR pages in parallel", 3, 5)
+		progress(fmt.Sprintf("rendering PDF pages with %d worker(s)", req.RenderWorkers), 2, 5)
 		result, err := ocr.New(
 			p,
 			ocr.WithPDFRenderer(s.deps.Settings.Tools, tool.ExecRunner{}),
-		).RunPDF(ctx, req.Request)
-		progress("assembling markdown", 4, 5)
+		).RunPDFWithProgress(ctx, req.Request, func(stage string) {
+			progress(stage, 3, 5)
+		})
 		return result, err
 	})
 }

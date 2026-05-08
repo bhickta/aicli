@@ -56,6 +56,10 @@ func RenderPDFToImages(ctx context.Context, tools config.ToolConfig, runner tool
 		}
 		return images, cleanup, nil
 	}
+	if countErr != nil && workers > 1 {
+		cleanup()
+		return nil, nil, errors.New("pdfinfo is required for parallel PDF rendering: " + countErr.Error())
+	}
 
 	out, err := runner.CombinedOutput(ctx, tools.PDFToPPM, "-jpeg", "-r", itoa(dpi), pdfPath, prefix)
 	if err != nil {
