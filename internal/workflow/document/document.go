@@ -285,16 +285,14 @@ func OCRImages(
 		return nil, errors.New("provider is required")
 	}
 	if workers <= 0 {
-		workers = 4
+		workers = 1
 	}
 	if workers > len(inputs) && len(inputs) > 0 {
 		workers = len(inputs)
 	}
 	pages := make([]OCRPage, len(inputs))
 	jobs := make(chan int)
-	errCh := make(chan error, 1)
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	errCh := make(chan pageError, len(inputs))
 
 	var wg sync.WaitGroup
 	for range workers {
@@ -307,7 +305,8 @@ func OCRImages(
 				if data == nil {
 					fileData, err := os.ReadFile(input.Path)
 					if err != nil {
-						sendErr(errCh, err, cancel)
+						errCh <- pageError{Name: input.Name, Err: err}
+						pages[index] = failedOCRPage(input, err)
 						continue
 					}
 					data = fileData
@@ -325,7 +324,8 @@ func OCRImages(
 					MaxTokens:   2200,
 				})
 				if err != nil {
-					sendErr(errCh, err, cancel)
+					errCh <- pageError{Name: input.Name, Err: err}
+					pages[index] = failedOCRPage(input, err)
 					continue
 				}
 				pages[index] = OCRPage{
@@ -339,19 +339,50 @@ func OCRImages(
 	for index := range inputs {
 		select {
 		case <-ctx.Done():
-			break
+			errCh <- pageError{Name: inputs[index].Name, Err: ctx.Err()}
+			pages[index] = failedOCRPage(inputs[index], ctx.Err())
 		case jobs <- index:
 		}
 	}
 	close(jobs)
 	wg.Wait()
+	close(errCh)
 
-	select {
-	case err := <-errCh:
-		return nil, err
-	default:
+	failures := []pageError{}
+	for err := range errCh {
+		failures = append(failures, err)
+	}
+	if len(failures) == len(inputs) && len(inputs) > 0 {
+		return pages, pageErrors(failures)
 	}
 	return pages, nil
+}
+
+type pageError struct {
+	Name string
+	Err  error
+}
+
+type pageErrors []pageError
+
+func (e pageErrors) Error() string {
+	parts := make([]string, 0, len(e))
+	for _, item := range e {
+		name := item.Name
+		if name == "" {
+			name = "page"
+		}
+		parts = append(parts, name+": "+item.Err.Error())
+	}
+	return strings.Join(parts, "; ")
+}
+
+func failedOCRPage(input ImageInput, err error) OCRPage {
+	return OCRPage{
+		Name: input.Name,
+		Path: input.Path,
+		Text: "> OCR failed for this page: " + err.Error(),
+	}
 }
 
 func AssembleMarkdown(pages []OCRPage) string {

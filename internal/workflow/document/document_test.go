@@ -2,6 +2,7 @@ package document
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,6 +68,28 @@ func (fakeVision) Vision(context.Context, provider.VisionRequest) (provider.Chat
 	return provider.ChatResponse{Content: "page text"}, nil
 }
 
+type flakyVision struct{}
+
+func (flakyVision) ID() string { return "flaky" }
+func (flakyVision) Health(context.Context) error {
+	return nil
+}
+func (flakyVision) ListModels(context.Context) ([]provider.Model, error) {
+	return []provider.Model{}, nil
+}
+func (flakyVision) Chat(context.Context, provider.ChatRequest) (provider.ChatResponse, error) {
+	return provider.ChatResponse{}, nil
+}
+func (flakyVision) ChatStream(context.Context, provider.ChatRequest, func(string) error) error {
+	return nil
+}
+func (flakyVision) Vision(_ context.Context, req provider.VisionRequest) (provider.ChatResponse, error) {
+	if string(req.Image) == "fail" {
+		return provider.ChatResponse{}, errors.New("server overloaded")
+	}
+	return provider.ChatResponse{Content: "ok"}, nil
+}
+
 func TestRenderPDFToImages(t *testing.T) {
 	t.Parallel()
 
@@ -124,5 +147,27 @@ func TestOCRImagesKeepsInputOrder(t *testing.T) {
 	}
 	if pages[0].Name != "b" || pages[1].Name != "a" {
 		t.Fatalf("pages = %#v, want input order preserved", pages)
+	}
+}
+
+func TestOCRImagesKeepsPartialPageFailures(t *testing.T) {
+	t.Parallel()
+
+	pages, err := OCRImages(
+		context.Background(),
+		flakyVision{},
+		"model",
+		[]ImageInput{{Name: "page-1", Data: []byte("ok")}, {Name: "page-2", Data: []byte("fail")}},
+		"prompt",
+		0,
+	)
+	if err != nil {
+		t.Fatalf("OCRImages() error = %v", err)
+	}
+	if pages[0].Text != "ok" {
+		t.Fatalf("page 1 text = %q, want ok", pages[0].Text)
+	}
+	if !strings.Contains(pages[1].Text, "server overloaded") {
+		t.Fatalf("page 2 text = %q, want failure marker", pages[1].Text)
 	}
 }
