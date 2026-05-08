@@ -184,6 +184,13 @@ function renderWorkflows() {
       <textarea id="text" placeholder="transcript, notes, or JSON array input for advanced workflows"></textarea>
       <button id="run">Run</button>
       <div id="workflow-status" class="status-line">Ready</div>
+      <div id="workflow-progress" class="progress hidden">
+        <div></div>
+      </div>
+      <div id="review-pane" class="review-pane hidden">
+        <iframe id="source-preview" title="Source PDF preview"></iframe>
+        <textarea id="markdown-preview" readonly placeholder="Markdown result appears here"></textarea>
+      </div>
       <pre id="workflow-result"></pre>
       <div id="file-browser" class="browser hidden"></div>
     </div>
@@ -200,6 +207,7 @@ function renderWorkflows() {
     const output = document.querySelector("#workflow-result");
     const runButton = document.querySelector("#run");
     const status = document.querySelector("#workflow-status");
+    const progressBar = document.querySelector("#workflow-progress");
     const payload = {
       provider_id: document.querySelector("#provider").value,
       model: document.querySelector("#model").value,
@@ -218,14 +226,21 @@ function renderWorkflows() {
     };
     runButton.disabled = true;
     status.textContent = "Running workflow...";
+    setProgress(progressBar, 0);
+    setMarkdownPreview("");
     output.textContent = "";
     try {
       const result = await api(endpoint, {
         method: "POST",
         body: JSON.stringify(payload),
       });
-      status.textContent = "Completed";
-      output.textContent = JSON.stringify(result, null, 2);
+      if (result.job?.id && result.job.status === "running") {
+        await pollWorkflowJob(result.job.id, status, progressBar, output);
+      } else {
+        renderWorkflowJob(result.job, status, progressBar);
+        setMarkdownPreview(result.result?.markdown || "");
+        output.textContent = JSON.stringify(result.result || result, null, 2);
+      }
     } catch (error) {
       status.textContent = "Failed";
       output.textContent = error.message;
@@ -233,6 +248,91 @@ function renderWorkflows() {
       runButton.disabled = false;
     }
   });
+}
+
+async function pollWorkflowJob(jobID, status, progressBar, output) {
+  while (true) {
+    await sleep(900);
+    const job = await api(`/api/jobs/${encodeURIComponent(jobID)}`);
+    renderWorkflowJob(job, status, progressBar);
+    if (job.status === "completed") {
+      const result = parseJobOutput(job.output);
+      setMarkdownPreview(result?.markdown || "");
+      output.textContent = result ? JSON.stringify(result, null, 2) : "";
+      return;
+    }
+    if (job.status === "failed") {
+      output.textContent = job.error || "Workflow failed";
+      return;
+    }
+  }
+}
+
+function parseJobOutput(output) {
+  if (!output) return null;
+  try {
+    return JSON.parse(output);
+  } catch {
+    return { output };
+  }
+}
+
+function setSourcePreview(url) {
+  const pane = document.querySelector("#review-pane");
+  const frame = document.querySelector("#source-preview");
+  if (!pane || !frame) return;
+  if (!url) {
+    frame.removeAttribute("src");
+    return;
+  }
+  frame.src = url;
+  pane.classList.remove("hidden");
+}
+
+function setMarkdownPreview(markdown) {
+  const pane = document.querySelector("#review-pane");
+  const preview = document.querySelector("#markdown-preview");
+  if (!pane || !preview) return;
+  preview.value = markdown || "";
+  if (markdown || document.querySelector("#source-preview")?.getAttribute("src")) {
+    pane.classList.remove("hidden");
+  }
+}
+
+function renderWorkflowJob(job, status, progressBar) {
+  if (!job) return;
+  const percent = Math.round((job.progress || 0) * 100);
+  const elapsed = elapsedSeconds(job.created_at);
+  const eta = job.eta_seconds ? ` | ETA ${formatDuration(job.eta_seconds)}` : "";
+  const step = job.total_steps ? ` | ${job.current_step}/${job.total_steps}` : "";
+  status.textContent = `${job.status}: ${job.stage || "working"}${step} | ${percent}% | elapsed ${formatDuration(elapsed)}${eta}`;
+  setProgress(progressBar, percent);
+}
+
+function setProgress(progressBar, percent) {
+  if (!progressBar) return;
+  progressBar.classList.remove("hidden");
+  progressBar.firstElementChild.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+}
+
+function elapsedSeconds(createdAt) {
+  const started = Date.parse(createdAt);
+  if (Number.isNaN(started)) return 0;
+  return Math.max(0, Math.round((Date.now() - started) / 1000));
+}
+
+function formatDuration(seconds) {
+  if (!seconds) return "0s";
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (!mins) return `${secs}s`;
+  const hours = Math.floor(mins / 60);
+  if (!hours) return `${mins}m ${secs}s`;
+  return `${hours}h ${mins % 60}m`;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function setupDropZone() {
@@ -280,6 +380,7 @@ async function uploadWorkflowFile(file) {
     const uploaded = (result.files || [])[0];
     if (!uploaded) throw new Error("upload finished without a stored file");
     selectBrowserPath("path", uploaded.path, false);
+    setSourcePreview(uploaded.url);
     autoSelectWorkflow(uploaded.name || file.name);
     status.textContent = `Ready: ${uploaded.name || file.name}`;
   } catch (error) {

@@ -85,6 +85,10 @@ h1 {
   display: none;
 }
 
+.review-pane.hidden {
+  display: none;
+}
+
 .browser {
   border: 1px solid #343b46;
   border-radius: 8px;
@@ -147,6 +151,45 @@ h1 {
   padding: 8px 10px;
   background: #10141b;
   color: #cbd5e1;
+}
+
+.progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #0d1015;
+}
+
+.progress div {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: #6ea8fe;
+  transition: width 180ms ease;
+}
+
+.review-pane {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
+  gap: 12px;
+  min-height: 520px;
+}
+
+.review-pane iframe,
+.review-pane textarea {
+  width: 100%;
+  min-height: 520px;
+  box-sizing: border-box;
+}
+
+.review-pane iframe {
+  border: 1px solid #343b46;
+  border-radius: 6px;
+  background: #0d1015;
+}
+
+.review-pane textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 code {
@@ -219,5 +262,15 @@ pre {
   .browser-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .review-pane {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .review-pane iframe,
+  .review-pane textarea {
+    min-height: 420px;
   }
 }

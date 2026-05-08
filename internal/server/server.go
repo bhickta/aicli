@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -55,6 +57,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/providers/", s.providerModels)
 	s.mux.HandleFunc("GET /api/fs/list", s.listFiles)
 	s.mux.HandleFunc("POST /api/fs/upload", s.uploadFiles)
+	if s.deps.DataDir != "" {
+		uploads := http.Dir(filepath.Join(s.deps.DataDir, "uploads"))
+		s.mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", http.FileServer(uploads)))
+	}
 	s.mux.HandleFunc("GET /api/tools", s.tools)
 	s.mux.HandleFunc("POST /api/chat", s.chat)
 	s.mux.HandleFunc("POST /api/chat/stream", s.chatStream)
@@ -134,6 +140,7 @@ type fileEntry struct {
 type uploadEntry struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
+	URL  string `json:"url"`
 	Size int64  `json:"size"`
 }
 
@@ -244,7 +251,12 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, closeErr)
 			return
 		}
-		uploaded = append(uploaded, uploadEntry{Name: name, Path: target, Size: size})
+		uploaded = append(uploaded, uploadEntry{
+			Name: name,
+			Path: target,
+			URL:  "/uploads/" + url.PathEscape(filepath.Base(target)),
+			Size: size,
+		})
 	}
 	if len(uploaded) == 0 {
 		writeError(w, http.StatusBadRequest, errors.New("no files uploaded"))
@@ -367,32 +379,13 @@ func (s *Server) runRecall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job := storage.Job{
-		ID:     fmt.Sprintf("recall-%d", time.Now().UTC().UnixNano()),
-		Type:   "recall",
-		Status: "running",
-		Input:  req.Notes,
-	}
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	result, err := recall.New(p).Generate(r.Context(), recall.Request{Model: req.Model, Notes: req.Notes})
-	if err != nil {
-		job.Status = "failed"
-		job.Error = err.Error()
-		_ = s.deps.Store.UpdateJob(r.Context(), job)
-		writeError(w, http.StatusBadGateway, err)
-		return
-	}
-	job.Status = "completed"
-	job.Output = result.Triggers
-	if err := s.deps.Store.UpdateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"job": job, "result": result})
+	job := s.newJob("recall", req.Notes)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("generating recall triggers", 2, 4)
+		result, err := recall.New(p).Generate(ctx, recall.Request{Model: req.Model, Notes: req.Notes})
+		progress("saving triggers", 3, 4)
+		return result, err
+	})
 }
 
 func (s *Server) runImage(w http.ResponseWriter, r *http.Request) {
@@ -410,12 +403,12 @@ func (s *Server) runImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job := s.newJob("image", req.Path)
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	result, err := image.New(p).Run(r.Context(), req.Request)
-	s.finishJob(w, r, job, result, err)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("analyzing image with vision model", 2, 4)
+		result, err := image.New(p).Run(ctx, req.Request)
+		progress("saving result", 3, 4)
+		return result, err
+	})
 }
 
 func (s *Server) runImageRename(w http.ResponseWriter, r *http.Request) {
@@ -433,12 +426,12 @@ func (s *Server) runImageRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job := s.newJob("image-rename", req.Path)
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	result, err := image.New(p).Rename(r.Context(), req.RenameRequest)
-	s.finishJob(w, r, job, result, err)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("planning safe rename", 2, 4)
+		result, err := image.New(p).Rename(ctx, req.RenameRequest)
+		progress("saving result", 3, 4)
+		return result, err
+	})
 }
 
 func (s *Server) runImagePruneRefs(w http.ResponseWriter, r *http.Request) {
@@ -448,12 +441,12 @@ func (s *Server) runImagePruneRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job := s.newJob("image-prune-refs", req.MarkdownPath)
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	result, err := image.PruneRefs(req)
-	s.finishJob(w, r, job, result, err)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("checking referenced assets", 2, 4)
+		result, err := image.PruneRefs(req)
+		progress("saving result", 3, 4)
+		return result, err
+	})
 }
 
 func (s *Server) runNews(w http.ResponseWriter, r *http.Request) {
@@ -472,12 +465,12 @@ func (s *Server) runNews(w http.ResponseWriter, r *http.Request) {
 		p = selected
 	}
 	job := s.newJob("news", req.Path)
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	result, err := news.New(p).Run(r.Context(), req)
-	s.finishJob(w, r, job, result, err)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("loading and deduplicating news", 2, 4)
+		result, err := news.New(p).Run(ctx, req)
+		progress("saving result", 3, 4)
+		return result, err
+	})
 }
 
 func (s *Server) runOCR(w http.ResponseWriter, r *http.Request) {
@@ -495,12 +488,13 @@ func (s *Server) runOCR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job := s.newJob("ocr", req.Path)
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	result, err := ocr.New(p).Run(r.Context(), req.Request)
-	s.finishJob(w, r, job, result, err)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("extracting images from ZIP", 2, 5)
+		progress("OCR pages in parallel", 3, 5)
+		result, err := ocr.New(p).Run(ctx, req.Request)
+		progress("assembling markdown", 4, 5)
+		return result, err
+	})
 }
 
 func (s *Server) runPDFOCR(w http.ResponseWriter, r *http.Request) {
@@ -518,15 +512,16 @@ func (s *Server) runPDFOCR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job := s.newJob("pdf-ocr", req.Path)
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	result, err := ocr.New(
-		p,
-		ocr.WithPDFRenderer(s.deps.Settings.Tools, tool.ExecRunner{}),
-	).RunPDF(r.Context(), req.Request)
-	s.finishJob(w, r, job, result, err)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("rendering PDF pages", 2, 5)
+		progress("OCR pages in parallel", 3, 5)
+		result, err := ocr.New(
+			p,
+			ocr.WithPDFRenderer(s.deps.Settings.Tools, tool.ExecRunner{}),
+		).RunPDF(ctx, req.Request)
+		progress("assembling markdown", 4, 5)
+		return result, err
+	})
 }
 
 func (s *Server) runAnalyze(w http.ResponseWriter, r *http.Request) {
@@ -544,12 +539,13 @@ func (s *Server) runAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job := s.newJob("analyze", req.Path)
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	result, err := analyze.New(s.deps.Settings.Tools, tool.ExecRunner{}, p).Run(r.Context(), req.Request)
-	s.finishJob(w, r, job, result, err)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("rendering and reading PDF", 2, 5)
+		progress("analyzing OCR text", 3, 5)
+		result, err := analyze.New(s.deps.Settings.Tools, tool.ExecRunner{}, p).Run(ctx, req.Request)
+		progress("saving analysis", 4, 5)
+		return result, err
+	})
 }
 
 func (s *Server) runVideoInfo(w http.ResponseWriter, r *http.Request) {
@@ -559,12 +555,12 @@ func (s *Server) runVideoInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job := s.newJob("video-info", req.Path)
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	result, err := video.New(s.deps.Settings.Tools, tool.ExecRunner{}).Info(r.Context(), req)
-	s.finishJob(w, r, job, result, err)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("probing media metadata", 2, 4)
+		result, err := video.New(s.deps.Settings.Tools, tool.ExecRunner{}).Info(ctx, req)
+		progress("saving result", 3, 4)
+		return result, err
+	})
 }
 
 func (s *Server) runVideoCompress(w http.ResponseWriter, r *http.Request) {
@@ -574,12 +570,12 @@ func (s *Server) runVideoCompress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job := s.newJob("video-compress", req.Path)
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	result, err := video.New(s.deps.Settings.Tools, tool.ExecRunner{}).Compress(r.Context(), req)
-	s.finishJob(w, r, job, result, err)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("compressing video", 2, 4)
+		result, err := video.New(s.deps.Settings.Tools, tool.ExecRunner{}).Compress(ctx, req)
+		progress("saving result", 3, 4)
+		return result, err
+	})
 }
 
 func (s *Server) runVideoMetadataBackup(w http.ResponseWriter, r *http.Request) {
@@ -589,12 +585,12 @@ func (s *Server) runVideoMetadataBackup(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	job := s.newJob("video-metadata-backup", req.Path)
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	result, err := video.New(s.deps.Settings.Tools, tool.ExecRunner{}).BackupMetadata(r.Context(), req)
-	s.finishJob(w, r, job, result, err)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("backing up metadata", 2, 4)
+		result, err := video.New(s.deps.Settings.Tools, tool.ExecRunner{}).BackupMetadata(ctx, req)
+		progress("saving result", 3, 4)
+		return result, err
+	})
 }
 
 func (s *Server) runVideoMetadataRestore(w http.ResponseWriter, r *http.Request) {
@@ -604,12 +600,12 @@ func (s *Server) runVideoMetadataRestore(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	job := s.newJob("video-metadata-restore", req.Path)
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	result, err := video.New(s.deps.Settings.Tools, tool.ExecRunner{}).RestoreMetadata(r.Context(), req)
-	s.finishJob(w, r, job, result, err)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("restoring metadata", 2, 4)
+		result, err := video.New(s.deps.Settings.Tools, tool.ExecRunner{}).RestoreMetadata(ctx, req)
+		progress("saving result", 3, 4)
+		return result, err
+	})
 }
 
 func (s *Server) runVideoGenerate(w http.ResponseWriter, r *http.Request) {
@@ -627,12 +623,12 @@ func (s *Server) runVideoGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job := s.newJob("video-"+req.Mode, req.Title)
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	result, err := video.New(s.deps.Settings.Tools, tool.ExecRunner{}, p).Generate(r.Context(), req.LLMRequest)
-	s.finishJob(w, r, job, result, err)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("generating video workflow text", 2, 4)
+		result, err := video.New(s.deps.Settings.Tools, tool.ExecRunner{}, p).Generate(ctx, req.LLMRequest)
+		progress("saving result", 3, 4)
+		return result, err
+	})
 }
 
 func (s *Server) runAudioTranscribe(w http.ResponseWriter, r *http.Request) {
@@ -642,12 +638,12 @@ func (s *Server) runAudioTranscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job := s.newJob("audio-transcribe", req.Path)
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	result, err := audio.New(s.deps.Settings.Tools, tool.ExecRunner{}).Transcribe(r.Context(), req)
-	s.finishJob(w, r, job, result, err)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("transcribing audio", 2, 4)
+		result, err := audio.New(s.deps.Settings.Tools, tool.ExecRunner{}).Transcribe(ctx, req)
+		progress("saving transcript", 3, 4)
+		return result, err
+	})
 }
 
 func (s *Server) runAudioAnalyze(w http.ResponseWriter, r *http.Request) {
@@ -665,12 +661,12 @@ func (s *Server) runAudioAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job := s.newJob("audio-analyze", "")
-	if err := s.deps.Store.CreateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	result, err := audio.New(s.deps.Settings.Tools, tool.ExecRunner{}, p).Analyze(r.Context(), req.AnalyzeRequest)
-	s.finishJob(w, r, job, result, err)
+	s.startWorkflow(w, r, job, func(ctx context.Context, progress func(string, int, int)) (any, error) {
+		progress("analyzing audio text", 2, 4)
+		result, err := audio.New(s.deps.Settings.Tools, tool.ExecRunner{}, p).Analyze(ctx, req.AnalyzeRequest)
+		progress("saving analysis", 3, 4)
+		return result, err
+	})
 }
 
 func (s *Server) providerFor(id string) (provider.Provider, bool) {
@@ -681,37 +677,19 @@ func (s *Server) providerFor(id string) (provider.Provider, bool) {
 }
 
 func (s *Server) newJob(jobType string, input string) storage.Job {
+	now := time.Now().UTC()
 	return storage.Job{
-		ID:     fmt.Sprintf("%s-%d", jobType, time.Now().UTC().UnixNano()),
-		Type:   jobType,
-		Status: "running",
-		Input:  input,
+		ID:          fmt.Sprintf("%s-%d", jobType, time.Now().UTC().UnixNano()),
+		Type:        jobType,
+		Status:      "running",
+		Stage:       "queued",
+		Progress:    0,
+		CurrentStep: 0,
+		TotalSteps:  4,
+		Input:       input,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
-}
-
-func (s *Server) finishJob(w http.ResponseWriter, r *http.Request, job storage.Job, result any, err error) {
-	if err != nil {
-		job.Status = "failed"
-		job.Error = err.Error()
-		_ = s.deps.Store.UpdateJob(r.Context(), job)
-		writeError(w, http.StatusBadGateway, err)
-		return
-	}
-	output, marshalErr := json.Marshal(result)
-	if marshalErr != nil {
-		job.Status = "failed"
-		job.Error = marshalErr.Error()
-		_ = s.deps.Store.UpdateJob(r.Context(), job)
-		writeError(w, http.StatusInternalServerError, marshalErr)
-		return
-	}
-	job.Status = "completed"
-	job.Output = string(output)
-	if err := s.deps.Store.UpdateJob(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"job": job, "result": result})
 }
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
@@ -759,8 +737,29 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) withLogging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r)
+		started := time.Now()
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+		if s.deps.Logger != nil {
+			s.deps.Logger.Info(
+				"http request",
+				"method", r.Method,
+				"path", r.URL.Path,
+				"status", recorder.status,
+				"duration_ms", time.Since(started).Milliseconds(),
+			)
+		}
 	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
 }
 
 func writeJSON(w http.ResponseWriter, code int, value any) {
