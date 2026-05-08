@@ -1,0 +1,134 @@
+package analyze
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/bhickta/aicli/internal/config"
+	"github.com/bhickta/aicli/internal/provider"
+	"github.com/bhickta/aicli/internal/tool"
+)
+
+type Service struct {
+	tools    config.ToolConfig
+	runner   tool.Runner
+	provider provider.Provider
+}
+
+type Request struct {
+	Model string `json:"model"`
+	Path  string `json:"path"`
+	DPI   int    `json:"dpi"`
+}
+
+type Page struct {
+	Path string `json:"path"`
+	Text string `json:"text"`
+}
+
+type Response struct {
+	Pages  []Page `json:"pages"`
+	Report string `json:"report"`
+}
+
+func New(tools config.ToolConfig, runner tool.Runner, provider provider.Provider) *Service {
+	return &Service{tools: tools, runner: runner, provider: provider}
+}
+
+func (s *Service) Run(ctx context.Context, req Request) (Response, error) {
+	if strings.TrimSpace(req.Path) == "" {
+		return Response{}, errors.New("path is required")
+	}
+	dpi := req.DPI
+	if dpi == 0 {
+		dpi = 200
+	}
+	workDir, err := os.MkdirTemp("", "aicli-analyze-*")
+	if err != nil {
+		return Response{}, err
+	}
+	defer os.RemoveAll(workDir)
+
+	prefix := filepath.Join(workDir, "page")
+	out, err := s.runner.CombinedOutput(ctx, s.tools.PDFToPPM, "-jpeg", "-r", itoa(dpi), req.Path, prefix)
+	if err != nil {
+		return Response{}, errors.New(strings.TrimSpace(string(out)) + ": " + err.Error())
+	}
+	images, err := filepath.Glob(prefix + "-*.jpg")
+	if err != nil {
+		return Response{}, err
+	}
+	sort.Strings(images)
+	if len(images) == 0 {
+		return Response{}, errors.New("no page images were produced")
+	}
+
+	pages := make([]Page, 0, len(images))
+	for _, imagePath := range images {
+		data, err := os.ReadFile(imagePath)
+		if err != nil {
+			return Response{}, err
+		}
+		res, err := s.provider.Vision(ctx, provider.VisionRequest{
+			Model:       req.Model,
+			Prompt:      "Extract UPSC answer-script page text as Markdown. Preserve answer numbers and visible structure. Output Markdown only.",
+			Image:       data,
+			MIMEType:    "image/jpeg",
+			Temperature: 0,
+			MaxTokens:   1800,
+		})
+		if err != nil {
+			return Response{}, err
+		}
+		pages = append(pages, Page{Path: imagePath, Text: strings.TrimSpace(res.Content)})
+	}
+
+	report, err := s.report(ctx, req.Model, pages)
+	if err != nil {
+		return Response{}, err
+	}
+	return Response{Pages: pages, Report: report}, nil
+}
+
+func (s *Service) report(ctx context.Context, model string, pages []Page) (string, error) {
+	var combined strings.Builder
+	for i, page := range pages {
+		combined.WriteString("## Page ")
+		combined.WriteString(itoa(i + 1))
+		combined.WriteString("\n")
+		combined.WriteString(page.Text)
+		combined.WriteString("\n\n")
+	}
+	res, err := s.provider.Chat(ctx, provider.ChatRequest{
+		Model: model,
+		Messages: []provider.Message{
+			{
+				Role: "user",
+				Content: "Analyze these UPSC answer pages. Segment answers, identify dimensions, aggregate strengths/weaknesses, and produce a concise Markdown report.\n\n" +
+					combined.String(),
+			},
+		},
+		Temperature: 0,
+		MaxTokens:   4000,
+	})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(res.Content), nil
+}
+
+func itoa(value int) string {
+	if value == 0 {
+		return "0"
+	}
+	digits := []byte{}
+	for value > 0 {
+		digits = append([]byte{byte('0' + value%10)}, digits...)
+		value /= 10
+	}
+	return string(digits)
+}

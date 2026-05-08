@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AICLI</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main id="app">
+      <aside>
+        <strong>AICLI</strong>
+        <button data-view="chat">Chat</button>
+        <button data-view="recall">Recall</button>
+        <button data-view="workflows">Workflows</button>
+        <button data-view="providers">Providers</button>
+        <button data-view="tools">Tools</button>
+        <button data-view="jobs">Jobs</button>
+        <button data-view="settings">Settings</button>
+      </aside>
+      <section>
+        <header>
+          <h1>Local AI Control Center</h1>
+          <span id="health">checking</span>
+        </header>
+        <div id="view"></div>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
