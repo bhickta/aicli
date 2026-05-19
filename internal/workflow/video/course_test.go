@@ -119,6 +119,47 @@ func TestCourseTranscribesMissingSRTWithWhisperLargeV3(t *testing.T) {
 	}
 }
 
+func TestCourseUsesCachedSRTWithoutCallingWhisper(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	videoPath := filepath.Join(dir, "01 intro.mp4")
+	if err := os.WriteFile(videoPath, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cacheDir := filepath.Join(dir, ".aicli_cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "01 intro.srt"), []byte("1\n00:00:00,000 --> 00:00:01,000\ncached transcript\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &courseRunner{}
+	res, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe", WhisperCLI: "whisper-cli"}, runner).Course(
+		context.Background(),
+		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2"},
+	)
+	if err != nil {
+		t.Fatalf("Course() error = %v", err)
+	}
+	if len(res.Transcribed) != 0 {
+		t.Fatalf("transcribed len = %d, want 0 when cached SRT exists", len(res.Transcribed))
+	}
+	for _, call := range runner.calls {
+		if call.command == "whisper-cli" {
+			t.Fatalf("whisper-cli was called despite cached SRT: %#v", runner.calls)
+		}
+	}
+	text, err := os.ReadFile(filepath.Join(cacheDir, "01 intro.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(text), "cached transcript") {
+		t.Fatalf("cache text = %q, want cached transcript", string(text))
+	}
+}
+
 func TestCourseWithProgressReportsPerVideoCompletion(t *testing.T) {
 	t.Parallel()
 
