@@ -6,7 +6,7 @@ export const AUDIO_WORKFLOWS = [
     endpoint: "/api/workflows/audio/transcribe",
     fields: [
       { type: "path", id: "path", label: "Input audio file" },
-      { type: "text", id: "model", label: "Whisper model path (optional)", value: "", placeholder: "Leave blank to use whisper-cli default" },
+      { type: "text", id: "model", label: "Whisper model", value: "large-v3", placeholder: "large-v3" },
     ],
     buildPayload: (values) => ({
       model: values.model,

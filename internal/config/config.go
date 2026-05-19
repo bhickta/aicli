@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
@@ -68,7 +69,7 @@ func DefaultSettings() Settings {
 			FFmpeg:     "ffmpeg",
 			FFprobe:    "ffprobe",
 			PDFToPPM:   "pdftoppm",
-			WhisperCLI: "whisper-cli",
+			WhisperCLI: "whisper",
 		},
 	}
 }
@@ -127,6 +128,13 @@ func withDefaults(settings Settings) Settings {
 	}
 	if settings.Tools.WhisperCLI == "" {
 		settings.Tools.WhisperCLI = defaults.Tools.WhisperCLI
+	}
+	if settings.Tools.WhisperCLI == "whisper-cli" {
+		if _, err := exec.LookPath("whisper-cli"); err != nil {
+			if _, fallbackErr := exec.LookPath("whisper"); fallbackErr == nil {
+				settings.Tools.WhisperCLI = "whisper"
+			}
+		}
 	}
 	return settings
 }

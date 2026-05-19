@@ -96,7 +96,7 @@ func (s *Server) tools(w http.ResponseWriter, r *http.Request) {
 		checker.Check(r.Context(), "ffmpeg", s.deps.Settings.Tools.FFmpeg, "-version"),
 		checker.Check(r.Context(), "ffprobe", s.deps.Settings.Tools.FFprobe, "-version"),
 		checker.Check(r.Context(), "pdftoppm", s.deps.Settings.Tools.PDFToPPM, "-v"),
-		checker.Check(r.Context(), "whisper-cli", s.deps.Settings.Tools.WhisperCLI, "--help"),
+		checker.Check(r.Context(), "whisper", s.deps.Settings.Tools.WhisperCLI, "--help"),
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tools": statuses})
 }

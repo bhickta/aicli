@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/bhickta/aicli/internal/workflow/whisper"
 )
 
 func (s *Service) prepareTranscriptFiles(ctx context.Context, videoPath, cacheDir, whisperModel string) (string, string, bool, error) {
@@ -55,15 +57,21 @@ func (s *Service) prepareTranscriptFiles(ctx context.Context, videoPath, cacheDi
 
 func (s *Service) transcribeVideo(ctx context.Context, videoPath, outputBase, whisperModel string) error {
 	if strings.TrimSpace(s.tools.WhisperCLI) == "" {
-		return errors.New("whisper-cli is not configured")
+		return errors.New("whisper is not configured")
 	}
 	if whisperModel == "" {
 		whisperModel = "large-v3"
 	}
-	args := []string{"-m", whisperModel, "-f", videoPath, "-osrt", "-otxt", "-of", outputBase}
-	out, err := s.runner.CombinedOutput(ctx, s.tools.WhisperCLI, args...)
+	out, err := whisper.Run(ctx, s.runner, whisper.Request{
+		Command:    s.tools.WhisperCLI,
+		AudioPath:  videoPath,
+		OutputBase: outputBase,
+		Model:      whisperModel,
+		SRT:        true,
+		Text:       true,
+	})
 	if err != nil {
-		return errors.New(strings.TrimSpace(string(out)) + ": " + err.Error())
+		return whisper.OutputError(out, err)
 	}
 	return nil
 }

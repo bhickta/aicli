@@ -11,6 +11,7 @@ import (
 	"github.com/bhickta/aicli/internal/config"
 	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/tool"
+	"github.com/bhickta/aicli/internal/workflow/whisper"
 )
 
 type Service struct {
@@ -53,13 +54,15 @@ func (s *Service) Transcribe(ctx context.Context, req TranscribeRequest) (Transc
 		return TranscribeResponse{}, errors.New("path is required")
 	}
 	outBase := strings.TrimSuffix(req.Path, filepath.Ext(req.Path))
-	args := []string{"-f", req.Path, "-otxt", "-of", outBase}
-	if req.Model != "" {
-		args = append([]string{"-m", req.Model}, args...)
-	}
-	out, err := s.runner.CombinedOutput(ctx, s.tools.WhisperCLI, args...)
+	out, err := whisper.Run(ctx, s.runner, whisper.Request{
+		Command:    s.tools.WhisperCLI,
+		AudioPath:  req.Path,
+		OutputBase: outBase,
+		Model:      req.Model,
+		Text:       true,
+	})
 	if err != nil {
-		return TranscribeResponse{}, errors.New(strings.TrimSpace(string(out)) + ": " + err.Error())
+		return TranscribeResponse{}, whisper.OutputError(out, err)
 	}
 	textPath := outBase + ".txt"
 	text, readErr := os.ReadFile(textPath)
