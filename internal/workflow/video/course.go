@@ -38,7 +38,10 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 	if err != nil {
 		return CourseResponse{}, err
 	}
-	files, skipped := s.readableCourseFiles(ctx, files)
+	files, skipped, err := s.readableCourseFiles(ctx, files, req.SkipUnreadable)
+	if err != nil {
+		return CourseResponse{}, err
+	}
 	if len(files) == 0 {
 		return CourseResponse{}, errors.New("no readable video files found")
 	}
@@ -64,17 +67,21 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 	return s.exportCourseParts(ctx, targetDir, courseDir, items, transcribed, skipped, req.MaxMergeHours)
 }
 
-func (s *Service) readableCourseFiles(ctx context.Context, files []string) ([]string, []string) {
+func (s *Service) readableCourseFiles(ctx context.Context, files []string, skipUnreadable bool) ([]string, []string, error) {
 	readable := make([]string, 0, len(files))
 	skipped := []string{}
 	for _, file := range files {
 		if _, err := s.duration(ctx, file); err != nil {
-			skipped = append(skipped, fmt.Sprintf("%s (%s)", file, err))
+			message := unreadableVideoMessage(file, err)
+			if !skipUnreadable {
+				return nil, nil, errors.New(message)
+			}
+			skipped = append(skipped, message)
 			continue
 		}
 		readable = append(readable, file)
 	}
-	return readable, skipped
+	return readable, skipped, nil
 }
 
 func courseStartStage(videoCount, skippedCount int) string {
@@ -82,6 +89,10 @@ func courseStartStage(videoCount, skippedCount int) string {
 		return fmt.Sprintf("found %d video(s); preparing transcripts and compressed files", videoCount)
 	}
 	return fmt.Sprintf("found %d readable video(s), skipped %d unreadable file(s); preparing transcripts and compressed files", videoCount, skippedCount)
+}
+
+func unreadableVideoMessage(file string, err error) string {
+	return fmt.Sprintf("Unreadable video %q: %s", filepath.Base(file), err)
 }
 
 func courseTargetDir(source string) (string, error) {
@@ -118,7 +129,7 @@ func (s *Service) prepareCourseItems(ctx context.Context, files []string, cacheD
 		targetNames[i] = courseTargetName(file, usedNames)
 	}
 
-	workers := normalizedCourseWorkers(req.Workers, len(files))
+	workers := normalizedCourseWorkers(courseCompressionWorkers(req), len(files))
 	if workers == 1 {
 		return s.prepareCourseItemsSequential(ctx, files, targetNames, cacheDir, slidesDir, req, skipped, progress, totalSteps)
 	}
@@ -240,6 +251,20 @@ func normalizedCourseWorkers(workers int, jobs int) int {
 
 func EffectiveCourseWorkers(workers int, jobs int) int {
 	return normalizedCourseWorkers(workers, jobs)
+}
+
+func courseTranscriptWorkers(req CourseRequest) int {
+	if req.TranscriptWorkers > 0 {
+		return req.TranscriptWorkers
+	}
+	return req.Workers
+}
+
+func courseCompressionWorkers(req CourseRequest) int {
+	if req.CompressionWorkers > 0 {
+		return req.CompressionWorkers
+	}
+	return req.Workers
 }
 
 func mergeBatchTranscribedItems(items []CourseItem, transcribed []CourseItem, batchTranscribed map[string]bool) []CourseItem {

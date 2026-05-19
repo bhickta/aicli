@@ -164,7 +164,33 @@ func TestCourseUsesCachedSRTWithoutCallingWhisper(t *testing.T) {
 	}
 }
 
-func TestCourseSkipsUnreadableVideos(t *testing.T) {
+func TestCourseFailsUnreadableVideosByDefault(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	goodPath := filepath.Join(dir, "01 intro.mp4")
+	badPath := filepath.Join(dir, "02 corrupt.mp4")
+	writeCourseVideoWithSRT(t, goodPath)
+	if err := os.WriteFile(badPath, []byte("not a real mp4"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &courseRunner{ffprobeFailures: map[string]bool{badPath: true}}
+	_, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, runner).Course(
+		context.Background(),
+		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2"},
+	)
+	if err == nil {
+		t.Fatal("Course() error = nil, want unreadable video error")
+	}
+	for _, want := range []string{"Unreadable video", "02 corrupt.mp4", "moov atom not found"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Course() error = %q, want contains %q", err.Error(), want)
+		}
+	}
+}
+
+func TestCourseSkipsUnreadableVideosWhenRequested(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -178,7 +204,7 @@ func TestCourseSkipsUnreadableVideos(t *testing.T) {
 	runner := &courseRunner{ffprobeFailures: map[string]bool{badPath: true}}
 	res, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, runner).Course(
 		context.Background(),
-		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2"},
+		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2", SkipUnreadable: true},
 	)
 	if err != nil {
 		t.Fatalf("Course() error = %v", err)
@@ -188,6 +214,26 @@ func TestCourseSkipsUnreadableVideos(t *testing.T) {
 	}
 	if len(res.Skipped) != 1 || !strings.Contains(res.Skipped[0], "02 corrupt.mp4") {
 		t.Fatalf("skipped = %#v, want corrupt video listed", res.Skipped)
+	}
+}
+
+func TestCourseWorkerSettingsUseSplitValuesWithWorkersFallback(t *testing.T) {
+	t.Parallel()
+
+	split := CourseRequest{Workers: 6, TranscriptWorkers: 2, CompressionWorkers: 4}
+	if got := courseTranscriptWorkers(split); got != 2 {
+		t.Fatalf("courseTranscriptWorkers() = %d, want 2", got)
+	}
+	if got := courseCompressionWorkers(split); got != 4 {
+		t.Fatalf("courseCompressionWorkers() = %d, want 4", got)
+	}
+
+	legacy := CourseRequest{Workers: 3}
+	if got := courseTranscriptWorkers(legacy); got != 3 {
+		t.Fatalf("legacy courseTranscriptWorkers() = %d, want 3", got)
+	}
+	if got := courseCompressionWorkers(legacy); got != 3 {
+		t.Fatalf("legacy courseCompressionWorkers() = %d, want 3", got)
 	}
 }
 

@@ -98,7 +98,7 @@ func (s *Service) prepareMissingTranscriptsWithFasterWhisper(ctx context.Context
 		OutputDir:  cacheDir,
 		Model:      model,
 		Device:     req.WhisperDevice,
-		Workers:    normalizedCourseWorkers(req.Workers, len(missing)),
+		Workers:    normalizedCourseWorkers(courseTranscriptWorkers(req), len(missing)),
 		BatchSize:  24,
 		BeamSize:   1,
 	})

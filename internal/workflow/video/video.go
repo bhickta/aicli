@@ -38,17 +38,20 @@ type CompressResponse struct {
 }
 
 type CourseRequest struct {
-	Path          string  `json:"path"`
-	OutputDir     string  `json:"output_dir"`
-	WhisperModel  string  `json:"whisper_model"`
-	WhisperDevice string  `json:"whisper_device"`
-	Resolution    int     `json:"resolution"`
-	Preset        string  `json:"preset"`
-	CRF           int     `json:"crf"`
-	FPS           string  `json:"fps"`
-	FastSkip      bool    `json:"fast_skip"`
-	Workers       int     `json:"workers"`
-	MaxMergeHours float64 `json:"max_merge_hours"`
+	Path               string  `json:"path"`
+	OutputDir          string  `json:"output_dir"`
+	WhisperModel       string  `json:"whisper_model"`
+	WhisperDevice      string  `json:"whisper_device"`
+	Resolution         int     `json:"resolution"`
+	Preset             string  `json:"preset"`
+	CRF                int     `json:"crf"`
+	FPS                string  `json:"fps"`
+	FastSkip           bool    `json:"fast_skip"`
+	Workers            int     `json:"workers"`
+	TranscriptWorkers  int     `json:"transcript_workers"`
+	CompressionWorkers int     `json:"compression_workers"`
+	SkipUnreadable     bool    `json:"skip_unreadable"`
+	MaxMergeHours      float64 `json:"max_merge_hours"`
 }
 
 type CourseResponse struct {
