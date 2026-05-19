@@ -12,8 +12,9 @@ import (
 )
 
 type courseRunner struct {
-	mu    sync.Mutex
-	calls []runnerCall
+	mu              sync.Mutex
+	calls           []runnerCall
+	ffprobeFailures map[string]bool
 }
 
 func (r *courseRunner) CombinedOutput(_ context.Context, command string, args ...string) ([]byte, error) {
@@ -21,6 +22,9 @@ func (r *courseRunner) CombinedOutput(_ context.Context, command string, args ..
 	r.calls = append(r.calls, runnerCall{command: command, args: append([]string(nil), args...)})
 	r.mu.Unlock()
 	if command == "ffprobe" {
+		if len(args) > 0 && r.ffprobeFailures[args[len(args)-1]] {
+			return []byte("moov atom not found"), os.ErrInvalid
+		}
 		return []byte("2.0\n"), nil
 	}
 	if command == "whisper-cli" {
@@ -157,6 +161,33 @@ func TestCourseUsesCachedSRTWithoutCallingWhisper(t *testing.T) {
 	}
 	if !strings.Contains(string(text), "cached transcript") {
 		t.Fatalf("cache text = %q, want cached transcript", string(text))
+	}
+}
+
+func TestCourseSkipsUnreadableVideos(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	goodPath := filepath.Join(dir, "01 intro.mp4")
+	badPath := filepath.Join(dir, "02 corrupt.mp4")
+	writeCourseVideoWithSRT(t, goodPath)
+	if err := os.WriteFile(badPath, []byte("not a real mp4"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &courseRunner{ffprobeFailures: map[string]bool{badPath: true}}
+	res, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, runner).Course(
+		context.Background(),
+		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2"},
+	)
+	if err != nil {
+		t.Fatalf("Course() error = %v", err)
+	}
+	if len(res.Compressed) != 1 {
+		t.Fatalf("compressed len = %d, want 1", len(res.Compressed))
+	}
+	if len(res.Skipped) != 1 || !strings.Contains(res.Skipped[0], "02 corrupt.mp4") {
+		t.Fatalf("skipped = %#v, want corrupt video listed", res.Skipped)
 	}
 }
 
