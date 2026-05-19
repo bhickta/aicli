@@ -41,6 +41,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/providers", s.listProviders)
 	s.mux.HandleFunc("GET /api/providers/", s.providerModels)
 	s.mux.HandleFunc("GET /api/fs/list", s.listFiles)
+	s.mux.HandleFunc("GET /api/fs/pick-directory", s.pickDirectory)
 	s.mux.HandleFunc("POST /api/fs/upload", s.uploadFiles)
 	if s.deps.DataDir != "" {
 		uploads := http.Dir(filepath.Join(s.deps.DataDir, "uploads"))

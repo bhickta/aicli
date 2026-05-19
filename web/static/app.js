@@ -207,8 +207,8 @@ const WORKFLOW_DEFINITIONS = [
     label: "Course folder",
     endpoint: "/api/workflows/video/course",
     fields: [
-      { type: "path", id: "path", label: "Course source folder" },
-      { type: "path", id: "output_dir", label: "Course output folder (optional)" },
+      { type: "path", id: "path", label: "Course source folder", picker: "directory" },
+      { type: "path", id: "output_dir", label: "Course output folder (optional)", picker: "directory" },
       {
         type: "select",
         id: "preset",
@@ -608,12 +608,13 @@ function renderWorkflowField(field) {
     const browseId = workflowBrowseId(field.id);
     const valueId = workflowDisplayId(field.id);
     const currentPath = state.workflow.pathValues[field.id] || "";
+    const chooseLabel = field.picker === "directory" ? `Browse ${field.label}` : `Choose ${field.label}`;
     return `
       <div class="field">
         <label for="${valueId}">${field.label}</label>
         <div class="path-control">
           <output id="${valueId}" data-path="${escapeHtml(currentPath)}">${escapeHtml(currentPath || `No ${field.label.toLowerCase()} selected`)}</output>
-          <button type="button" id="${browseId}" data-workflow-target="${escapeHtml(field.id)}">${escapeHtml(`Choose ${field.label}`)}</button>
+          <button type="button" id="${browseId}" data-workflow-target="${escapeHtml(field.id)}">${escapeHtml(chooseLabel)}</button>
         </div>
       </div>
     `;
@@ -819,6 +820,10 @@ function renderWorkflows() {
     const pickButton = document.querySelector(`#${workflowBrowseId(field.id)}`);
     if (!pickButton) return;
     pickButton.addEventListener("click", () => {
+      if (field.picker === "directory") {
+        pickSystemDirectory(field.id, field.label);
+        return;
+      }
       openBrowser(field.id, field.label);
     });
   });
@@ -1330,6 +1335,26 @@ async function openBrowser(target, targetLabel, path = "") {
     });
   } catch (error) {
     browser.innerHTML = `<pre>${escapeHtml(error.message)}</pre>`;
+  }
+}
+
+async function pickSystemDirectory(target, targetLabel) {
+  const status = document.querySelector("#workflow-status");
+  const output = document.querySelector("#workflow-result");
+  const currentPath = state.workflow.pathValues[target] || state.browser.path || "";
+  if (status) status.textContent = `Opening system folder picker for ${targetLabel}...`;
+  try {
+    const query = currentPath ? `?path=${encodeURIComponent(currentPath)}` : "";
+    const result = await api(`/api/fs/pick-directory${query}`);
+    setWorkflowPathValue(target, result.path);
+    state.browser.path = result.path;
+    if (status) status.textContent = `Selected ${targetLabel}`;
+    if (output && output.textContent.includes("For in-place processing")) {
+      output.textContent = "";
+    }
+  } catch (error) {
+    if (status) status.textContent = "Folder picker failed";
+    if (output) output.textContent = error.message;
   }
 }
 
