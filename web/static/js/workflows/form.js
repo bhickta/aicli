@@ -118,16 +118,16 @@ export function collectWorkflowInputValues(definition) {
       Object.assign(values, getProviderModelValues(WORKFLOW_PREFIX));
       return;
     }
+    if (field.type === "path") {
+      const display = document.querySelector(`#${workflowDisplayId(field.id)}`);
+      values[field.id] = display?.dataset.path || "";
+      return;
+    }
     const id = workflowControlId(field.id);
     const element = document.querySelector(`#${id}`);
     if (!element) return;
     if (field.type === "checkbox") {
       values[field.id] = element.checked;
-      return;
-    }
-    if (field.type === "path") {
-      const display = document.querySelector(`#${workflowDisplayId(field.id)}`);
-      values[field.id] = display?.dataset.path || "";
       return;
     }
     if (field.type === "number") {

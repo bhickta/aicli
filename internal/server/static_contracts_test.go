@@ -44,6 +44,29 @@ func TestServeStaticAssets(t *testing.T) {
 	}
 }
 
+func TestWorkflowPathFieldsSubmitSelectedPath(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/js/workflows/form.js", nil)
+	res := httptest.NewRecorder()
+	testHandler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", res.Code, res.Body.String())
+	}
+	body := res.Body.String()
+	pathBranch := strings.Index(body, `if (field.type === "path")`)
+	controlLookup := strings.Index(body, `const element = document.querySelector`)
+	if pathBranch < 0 {
+		t.Fatal("path field collection branch is missing")
+	}
+	if controlLookup < 0 {
+		t.Fatal("control lookup is missing")
+	}
+	if pathBranch > controlLookup {
+		t.Fatal("path fields must be collected from the display dataset before looking for a form input")
+	}
+}
+
 func TestAPISmokeContracts(t *testing.T) {
 	t.Parallel()
 
