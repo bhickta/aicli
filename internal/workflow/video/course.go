@@ -53,7 +53,7 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 		reportCourseProgress(progress, fmt.Sprintf("transcribed %d/%d video(s) with faster-whisper; compressing", len(batchTranscribed), len(files)), len(batchTranscribed), totalSteps)
 	}
 
-	items, transcribed, skipped, err := s.prepareCourseItems(ctx, files, cacheDir, slidesDir, req, progress, totalSteps)
+	items, transcribed, skipped, err := s.prepareCourseItems(ctx, files, cacheDir, slidesDir, req, skipped, progress, totalSteps)
 	if err != nil {
 		return CourseResponse{}, err
 	}
@@ -111,8 +111,7 @@ func prepareCourseDirs(targetDir string, outputDir string) (string, string, stri
 	return courseDir, cacheDir, slidesDir, nil
 }
 
-func (s *Service) prepareCourseItems(ctx context.Context, files []string, cacheDir string, slidesDir string, req CourseRequest, progress CourseProgressFunc, totalSteps int) ([]CourseItem, []CourseItem, []string, error) {
-	skipped := []string{}
+func (s *Service) prepareCourseItems(ctx context.Context, files []string, cacheDir string, slidesDir string, req CourseRequest, skipped []string, progress CourseProgressFunc, totalSteps int) ([]CourseItem, []CourseItem, []string, error) {
 	usedNames := map[string]int{}
 	targetNames := make([]string, len(files))
 	for i, file := range files {
