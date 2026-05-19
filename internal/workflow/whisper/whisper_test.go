@@ -52,6 +52,7 @@ func TestRunUsesPythonWhisperArgs(t *testing.T) {
 		AudioPath:  "lesson.mp4",
 		OutputBase: "/tmp/cache/lesson",
 		Model:      "large-v3",
+		Device:     "cuda",
 		SRT:        true,
 		Text:       true,
 	})
@@ -62,7 +63,7 @@ func TestRunUsesPythonWhisperArgs(t *testing.T) {
 		t.Fatalf("command = %q, want whisper", runner.command)
 	}
 	args := strings.Join(runner.args, " ")
-	for _, want := range []string{"lesson.mp4", "--model large-v3", "--output_format all", "--output_dir /tmp/cache"} {
+	for _, want := range []string{"lesson.mp4", "--model large-v3", "--device cuda", "--output_format all", "--output_dir /tmp/cache"} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("args = %q, want contains %q", args, want)
 		}

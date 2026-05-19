@@ -14,7 +14,7 @@ import (
 	"github.com/bhickta/aicli/internal/workflow/whisper"
 )
 
-func (s *Service) prepareTranscriptFiles(ctx context.Context, videoPath, cacheDir, whisperModel string) (string, string, bool, error) {
+func (s *Service) prepareTranscriptFiles(ctx context.Context, videoPath, cacheDir, whisperModel string, whisperDevice string) (string, string, bool, error) {
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return "", "", false, err
 	}
@@ -29,7 +29,7 @@ func (s *Service) prepareTranscriptFiles(ctx context.Context, videoPath, cacheDi
 		}
 	}
 	if !fileExists(cacheSRT) {
-		if err := s.transcribeVideo(ctx, videoPath, strings.TrimSuffix(cacheSRT, filepath.Ext(cacheSRT)), whisperModel); err != nil {
+		if err := s.transcribeVideo(ctx, videoPath, strings.TrimSuffix(cacheSRT, filepath.Ext(cacheSRT)), whisperModel, whisperDevice); err != nil {
 			return "", "", false, err
 		}
 		didTranscribe = true
@@ -55,7 +55,7 @@ func (s *Service) prepareTranscriptFiles(ctx context.Context, videoPath, cacheDi
 	return cacheSRT, cacheText, didTranscribe, nil
 }
 
-func (s *Service) transcribeVideo(ctx context.Context, videoPath, outputBase, whisperModel string) error {
+func (s *Service) transcribeVideo(ctx context.Context, videoPath, outputBase, whisperModel string, whisperDevice string) error {
 	if strings.TrimSpace(s.tools.WhisperCLI) == "" {
 		return errors.New("whisper is not configured")
 	}
@@ -67,6 +67,7 @@ func (s *Service) transcribeVideo(ctx context.Context, videoPath, outputBase, wh
 		AudioPath:  videoPath,
 		OutputBase: outputBase,
 		Model:      whisperModel,
+		Device:     whisperDevice,
 		SRT:        true,
 		Text:       true,
 	})

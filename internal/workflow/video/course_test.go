@@ -5,17 +5,21 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/bhickta/aicli/internal/config"
 )
 
 type courseRunner struct {
+	mu    sync.Mutex
 	calls []runnerCall
 }
 
 func (r *courseRunner) CombinedOutput(_ context.Context, command string, args ...string) ([]byte, error) {
+	r.mu.Lock()
 	r.calls = append(r.calls, runnerCall{command: command, args: append([]string(nil), args...)})
+	r.mu.Unlock()
 	if command == "ffprobe" {
 		return []byte("2.0\n"), nil
 	}

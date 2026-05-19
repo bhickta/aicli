@@ -41,6 +41,7 @@ type CourseRequest struct {
 	Path          string  `json:"path"`
 	OutputDir     string  `json:"output_dir"`
 	WhisperModel  string  `json:"whisper_model"`
+	WhisperDevice string  `json:"whisper_device"`
 	Resolution    int     `json:"resolution"`
 	Preset        string  `json:"preset"`
 	CRF           int     `json:"crf"`

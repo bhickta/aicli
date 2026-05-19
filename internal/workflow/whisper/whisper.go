@@ -16,6 +16,7 @@ type Request struct {
 	AudioPath  string
 	OutputBase string
 	Model      string
+	Device     string
 	SRT        bool
 	Text       bool
 }
@@ -75,9 +76,18 @@ func pythonArgs(req Request) []string {
 	return []string{
 		req.AudioPath,
 		"--model", model,
+		"--device", pythonDevice(req.Device),
 		"--output_format", format,
 		"--output_dir", outputDir,
 	}
+}
+
+func pythonDevice(device string) string {
+	device = strings.TrimSpace(device)
+	if device == "" {
+		return "cuda"
+	}
+	return device
 }
 
 func whisperCPPArgs(req Request) []string {
