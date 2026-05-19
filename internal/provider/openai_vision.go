@@ -1,0 +1,44 @@
+package provider
+
+import (
+	"context"
+	"encoding/base64"
+	"errors"
+)
+
+func (p *OpenAICompatible) Vision(ctx context.Context, req VisionRequest) (ChatResponse, error) {
+	model := p.chatModel(req.Model)
+	if model == "" {
+		return ChatResponse{}, errors.New("model is required")
+	}
+	if len(req.Image) == 0 {
+		return ChatResponse{}, errors.New("image is required")
+	}
+	mimeType := req.MIMEType
+	if mimeType == "" {
+		mimeType = "image/jpeg"
+	}
+
+	body := map[string]any{
+		"model": model,
+		"messages": []map[string]any{
+			{
+				"role": "user",
+				"content": []map[string]any{
+					{"type": "text", "text": req.Prompt},
+					{
+						"type": "image_url",
+						"image_url": map[string]any{
+							"url": "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(req.Image),
+						},
+					},
+				},
+			},
+		},
+		"temperature": req.Temperature,
+	}
+	if req.MaxTokens > 0 {
+		body["max_tokens"] = req.MaxTokens
+	}
+	return p.chatRaw(ctx, body)
+}

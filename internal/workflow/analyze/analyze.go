@@ -3,6 +3,7 @@ package analyze
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/bhickta/aicli/internal/config"
@@ -52,7 +53,7 @@ func (s *Service) Run(ctx context.Context, req Request) (Response, error) {
 	inputs := make([]document.ImageInput, 0, len(images))
 	for i, imagePath := range images {
 		inputs = append(inputs, document.ImageInput{
-			Name:     "page-" + itoa(i+1),
+			Name:     "page-" + strconv.Itoa(i+1),
 			Path:     imagePath,
 			MIMEType: "image/jpeg",
 		})
@@ -84,7 +85,7 @@ func (s *Service) report(ctx context.Context, model string, pages []Page) (strin
 	var combined strings.Builder
 	for i, page := range pages {
 		combined.WriteString("## Page ")
-		combined.WriteString(itoa(i + 1))
+		combined.WriteString(strconv.Itoa(i + 1))
 		combined.WriteString("\n")
 		combined.WriteString(page.Text)
 		combined.WriteString("\n\n")
@@ -105,16 +106,4 @@ func (s *Service) report(ctx context.Context, model string, pages []Page) (strin
 		return "", err
 	}
 	return strings.TrimSpace(res.Content), nil
-}
-
-func itoa(value int) string {
-	if value == 0 {
-		return "0"
-	}
-	digits := []byte{}
-	for value > 0 {
-		digits = append([]byte{byte('0' + value%10)}, digits...)
-		value /= 10
-	}
-	return string(digits)
 }
