@@ -55,6 +55,90 @@ func (s *Service) prepareTranscriptFiles(ctx context.Context, videoPath, cacheDi
 	return cacheSRT, cacheText, didTranscribe, nil
 }
 
+func (s *Service) prepareMissingTranscriptsWithFasterWhisper(ctx context.Context, files []string, cacheDir string, req CourseRequest) (map[string]bool, bool, error) {
+	transcribed := map[string]bool{}
+	if !whisper.CanRunFasterBatch(s.runner) {
+		return transcribed, false, nil
+	}
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return transcribed, false, err
+	}
+
+	missing := []string{}
+	for _, file := range files {
+		cacheSRT, cacheText, sidecarSRT := transcriptPaths(file, cacheDir)
+		if !fileExists(cacheSRT) && fileExists(sidecarSRT) {
+			if err := copyFile(sidecarSRT, cacheSRT); err != nil {
+				return transcribed, false, err
+			}
+		}
+		if fileExists(cacheSRT) {
+			if !fileExists(cacheText) {
+				if err := writeTranscriptText(cacheSRT, cacheText); err != nil {
+					return transcribed, false, err
+				}
+			}
+			continue
+		}
+		missing = append(missing, file)
+	}
+	if len(missing) == 0 {
+		return transcribed, true, nil
+	}
+	if strings.TrimSpace(s.tools.WhisperCLI) == "" {
+		return transcribed, false, errors.New("whisper is not configured")
+	}
+
+	model := req.WhisperModel
+	if model == "" {
+		model = "large-v3"
+	}
+	out, err := whisper.RunFasterBatch(ctx, s.runner, whisper.FasterBatchRequest{
+		AudioPaths: missing,
+		OutputDir:  cacheDir,
+		Model:      model,
+		Device:     req.WhisperDevice,
+		Workers:    normalizedCourseWorkers(req.Workers, len(missing)),
+		BatchSize:  24,
+		BeamSize:   1,
+	})
+	if err != nil {
+		if whisper.FasterBatchUnavailable(out, err) {
+			return transcribed, false, nil
+		}
+		return transcribed, true, whisper.OutputError(out, err)
+	}
+	for _, file := range missing {
+		cacheSRT, cacheText, _ := transcriptPaths(file, cacheDir)
+		if !fileExists(cacheText) && fileExists(cacheSRT) {
+			if err := writeTranscriptText(cacheSRT, cacheText); err != nil {
+				return transcribed, true, err
+			}
+		}
+		if !fileExists(cacheSRT) || !fileExists(cacheText) {
+			return transcribed, true, errors.New("faster-whisper did not produce both .srt and .txt for " + filepath.Base(file))
+		}
+		transcribed[file] = true
+	}
+	return transcribed, true, nil
+}
+
+func transcriptPaths(videoPath, cacheDir string) (string, string, string) {
+	stem := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
+	cacheSRT := filepath.Join(cacheDir, stem+".srt")
+	cacheText := filepath.Join(cacheDir, stem+".txt")
+	sidecarSRT := strings.TrimSuffix(videoPath, filepath.Ext(videoPath)) + ".srt"
+	return cacheSRT, cacheText, sidecarSRT
+}
+
+func writeTranscriptText(srtPath, textPath string) error {
+	text, err := srtToText(srtPath)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(textPath, []byte(text), 0o644)
+}
+
 func (s *Service) transcribeVideo(ctx context.Context, videoPath, outputBase, whisperModel string, whisperDevice string) error {
 	if strings.TrimSpace(s.tools.WhisperCLI) == "" {
 		return errors.New("whisper is not configured")

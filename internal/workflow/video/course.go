@@ -35,15 +35,26 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 		return CourseResponse{}, errors.New("no video files found")
 	}
 	totalSteps := len(files) + 1
-	reportCourseProgress(progress, fmt.Sprintf("found %d video(s); preparing transcripts and compressed files", len(files)), 0, totalSteps)
 	courseDir, cacheDir, slidesDir, err := prepareCourseDirs(targetDir, req.OutputDir)
 	if err != nil {
 		return CourseResponse{}, err
+	}
+	reportCourseProgress(progress, fmt.Sprintf("found %d video(s); preparing transcripts and compressed files", len(files)), 0, totalSteps)
+
+	batchTranscribed, batchAttempted, err := s.prepareMissingTranscriptsWithFasterWhisper(ctx, files, cacheDir, req)
+	if err != nil {
+		return CourseResponse{}, err
+	}
+	if batchAttempted && len(batchTranscribed) > 0 {
+		reportCourseProgress(progress, fmt.Sprintf("transcribed %d/%d video(s) with faster-whisper; compressing", len(batchTranscribed), len(files)), len(batchTranscribed), totalSteps)
 	}
 
 	items, transcribed, skipped, err := s.prepareCourseItems(ctx, files, cacheDir, slidesDir, req, progress, totalSteps)
 	if err != nil {
 		return CourseResponse{}, err
+	}
+	if len(batchTranscribed) > 0 {
+		transcribed = mergeBatchTranscribedItems(items, transcribed, batchTranscribed)
 	}
 	reportCourseProgress(progress, "merging course video, subtitles, and transcript", len(files), totalSteps)
 	return s.exportCourseParts(ctx, targetDir, courseDir, items, transcribed, skipped, req.MaxMergeHours)
@@ -206,6 +217,22 @@ func normalizedCourseWorkers(workers int, jobs int) int {
 
 func EffectiveCourseWorkers(workers int, jobs int) int {
 	return normalizedCourseWorkers(workers, jobs)
+}
+
+func mergeBatchTranscribedItems(items []CourseItem, transcribed []CourseItem, batchTranscribed map[string]bool) []CourseItem {
+	seen := map[string]bool{}
+	merged := make([]CourseItem, 0, len(transcribed)+len(batchTranscribed))
+	for _, item := range transcribed {
+		seen[item.Source] = true
+		merged = append(merged, item)
+	}
+	for _, item := range items {
+		if !batchTranscribed[item.Source] || seen[item.Source] {
+			continue
+		}
+		merged = append(merged, CourseItem{Source: item.Source, SRTPath: item.SRTPath, TextPath: item.TextPath, TargetName: item.TargetName})
+	}
+	return merged
 }
 
 func reportCourseProgress(progress CourseProgressFunc, stage string, currentStep, totalSteps int) {
