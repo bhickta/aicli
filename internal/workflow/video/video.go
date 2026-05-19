@@ -69,6 +69,8 @@ type CourseItem struct {
 	TargetName string `json:"target_name"`
 }
 
+type CourseProgressFunc func(stage string, currentStep, totalSteps int)
+
 type MetadataRequest = metadata.Request
 type MetadataResponse = metadata.Response
 

@@ -12,6 +12,10 @@ import (
 )
 
 func (s *Service) Course(ctx context.Context, req CourseRequest) (CourseResponse, error) {
+	return s.CourseWithProgress(ctx, req, nil)
+}
+
+func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, progress CourseProgressFunc) (CourseResponse, error) {
 	if strings.TrimSpace(req.Path) == "" {
 		return CourseResponse{}, errors.New("path is required")
 	}
@@ -30,15 +34,18 @@ func (s *Service) Course(ctx context.Context, req CourseRequest) (CourseResponse
 	if len(files) == 0 {
 		return CourseResponse{}, errors.New("no video files found")
 	}
+	totalSteps := len(files) + 1
+	reportCourseProgress(progress, fmt.Sprintf("found %d video(s); preparing transcripts and compressed files", len(files)), 0, totalSteps)
 	courseDir, cacheDir, slidesDir, err := prepareCourseDirs(targetDir, req.OutputDir)
 	if err != nil {
 		return CourseResponse{}, err
 	}
 
-	items, transcribed, skipped, err := s.prepareCourseItems(ctx, files, cacheDir, slidesDir, req)
+	items, transcribed, skipped, err := s.prepareCourseItems(ctx, files, cacheDir, slidesDir, req, progress, totalSteps)
 	if err != nil {
 		return CourseResponse{}, err
 	}
+	reportCourseProgress(progress, "merging course video, subtitles, and transcript", len(files), totalSteps)
 	return s.exportCourseParts(ctx, targetDir, courseDir, items, transcribed, skipped, req.MaxMergeHours)
 }
 
@@ -69,7 +76,7 @@ func prepareCourseDirs(targetDir string, outputDir string) (string, string, stri
 	return courseDir, cacheDir, slidesDir, nil
 }
 
-func (s *Service) prepareCourseItems(ctx context.Context, files []string, cacheDir string, slidesDir string, req CourseRequest) ([]CourseItem, []CourseItem, []string, error) {
+func (s *Service) prepareCourseItems(ctx context.Context, files []string, cacheDir string, slidesDir string, req CourseRequest, progress CourseProgressFunc, totalSteps int) ([]CourseItem, []CourseItem, []string, error) {
 	skipped := []string{}
 	usedNames := map[string]int{}
 	targetNames := make([]string, len(files))
@@ -79,12 +86,12 @@ func (s *Service) prepareCourseItems(ctx context.Context, files []string, cacheD
 
 	workers := normalizedCourseWorkers(req.Workers, len(files))
 	if workers == 1 {
-		return s.prepareCourseItemsSequential(ctx, files, targetNames, cacheDir, slidesDir, req, skipped)
+		return s.prepareCourseItemsSequential(ctx, files, targetNames, cacheDir, slidesDir, req, skipped, progress, totalSteps)
 	}
-	return s.prepareCourseItemsParallel(ctx, files, targetNames, cacheDir, slidesDir, req, skipped, workers)
+	return s.prepareCourseItemsParallel(ctx, files, targetNames, cacheDir, slidesDir, req, skipped, workers, progress, totalSteps)
 }
 
-func (s *Service) prepareCourseItemsSequential(ctx context.Context, files []string, targetNames []string, cacheDir string, slidesDir string, req CourseRequest, skipped []string) ([]CourseItem, []CourseItem, []string, error) {
+func (s *Service) prepareCourseItemsSequential(ctx context.Context, files []string, targetNames []string, cacheDir string, slidesDir string, req CourseRequest, skipped []string, progress CourseProgressFunc, totalSteps int) ([]CourseItem, []CourseItem, []string, error) {
 	items := make([]CourseItem, 0, len(files))
 	transcribed := []CourseItem{}
 	for i, file := range files {
@@ -96,11 +103,12 @@ func (s *Service) prepareCourseItemsSequential(ctx context.Context, files []stri
 			transcribed = append(transcribed, CourseItem{Source: item.Source, SRTPath: item.SRTPath, TextPath: item.TextPath, TargetName: item.TargetName})
 		}
 		items = append(items, item)
+		reportCourseProgress(progress, fmt.Sprintf("processed %d/%d video(s)", i+1, len(files)), i+1, totalSteps)
 	}
 	return items, transcribed, skipped, nil
 }
 
-func (s *Service) prepareCourseItemsParallel(ctx context.Context, files []string, targetNames []string, cacheDir string, slidesDir string, req CourseRequest, skipped []string, workers int) ([]CourseItem, []CourseItem, []string, error) {
+func (s *Service) prepareCourseItemsParallel(ctx context.Context, files []string, targetNames []string, cacheDir string, slidesDir string, req CourseRequest, skipped []string, workers int, progress CourseProgressFunc, totalSteps int) ([]CourseItem, []CourseItem, []string, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -159,6 +167,7 @@ func (s *Service) prepareCourseItemsParallel(ctx context.Context, files []string
 		items[res.index] = res.item
 		transcribedByIndex[res.index] = res.didTranscribe
 		completed++
+		reportCourseProgress(progress, fmt.Sprintf("processed %d/%d video(s) with %d worker(s)", completed, len(files), workers), completed, totalSteps)
 	}
 	if firstErr != nil {
 		return nil, nil, nil, firstErr
@@ -197,6 +206,12 @@ func normalizedCourseWorkers(workers int, jobs int) int {
 
 func EffectiveCourseWorkers(workers int, jobs int) int {
 	return normalizedCourseWorkers(workers, jobs)
+}
+
+func reportCourseProgress(progress CourseProgressFunc, stage string, currentStep, totalSteps int) {
+	if progress != nil {
+		progress(stage, currentStep, totalSteps)
+	}
 }
 
 func (s *Service) prepareCourseItem(ctx context.Context, file string, targetName string, cacheDir string, slidesDir string, req CourseRequest) (CourseItem, bool, error) {

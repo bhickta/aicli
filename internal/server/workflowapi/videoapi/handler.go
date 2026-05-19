@@ -68,8 +68,7 @@ func (h *Handler) runVideoCourse(w http.ResponseWriter, r *http.Request) {
 	job := core.NewJob("video-course", req.Path)
 	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress(fmt.Sprintf("processing course with Whisper model %s on %s using up to %d worker(s)", displayValue(req.WhisperModel, "large-v3"), displayValue(req.WhisperDevice, "cuda"), video.EffectiveCourseWorkers(req.Workers, 6)), 2, 5)
-		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}).Course(ctx, req)
-		progress("merging course video, subtitles, and transcript", 4, 5)
+		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}).CourseWithProgress(ctx, req, progress)
 		return result, err
 	})
 }

@@ -119,6 +119,48 @@ func TestCourseTranscribesMissingSRTWithWhisperLargeV3(t *testing.T) {
 	}
 }
 
+func TestCourseWithProgressReportsPerVideoCompletion(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	first := filepath.Join(dir, "01 intro.mp4")
+	second := filepath.Join(dir, "02 lesson.mp4")
+	writeCourseVideoWithSRT(t, first)
+	writeCourseVideoWithSRT(t, second)
+
+	type event struct {
+		stage   string
+		current int
+		total   int
+	}
+	events := []event{}
+	_, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, &courseRunner{}).CourseWithProgress(
+		context.Background(),
+		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2", Workers: 1},
+		func(stage string, currentStep, totalSteps int) {
+			events = append(events, event{stage: stage, current: currentStep, total: totalSteps})
+		},
+	)
+	if err != nil {
+		t.Fatalf("CourseWithProgress() error = %v", err)
+	}
+	if len(events) < 4 {
+		t.Fatalf("progress events = %#v, want at least 4 events", events)
+	}
+	if events[0].current != 0 || events[0].total != 3 {
+		t.Fatalf("first event = %#v, want 0/3", events[0])
+	}
+	if events[1].current != 1 || events[1].total != 3 {
+		t.Fatalf("second event = %#v, want 1/3", events[1])
+	}
+	if events[2].current != 2 || events[2].total != 3 {
+		t.Fatalf("third event = %#v, want 2/3", events[2])
+	}
+	if !strings.Contains(events[len(events)-1].stage, "merging") || events[len(events)-1].current != 2 {
+		t.Fatalf("last event = %#v, want merge stage at 2/3", events[len(events)-1])
+	}
+}
+
 func writeCourseVideoWithSRT(t *testing.T, path string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte("video"), 0o644); err != nil {
