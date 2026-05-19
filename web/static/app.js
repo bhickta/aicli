@@ -1090,6 +1090,21 @@ async function uploadWorkflowFiles(entries) {
   const status = document.querySelector("#workflow-status");
   const output = document.querySelector("#workflow-result");
   const dropZone = document.querySelector("#drop-zone");
+  const isFolderDrop = entries.some((entry) => (entry.relativePath || "").includes("/"));
+  if (isFolderDrop) {
+    state.workflow.category = "Video";
+    state.workflow.workflowId = "video-course";
+    if (state.view === "workflows") {
+      render();
+    }
+    const currentStatus = document.querySelector("#workflow-status");
+    const currentOutput = document.querySelector("#workflow-result");
+    if (currentStatus) currentStatus.textContent = "Folder not uploaded";
+    if (currentOutput) {
+      currentOutput.textContent = "For in-place processing, click Choose Course source folder, navigate to the folder, then use current directory.";
+    }
+    return;
+  }
   const uploadLabel = entries.length === 1 ? entries[0].file.name : `${entries.length} files`;
   if (status) status.textContent = `Uploading ${uploadLabel}...`;
   if (output) output.textContent = "";
@@ -1110,9 +1125,8 @@ async function uploadWorkflowFiles(entries) {
     const uploadedFiles = result.files || [];
     const uploaded = uploadedFiles[0];
     if (!uploaded) throw new Error("upload finished without a stored file");
-    const isFolderUpload = entries.some((entry) => (entry.relativePath || "").includes("/"));
     const hasCourseVideos = uploadedFiles.filter((file) => isVideoFileName(file.name)).length > 0;
-    if ((isFolderUpload && hasCourseVideos) || (hasCourseVideos && uploadedFiles.length > 1 && result.root)) {
+    if (hasCourseVideos && uploadedFiles.length > 1 && result.root) {
       state.workflow.category = "Video";
       state.workflow.workflowId = "video-course";
       if (state.view === "workflows") {
@@ -1198,7 +1212,7 @@ function renderDropZone() {
   return `
     <div id="drop-zone" class="drop-zone" tabindex="0">
       <strong>Drop a file to auto-select workflow</strong>
-      <span>PDFs and ZIPs auto-select OCR; image/audio/video uploads auto-select matching workflows.</span>
+      <span>Single files upload to app storage. For in-place video course folders, use Choose Course source folder.</span>
     </div>
   `;
 }
