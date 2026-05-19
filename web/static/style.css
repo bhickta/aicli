@@ -27,11 +27,23 @@ aside {
 button,
 input,
 select,
-textarea {
+textarea,
+output,
+pre,
+code {
   border: 1px solid #343b46;
   border-radius: 6px;
   background: #202630;
   color: #eceff4;
+}
+
+button,
+input,
+select,
+textarea,
+output,
+code,
+pre {
   padding: 9px 10px;
 }
 
@@ -43,6 +55,61 @@ button {
 button:disabled {
   cursor: progress;
   opacity: 0.55;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+output:focus-visible {
+  outline: 2px solid #6ea8fe;
+  outline-offset: 2px;
+  border-color: #6ea8fe;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#primary-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#primary-tabs [role="tab"] {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid #343b46;
+  background: #1f252e;
+  color: #d6deea;
+}
+
+#primary-tabs [role="tab"].active-tab {
+  border-color: #6ea8fe;
+  background: #2d405e;
+  box-shadow: 0 0 0 1px #6ea8fe inset;
+}
+
+#primary-tabs [role="tab"][aria-selected="false"] {
+  opacity: 0.86;
+}
+
+.workflow-category-tabs {
+  margin-top: 4px;
+}
+
+.workflow-category-tabs [role="tab"] {
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+
+.workflow-category-tabs [role="tab"].active-tab {
+  background: #2d405e;
+  border-color: #6ea8fe;
+  color: #ffffff;
 }
 
 section {
@@ -63,6 +130,11 @@ h1 {
   font-size: 24px;
 }
 
+h2,
+h3 {
+  margin: 0;
+}
+
 .panel {
   max-width: 980px;
   border: 1px solid #2b313b;
@@ -75,10 +147,46 @@ h1 {
   color: #9aa4b2;
 }
 
-.row {
+.grid {
+  display: grid;
+  gap: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field label {
+  font-size: 14px;
+}
+
+.field-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.path-control {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.path-control output {
+  min-height: 40px;
+  word-break: break-word;
+}
+
+.path-control button {
+  white-space: nowrap;
 }
 
 .hidden {
@@ -192,33 +300,35 @@ h1 {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-code {
-  display: block;
-  min-height: 20px;
-  padding: 9px 10px;
-  border: 1px solid #343b46;
-  border-radius: 6px;
-  background: #0d1015;
-  overflow-wrap: anywhere;
-}
-
-.grid {
-  display: grid;
-  gap: 12px;
-}
-
 textarea {
   min-height: 160px;
   resize: vertical;
 }
 
-pre {
+pre,
+code {
   white-space: pre-wrap;
   background: #0d1015;
   border-radius: 6px;
+  min-height: 40px;
+}
+
+pre {
   padding: 12px;
   max-height: 520px;
   overflow: auto;
+}
+
+code {
+  display: block;
+  min-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+output {
+  display: block;
+  min-height: 40px;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 760px) {
@@ -236,8 +346,17 @@ pre {
     border-bottom: 1px solid #2b313b;
   }
 
-  aside button {
+  #primary-tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    flex: 1;
+    min-width: 0;
+  }
+
+  #primary-tabs [role="tab"] {
+    width: auto;
     white-space: nowrap;
+    flex: 0 0 auto;
   }
 
   section {
@@ -255,13 +374,22 @@ pre {
     padding: 12px;
   }
 
-  .row {
+  .field-row {
     grid-template-columns: 1fr;
   }
 
   .browser-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .workflow-category-tabs {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .workflow-category-tabs [role="tab"] {
+    white-space: nowrap;
   }
 
   .review-pane {
@@ -272,5 +400,11 @@ pre {
   .review-pane iframe,
   .review-pane textarea {
     min-height: 420px;
+  }
+
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
   }
 }

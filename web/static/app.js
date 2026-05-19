@@ -1,33 +1,425 @@
+const WORKFLOW_CATEGORIES = ["Study", "Documents", "Images", "Audio", "Video", "News"];
+
+const WORKFLOW_DEFINITIONS = [
+  {
+    id: "recall",
+    category: "Study",
+    label: "Recall",
+    endpoint: "/api/workflows/recall/run",
+    fields: [
+      { type: "providerModel" },
+      { type: "textarea", id: "notes", label: "Notes", rows: 12, placeholder: "Paste UPSC notes..." },
+    ],
+    buildPayload: (values) => ({
+      provider_id: values.provider_id,
+      model: values.model,
+      notes: values.notes,
+    }),
+  },
+  {
+    id: "video-generate",
+    category: "Video",
+    label: "Video notes/tags/course",
+    endpoint: "/api/workflows/video/generate",
+    fields: [
+      { type: "providerModel" },
+      { type: "text", id: "title", label: "Video title", value: "", placeholder: "Untitled video" },
+      { type: "textarea", id: "transcript", label: "Transcript", rows: 14, placeholder: "Paste or generate transcript text..." },
+      {
+        type: "select",
+        id: "mode",
+        label: "Output mode",
+        default: "notes",
+        options: [
+          { value: "notes", label: "Notes" },
+          { value: "tags", label: "Tags" },
+          { value: "course", label: "Course" },
+        ],
+      },
+    ],
+    buildPayload: (values) => ({
+      provider_id: values.provider_id,
+      model: values.model,
+      title: values.title,
+      transcript: values.transcript,
+      mode: values.mode || "notes",
+    }),
+  },
+  {
+    id: "ocr-run",
+    category: "Documents",
+    label: "OCR: ZIP images to Markdown",
+    endpoint: "/api/workflows/ocr/run",
+    fields: [
+      { type: "providerModel" },
+      { type: "path", id: "path", label: "Input ZIP file" },
+      { type: "number", id: "render_workers", label: "Render workers", min: 1, max: 64, default: 2 },
+      { type: "number", id: "workers", label: "OCR workers", min: 1, max: 64, default: 1 },
+    ],
+    buildPayload: (values) => ({
+      provider_id: values.provider_id,
+      model: values.model,
+      path: values.path,
+      render_workers: values.render_workers,
+      workers: values.workers,
+    }),
+  },
+  {
+    id: "ocr-pdf",
+    category: "Documents",
+    label: "OCR: PDF to Markdown",
+    endpoint: "/api/workflows/ocr/pdf",
+    fields: [
+      { type: "providerModel" },
+      { type: "path", id: "path", label: "Input PDF file" },
+      { type: "number", id: "render_workers", label: "Render workers", min: 1, max: 64, default: 2 },
+      { type: "number", id: "workers", label: "OCR workers", min: 1, max: 64, default: 1 },
+    ],
+    buildPayload: (values) => ({
+      provider_id: values.provider_id,
+      model: values.model,
+      path: values.path,
+      render_workers: values.render_workers,
+      workers: values.workers,
+    }),
+  },
+  {
+    id: "analyze",
+    category: "Documents",
+    label: "Analyze: PDF report",
+    endpoint: "/api/workflows/analyze/run",
+    fields: [
+      { type: "providerModel" },
+      { type: "path", id: "path", label: "Input PDF file" },
+      { type: "number", id: "render_workers", label: "Render workers", min: 1, max: 64, default: 2 },
+      { type: "number", id: "workers", label: "OCR workers", min: 1, max: 64, default: 1 },
+    ],
+    buildPayload: (values) => ({
+      provider_id: values.provider_id,
+      model: values.model,
+      path: values.path,
+      render_workers: values.render_workers,
+      workers: values.workers,
+    }),
+  },
+  {
+    id: "image-run",
+    category: "Images",
+    label: "Analyze image",
+    endpoint: "/api/workflows/image/run",
+    fields: [
+      { type: "providerModel" },
+      { type: "path", id: "path", label: "Input image" },
+      {
+        type: "select",
+        id: "mode",
+        label: "Mode",
+        default: "",
+        options: [
+          { value: "", label: "Default (safe rename)" },
+          { value: "rename", label: "Rename" },
+          { value: "junk", label: "Junk classification" },
+          { value: "digitize", label: "Digitize text" },
+        ],
+      },
+    ],
+    buildPayload: (values) => ({
+      provider_id: values.provider_id,
+      model: values.model,
+      path: values.path,
+      mode: values.mode || "",
+    }),
+  },
+  {
+    id: "image-rename",
+    category: "Images",
+    label: "Safe image rename",
+    endpoint: "/api/workflows/image/rename",
+    fields: [
+      { type: "providerModel" },
+      { type: "path", id: "path", label: "Input image" },
+      { type: "checkbox", id: "apply", label: "Apply rename", checked: false },
+    ],
+    buildPayload: (values) => ({
+      provider_id: values.provider_id,
+      model: values.model,
+      path: values.path,
+      apply: Boolean(values.apply),
+    }),
+  },
+  {
+    id: "image-prune-refs",
+    category: "Images",
+    label: "Prune stale refs",
+    endpoint: "/api/workflows/image/prune-refs",
+    fields: [
+      { type: "path", id: "markdown_path", label: "Markdown file" },
+      { type: "path", id: "asset_dir", label: "Asset directory" },
+      { type: "checkbox", id: "apply", label: "Apply filesystem changes", checked: false },
+    ],
+    buildPayload: (values) => ({
+      markdown_path: values.markdown_path,
+      asset_dir: values.asset_dir,
+      apply: Boolean(values.apply),
+    }),
+  },
+  {
+    id: "audio-transcribe",
+    category: "Audio",
+    label: "Transcribe",
+    endpoint: "/api/workflows/audio/transcribe",
+    fields: [
+      { type: "path", id: "path", label: "Input audio file" },
+      { type: "text", id: "model", label: "Whisper model path (optional)", value: "", placeholder: "Leave blank to use whisper-cli default" },
+    ],
+    buildPayload: (values) => ({
+      model: values.model,
+      path: values.path,
+    }),
+  },
+  {
+    id: "audio-analyze",
+    category: "Audio",
+    label: "Analyze tracks",
+    endpoint: "/api/workflows/audio/analyze",
+    fields: [
+      { type: "providerModel" },
+      { type: "textarea", id: "transcript", label: "Transcript", rows: 10, placeholder: "Paste transcript(s), separated by blank line delimiter `---`" },
+    ],
+    buildPayload: (values) => ({
+      provider_id: values.provider_id,
+      model: values.model,
+      track_text: values.transcript ? values.transcript.split("\n---\n").map((text) => text.trim()).filter(Boolean) : [],
+      track_names: [],
+    }),
+  },
+  {
+    id: "video-info",
+    category: "Video",
+    label: "Info",
+    endpoint: "/api/workflows/video/info",
+    fields: [{ type: "path", id: "path", label: "Input video file" }],
+    buildPayload: (values) => ({ path: values.path }),
+  },
+  {
+    id: "video-compress",
+    category: "Video",
+    label: "Compress",
+    endpoint: "/api/workflows/video/compress",
+    fields: [
+      { type: "path", id: "path", label: "Input video file" },
+      { type: "path", id: "output", label: "Output video file (optional)" },
+      { type: "number", id: "crf", label: "CRF", min: 1, max: 51, default: 28 },
+    ],
+    buildPayload: (values) => ({
+      path: values.path,
+      output: values.output,
+      crf: values.crf,
+    }),
+  },
+  {
+    id: "video-backup",
+    category: "Video",
+    label: "Metadata backup",
+    endpoint: "/api/workflows/video/metadata/backup",
+    fields: [
+      { type: "path", id: "path", label: "Input video file" },
+      { type: "path", id: "sidecar", label: "Sidecar file (optional)" },
+    ],
+    buildPayload: (values) => ({
+      path: values.path,
+      sidecar: values.sidecar,
+      output: "",
+    }),
+  },
+  {
+    id: "video-restore",
+    category: "Video",
+    label: "Metadata restore",
+    endpoint: "/api/workflows/video/metadata/restore",
+    fields: [
+      { type: "path", id: "path", label: "Input video file" },
+      { type: "path", id: "sidecar", label: "Sidecar file" },
+      { type: "path", id: "output", label: "Output video file (optional)" },
+    ],
+    buildPayload: (values) => ({
+      path: values.path,
+      sidecar: values.sidecar,
+      output: values.output,
+    }),
+  },
+  {
+    id: "news",
+    category: "News",
+    label: "Analyze news feed",
+    endpoint: "/api/workflows/news/run",
+    fields: [
+      { type: "providerModel" },
+      { type: "path", id: "path", label: "Input JSON/XLSX file" },
+      { type: "path", id: "output_path", label: "Output XLSX (optional)" },
+      { type: "checkbox", id: "use_llm", label: "Use LLM summary", checked: true },
+    ],
+    buildPayload: (values) => ({
+      provider_id: values.provider_id,
+      model: values.model,
+      path: values.path,
+      output_path: values.output_path,
+      use_llm: Boolean(values.model) && Boolean(values.use_llm),
+    }),
+  },
+];
+
 const state = {
   view: "chat",
   settings: null,
   models: {},
-  browser: {
-    target: null,
-    path: "",
+  browser: { target: null, path: "" },
+  workflow: {
+    category: "Study",
+    workflowId: "recall",
+    pathValues: {},
   },
 };
 
 const view = document.querySelector("#view");
 const health = document.querySelector("#health");
+const primaryTabs = document.querySelector("#primary-tabs");
 
-document.querySelectorAll("aside button").forEach((button) => {
-  button.addEventListener("click", () => {
-    state.view = button.dataset.view;
-    render();
+const WORKFLOW_PREFIX = "wf";
+
+function escapeHtml(value) {
+  const text = String(value ?? "");
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function workflowControlId(id) {
+  return `${WORKFLOW_PREFIX}-${id}`;
+}
+
+function workflowDisplayId(id) {
+  return `${WORKFLOW_PREFIX}-${id}-value`;
+}
+
+function workflowBrowseId(id) {
+  return `${WORKFLOW_PREFIX}-${id}-browse`;
+}
+
+function getProviders() {
+  return state.settings?.providers || [];
+}
+
+function renderProviderOptions(selectedId = "") {
+  const providers = getProviders();
+  if (!providers.length) {
+    return `<option value="">No providers configured</option>`;
+  }
+  return providers
+    .map((provider) => {
+      const id = escapeHtml(provider.id);
+      const name = escapeHtml(provider.name || provider.id);
+      const selected = provider.id === selectedId ? " selected" : "";
+      return `<option value="${id}"${selected}>${name}</option>`;
+    })
+    .join("");
+}
+
+function defaultModelOption() {
+  return state.settings?.default_model || "";
+}
+
+function defaultProviderId() {
+  return state.settings?.default_provider || state.settings?.providers?.[0]?.id || "";
+}
+
+function activeWorkflowCategoryDefinitions(category) {
+  return WORKFLOW_DEFINITIONS.filter((workflow) => workflow.category === category);
+}
+
+function getWorkflowById(workflowId) {
+  return WORKFLOW_DEFINITIONS.find((workflow) => workflow.id === workflowId) || null;
+}
+
+function getActiveWorkflow() {
+  const byCategory = activeWorkflowCategoryDefinitions(state.workflow.category);
+  if (!byCategory.length) {
+    state.workflow.category = WORKFLOW_CATEGORIES[0];
+    state.workflow.workflowId = WORKFLOW_DEFINITIONS[0].id;
+    return WORKFLOW_DEFINITIONS[0];
+  }
+  const match = getWorkflowById(state.workflow.workflowId);
+  if (match && byCategory.some((workflow) => workflow.id === match.id)) {
+    return match;
+  }
+  state.workflow.workflowId = byCategory[0].id;
+  return byCategory[0];
+}
+
+function enableTabKeyboard(container, onActivate) {
+  if (!container) return;
+  container.addEventListener("keydown", (event) => {
+    const tabs = Array.from(container.querySelectorAll('[role="tab"]'));
+    const currentIndex = tabs.indexOf(document.activeElement);
+    if (currentIndex === -1) return;
+    let nextIndex = -1;
+    if (event.key === "ArrowRight") {
+      nextIndex = (currentIndex + 1) % tabs.length;
+    } else if (event.key === "ArrowLeft") {
+      nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = tabs.length - 1;
+    }
+    if (nextIndex === -1) return;
+    event.preventDefault();
+    tabs[nextIndex].focus();
+    if (onActivate) onActivate(tabs[nextIndex]);
   });
-});
+}
 
-async function api(path, options = {}) {
-  const response = await fetch(path, {
+function syncTabStates(container, isActive) {
+  const tabs = container.querySelectorAll('[role="tab"]');
+  tabs.forEach((tab) => {
+    const active = isActive(tab);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+    tab.tabIndex = active ? 0 : -1;
+    tab.classList.toggle("active-tab", active);
+  });
+}
+
+function syncPrimaryTabs() {
+  if (!primaryTabs) return;
+  syncTabStates(primaryTabs, (tab) => tab.dataset.view === state.view);
+}
+
+function syncWorkflowCategoryTabs() {
+  const categoryTabs = document.querySelector(".workflow-category-tabs");
+  if (!categoryTabs) return;
+  syncTabStates(categoryTabs, (tab) => tab.dataset.workflowCategory === state.workflow.category);
+}
+
+function readNumberValue(value, fallback = 0, min = Number.NEGATIVE_INFINITY) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return parsed < min ? fallback : parsed;
+}
+
+function api(path, options = {}) {
+  return fetch(path, {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     ...options,
+  }).then(async (response) => {
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(payload.error || response.statusText);
+    }
+    return response.json();
   });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(payload.error || response.statusText);
-  }
-  return response.json();
 }
 
 async function loadSettings() {
@@ -43,240 +435,554 @@ async function checkHealth() {
   }
 }
 
+function renderProviderModelRow(prefix, options = {}) {
+  const providers = getProviders();
+  const providerId = `${prefix}-provider`;
+  const modelId = `${prefix}-model`;
+  const refreshId = `${prefix}-refresh-models`;
+  const defaultProvider = defaultProviderId();
+  const modelDefault = defaultModelOption();
+  const providerOptions = renderProviderOptions(defaultProvider);
+  return `
+    <div class="field-row">
+      <div class="field">
+        <label for="${providerId}">Provider</label>
+        <select id="${providerId}">${providerOptions}</select>
+      </div>
+      <div class="field">
+        <label for="${modelId}">Model</label>
+        <select id="${modelId}">
+          <option value="${escapeHtml(modelDefault)}">${escapeHtml(modelDefault || "Load models...")}</option>
+        </select>
+      </div>
+      ${options.includeRefresh !== false ? `<div class="field"><button type="button" id="${refreshId}">Refresh models</button></div>` : ""}
+    </div>
+  `;
+}
+
+function setupProviderModel(prefix) {
+  const providerSelect = document.querySelector(`#${prefix}-provider`);
+  const modelSelect = document.querySelector(`#${prefix}-model`);
+  const refreshButton = document.querySelector(`#${prefix}-refresh-models`);
+  if (!providerSelect || !modelSelect) return;
+  if (!providerSelect.value && providerSelect.options.length > 0) {
+    providerSelect.value = providerSelect.options[0].value;
+  }
+  providerSelect.addEventListener("change", () => populateModelSelect(providerSelect.value, `#${modelSelect.id}`));
+  if (refreshButton) {
+    refreshButton.addEventListener("click", () => populateModelSelect(providerSelect.value, `#${modelSelect.id}`, true));
+  }
+  populateModelSelect(providerSelect.value, `#${modelSelect.id}`);
+}
+
+function getProviderModelValues(prefix) {
+  const providerSelect = document.querySelector(`#${prefix}-provider`);
+  const modelSelect = document.querySelector(`#${prefix}-model`);
+  return {
+    provider_id: providerSelect?.value || "",
+    model: modelSelect?.value || "",
+  };
+}
+
+function renderWorkflowField(field) {
+  if (field.type === "providerModel") {
+    return renderProviderModelRow(WORKFLOW_PREFIX);
+  }
+  if (field.type === "text") {
+    const id = workflowControlId(field.id);
+    const value = field.value || "";
+    return `
+      <div class="field">
+        <label for="${id}">${field.label}</label>
+        <input id="${id}" type="text" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.placeholder || "")}">
+      </div>
+    `;
+  }
+  if (field.type === "textarea") {
+    const id = workflowControlId(field.id);
+    return `
+      <div class="field">
+        <label for="${id}">${field.label}</label>
+        <textarea id="${id}" rows="${field.rows || 6}" placeholder="${escapeHtml(field.placeholder || "")}"></textarea>
+      </div>
+    `;
+  }
+  if (field.type === "select") {
+    const id = workflowControlId(field.id);
+    const options = field.options || [];
+    return `
+      <div class="field">
+        <label for="${id}">${field.label}</label>
+        <select id="${id}">
+          ${options
+            .map((option) => {
+              const selected = option.value === (field.default ?? "") ? " selected" : "";
+              return `<option value="${escapeHtml(option.value)}"${selected}>${escapeHtml(option.label)}</option>`;
+            })
+            .join("")}
+        </select>
+      </div>
+    `;
+  }
+  if (field.type === "number") {
+    const id = workflowControlId(field.id);
+    const min = Number.isFinite(field.min) ? field.min : "";
+    const max = Number.isFinite(field.max) ? field.max : "";
+    const value = Number.isFinite(field.default) ? field.default : "";
+    return `
+      <div class="field">
+        <label for="${id}">${field.label}</label>
+        <input id="${id}" type="number" min="${min}" max="${max}" value="${escapeHtml(value)}">
+      </div>
+    `;
+  }
+  if (field.type === "checkbox") {
+    const id = workflowControlId(field.id);
+    const checked = field.checked ? " checked" : "";
+    return `
+      <div class="field">
+        <label class="checkbox">
+          <input id="${id}" type="checkbox" ${checked}>
+          <span>${field.label}</span>
+        </label>
+      </div>
+    `;
+  }
+  if (field.type === "path") {
+    const browseId = workflowBrowseId(field.id);
+    const valueId = workflowDisplayId(field.id);
+    const currentPath = state.workflow.pathValues[field.id] || "";
+    return `
+      <div class="field">
+        <label for="${valueId}">${field.label}</label>
+        <div class="path-control">
+          <output id="${valueId}" data-path="${escapeHtml(currentPath)}">${escapeHtml(currentPath || `No ${field.label.toLowerCase()} selected`)}</output>
+          <button type="button" id="${browseId}" data-workflow-target="${escapeHtml(field.id)}">${escapeHtml(`Choose ${field.label}`)}</button>
+        </div>
+      </div>
+    `;
+  }
+  return "";
+}
+
+function renderWorkflowCategoryTabs() {
+  return `
+    <div class="tabs workflow-category-tabs" role="tablist" aria-label="Workflow categories">
+      ${WORKFLOW_CATEGORIES.map((category) => `
+        <button type="button" role="tab" class="workflow-tab" data-workflow-category="${category}" aria-selected="false">
+          ${escapeHtml(category)}
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderWorkflowSelect(activeWorkflow) {
+  const items = activeWorkflowCategoryDefinitions(state.workflow.category);
+  return `
+    <div class="field">
+      <label for="workflow-selection">Workflow</label>
+      <select id="workflow-selection">
+        ${items.map((workflow) => `<option value="${escapeHtml(workflow.id)}"${workflow.id === activeWorkflow.id ? " selected" : ""}>${escapeHtml(workflow.label)}</option>`).join("")}
+      </select>
+    </div>
+  `;
+}
+
+function collectWorkflowInputValues(definition) {
+  const values = {};
+  definition.fields.forEach((field) => {
+    if (field.type === "providerModel") {
+      Object.assign(values, getProviderModelValues(WORKFLOW_PREFIX));
+      return;
+    }
+    const id = workflowControlId(field.id);
+    const element = document.querySelector(`#${id}`);
+    if (!element) return;
+    if (field.type === "checkbox") {
+      values[field.id] = element.checked;
+      return;
+    }
+    if (field.type === "path") {
+      const display = document.querySelector(`#${workflowDisplayId(field.id)}`);
+      values[field.id] = display?.dataset.path || "";
+      return;
+    }
+    if (field.type === "number") {
+      values[field.id] = readNumberValue(element.value, field.default || 0, field.min || 0);
+      return;
+    }
+    values[field.id] = element.value || "";
+  });
+  return values;
+}
+
+function setWorkflowPathValue(target, pathValue) {
+  state.workflow.pathValues[target] = pathValue || "";
+  const display = document.querySelector(`#${workflowDisplayId(target)}`);
+  if (!display) return;
+  display.dataset.path = pathValue;
+  display.textContent = pathValue || "No path selected";
+}
+
+function getWorkflowPathValue(target) {
+  const display = document.querySelector(`#${workflowDisplayId(target)}`);
+  return display?.dataset.path || "";
+}
+
+function buildWorkflowPayload(definition) {
+  const inputValues = collectWorkflowInputValues(definition);
+  if (definition.buildPayload) {
+    return definition.buildPayload(inputValues);
+  }
+  return inputValues;
+}
+
 async function render() {
   if (!state.settings) {
     await loadSettings();
   }
+  syncPrimaryTabs();
   if (state.view === "providers") return renderProviders();
   if (state.view === "tools") return renderTools();
-  if (state.view === "recall") return renderRecall();
-  if (state.view === "workflows") return renderWorkflows();
   if (state.view === "jobs") return renderJobs();
   if (state.view === "settings") return renderSettings();
+  if (state.view === "workflows") return renderWorkflows();
   return renderChat();
 }
 
 function renderChat() {
-  const providers = state.settings.providers || [];
   view.innerHTML = `
     <div class="panel grid">
-      <div class="row">
-        <select id="provider">${providers.map((p) => `<option value="${p.id}">${p.name || p.id}</option>`).join("")}</select>
-        <select id="model"><option value="${state.settings.default_model || ""}">${state.settings.default_model || "Load models..."}</option></select>
-        <button id="refresh-models">Refresh models</button>
+      <h2>Chat</h2>
+      ${renderProviderModelRow("chat")}
+      <div class="field">
+        <label for="chat-prompt">Prompt</label>
+        <textarea id="chat-prompt" rows="8" placeholder="Ask a local model..."></textarea>
       </div>
-      <textarea id="prompt" placeholder="Ask a local model..."></textarea>
-      <button id="send">Send</button>
-      <pre id="answer"></pre>
+      <div class="field">
+        <button id="chat-send" type="button">Send</button>
+      </div>
+      <div class="field">
+        <h3>Status</h3>
+        <p id="chat-status" class="status-line" role="status" aria-live="polite">Ready</p>
+      </div>
+      <div class="field">
+        <h3>Answer</h3>
+        <pre id="chat-answer" role="status" aria-live="polite"></pre>
+      </div>
     </div>
   `;
-  const providerSelect = document.querySelector("#provider");
-  providerSelect.addEventListener("change", () => populateModelSelect(providerSelect.value, "#model"));
-  document.querySelector("#refresh-models").addEventListener("click", () => populateModelSelect(providerSelect.value, "#model", true));
-  populateModelSelect(providerSelect.value, "#model");
-  document.querySelector("#send").addEventListener("click", async () => {
-    const answer = document.querySelector("#answer");
-    answer.textContent = "thinking...";
+  setupProviderModel("chat");
+  document.querySelector("#chat-send").addEventListener("click", async () => {
+    const prompt = document.querySelector("#chat-prompt");
+    const status = document.querySelector("#chat-status");
+    const answer = document.querySelector("#chat-answer");
+    const { provider_id, model } = getProviderModelValues("chat");
+    status.textContent = "Thinking...";
+    answer.textContent = "";
     try {
       const result = await api("/api/chat", {
         method: "POST",
         body: JSON.stringify({
-          provider_id: document.querySelector("#provider").value,
-          model: document.querySelector("#model").value,
-          messages: [{ role: "user", content: document.querySelector("#prompt").value }],
+          provider_id,
+          model,
+          messages: [{ role: "user", content: prompt.value }],
           temperature: 0.1,
         }),
       });
+      status.textContent = "Done";
       answer.textContent = result.content;
     } catch (error) {
+      status.textContent = "Failed";
       answer.textContent = error.message;
     }
   });
 }
 
-function renderRecall() {
-  const providers = state.settings.providers || [];
-  view.innerHTML = `
-    <div class="panel grid">
-      <div class="row">
-        <select id="provider">${providers.map((p) => `<option value="${p.id}">${p.name || p.id}</option>`).join("")}</select>
-        <select id="model"><option value="${state.settings.default_model || ""}">${state.settings.default_model || "Load models..."}</option></select>
-        <button id="refresh-models">Refresh models</button>
-      </div>
-      <textarea id="notes" placeholder="Paste UPSC notes..."></textarea>
-      <button id="generate">Generate recall triggers</button>
-      <pre id="triggers"></pre>
-    </div>
-  `;
-  const providerSelect = document.querySelector("#provider");
-  providerSelect.addEventListener("change", () => populateModelSelect(providerSelect.value, "#model"));
-  document.querySelector("#refresh-models").addEventListener("click", () => populateModelSelect(providerSelect.value, "#model", true));
-  populateModelSelect(providerSelect.value, "#model");
-  document.querySelector("#generate").addEventListener("click", async () => {
-    const output = document.querySelector("#triggers");
-    output.textContent = "generating...";
-    try {
-      const result = await api("/api/workflows/recall/run", {
-        method: "POST",
-        body: JSON.stringify({
-          provider_id: document.querySelector("#provider").value,
-          model: document.querySelector("#model").value,
-          notes: document.querySelector("#notes").value,
-        }),
-      });
-      output.textContent = result.result.triggers;
-    } catch (error) {
-      output.textContent = error.message;
-    }
-  });
-}
-
 function renderWorkflows() {
-  const providers = state.settings.providers || [];
+  const activeWorkflow = getActiveWorkflow();
   view.innerHTML = `
     <div class="panel grid">
-      <p class="muted">Run local workflows against files on this machine. Provider/model fields are used by LLM and vision workflows.</p>
-      <div class="row">
-        <select id="workflow">
-          <option value="/api/workflows/image/run">Image: rename/junk/digitize</option>
-          <option value="/api/workflows/image/rename">Image: apply safe rename</option>
-          <option value="/api/workflows/image/prune-refs">Image: prune stale refs</option>
-          <option value="/api/workflows/ocr/run">OCR: ZIP images to Markdown</option>
-          <option value="/api/workflows/ocr/pdf">OCR: PDF to Markdown</option>
-          <option value="/api/workflows/analyze/run">Analyze: PDF to report</option>
-          <option value="/api/workflows/news/run">News: dedupe/merge JSON/XLSX</option>
-          <option value="/api/workflows/video/info">Video: info</option>
-          <option value="/api/workflows/video/compress">Video: compress</option>
-          <option value="/api/workflows/video/metadata/backup">Video: metadata backup</option>
-          <option value="/api/workflows/video/metadata/restore">Video: metadata restore</option>
-          <option value="/api/workflows/video/generate">Video: notes/tags/course</option>
-          <option value="/api/workflows/audio/transcribe">Audio: transcribe</option>
-          <option value="/api/workflows/audio/analyze">Audio: analyze/playlists</option>
-        </select>
-        <select id="provider">${providers.map((p) => `<option value="${p.id}">${p.name || p.id}</option>`).join("")}</select>
-        <select id="model"><option value="${state.settings.default_model || ""}">${state.settings.default_model || "Load models..."}</option></select>
-        <button id="refresh-models">Refresh models</button>
+      <h2>Workflows</h2>
+      ${renderWorkflowCategoryTabs()}
+      ${renderWorkflowSelect(activeWorkflow)}
+      ${renderDropZone()}
+      <p class="muted">Workflow controls are shown only for the selected workflow. Recall is included in the <strong>Study</strong> workflow set.</p>
+      <div id="workflow-fields" class="grid">
+        ${activeWorkflow.fields.map(renderWorkflowField).join("")}
       </div>
-      <div class="row">
-        <select id="mode">
-          <option value="">Default mode</option>
-          <option value="rename">rename</option>
-          <option value="junk">junk</option>
-          <option value="digitize">digitize</option>
-          <option value="notes">notes</option>
-          <option value="tags">tags</option>
-          <option value="course">course</option>
-        </select>
-        <label><input id="apply" type="checkbox" /> apply filesystem changes</label>
+      <div class="field">
+        <button id="workflow-run" type="button">Run workflow</button>
       </div>
-      <div class="row">
-        <button id="pick-path">Choose input</button>
-        <button id="pick-output">Choose output / sidecar / asset dir</button>
+      <div class="field">
+        <h3>Status</h3>
+        <p id="workflow-status" class="status-line" role="status" aria-live="polite">Ready</p>
       </div>
-      <div class="row">
-        <label>PDF render workers<input id="render-workers" type="number" min="1" max="64" value="2" /></label>
-        <label>OCR workers<input id="ocr-workers" type="number" min="1" max="64" value="1" /></label>
-      </div>
-      <div id="drop-zone" class="drop-zone" tabindex="0">
-        <strong>Drop a PDF here</strong>
-        <span>PDFs auto-select OCR. ZIPs, images, audio, and video files are accepted too.</span>
-      </div>
-      <div class="row">
-        <code id="path-display">No input selected</code>
-        <code id="output-display">No output selected</code>
-      </div>
-      <textarea id="text" placeholder="transcript, notes, or JSON array input for advanced workflows"></textarea>
-      <button id="run">Run</button>
-      <div id="workflow-status" class="status-line">Ready</div>
       <div id="workflow-progress" class="progress hidden">
         <div></div>
       </div>
-      <div id="review-pane" class="review-pane hidden">
-        <iframe id="source-preview" title="Source PDF preview"></iframe>
-        <textarea id="markdown-preview" readonly placeholder="Markdown result appears here"></textarea>
+      <div class="field">
+        <h3>Result</h3>
+        <pre id="workflow-result" role="status" aria-live="polite"></pre>
       </div>
-      <pre id="workflow-result"></pre>
-      <div id="file-browser" class="browser hidden"></div>
+      <div id="review-pane" class="review-pane hidden">
+        <iframe id="source-preview" title="Source file preview"></iframe>
+        <textarea id="markdown-preview" readonly placeholder="Markdown preview appears here"></textarea>
+      </div>
+      <div id="file-browser" class="browser hidden" aria-live="polite"></div>
     </div>
   `;
-  const providerSelect = document.querySelector("#provider");
-  providerSelect.addEventListener("change", () => populateModelSelect(providerSelect.value, "#model"));
-  document.querySelector("#refresh-models").addEventListener("click", () => populateModelSelect(providerSelect.value, "#model", true));
-  populateModelSelect(providerSelect.value, "#model");
-  document.querySelector("#pick-path").addEventListener("click", () => openBrowser("path"));
-  document.querySelector("#pick-output").addEventListener("click", () => openBrowser("output"));
-  setupDropZone();
-  document.querySelector("#run").addEventListener("click", async () => {
-    const endpoint = document.querySelector("#workflow").value;
-    const output = document.querySelector("#workflow-result");
-    const runButton = document.querySelector("#run");
+  syncWorkflowCategoryTabs();
+
+  document.querySelectorAll(".workflow-category-tabs [role='tab']").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.workflow.category = button.dataset.workflowCategory;
+      state.workflow.workflowId = activeWorkflowCategoryDefinitions(state.workflow.category)[0].id;
+      render();
+    });
+  });
+  enableTabKeyboard(document.querySelector(".workflow-category-tabs"), (tab) => {
+    const nextCategory = tab.dataset.workflowCategory;
+    state.workflow.category = nextCategory;
+    state.workflow.workflowId = activeWorkflowCategoryDefinitions(nextCategory)[0].id;
+    render();
+  });
+  const workflowSelect = document.querySelector("#workflow-selection");
+  if (workflowSelect) {
+    workflowSelect.addEventListener("change", () => {
+      state.workflow.workflowId = workflowSelect.value;
+      render();
+    });
+  }
+  if (activeWorkflow.fields.some((field) => field.type === "providerModel")) {
+    setupProviderModel(WORKFLOW_PREFIX);
+  }
+  activeWorkflow.fields.forEach((field) => {
+    if (field.type !== "path") return;
+    const pickButton = document.querySelector(`#${workflowBrowseId(field.id)}`);
+    if (!pickButton) return;
+    pickButton.addEventListener("click", () => {
+      openBrowser(field.id, field.label);
+    });
+  });
+  const runButton = document.querySelector("#workflow-run");
+  const result = document.querySelector("#workflow-result");
+  const progressBar = document.querySelector("#workflow-progress");
+  runButton.addEventListener("click", async () => {
     const status = document.querySelector("#workflow-status");
-    const progressBar = document.querySelector("#workflow-progress");
-    const payload = {
-      provider_id: document.querySelector("#provider").value,
-      model: document.querySelector("#model").value,
-      path: document.querySelector("#path-display").dataset.path || "",
-      mode: document.querySelector("#mode").value,
-      output: document.querySelector("#output-display").dataset.path || "",
-      output_path: document.querySelector("#output-display").dataset.path || "",
-      sidecar: document.querySelector("#output-display").dataset.path || "",
-      markdown_path: document.querySelector("#path-display").dataset.path || "",
-      asset_dir: document.querySelector("#output-display").dataset.path || "",
-      transcript: document.querySelector("#text").value,
-      notes: document.querySelector("#text").value,
-      track_text: document.querySelector("#text").value ? document.querySelector("#text").value.split("\\n---\\n") : [],
-      render_workers: numberValue("#render-workers"),
-      workers: numberValue("#ocr-workers"),
-      apply: document.querySelector("#apply").checked,
-      use_llm: Boolean(document.querySelector("#model").value),
-    };
     runButton.disabled = true;
     status.textContent = "Running workflow...";
     setProgress(progressBar, 0);
+    result.textContent = "";
     setMarkdownPreview("");
-    output.textContent = "";
     try {
-      const result = await api(endpoint, {
+      const payload = buildWorkflowPayload(activeWorkflow);
+      const response = await api(activeWorkflow.endpoint, {
         method: "POST",
         body: JSON.stringify(payload),
       });
-      if (result.job?.id && result.job.status === "running") {
-        await pollWorkflowJob(result.job.id, status, progressBar, output);
-      } else {
-        renderWorkflowJob(result.job, status, progressBar);
-        setMarkdownPreview(result.result?.markdown || "");
-        output.textContent = JSON.stringify(result.result || result, null, 2);
+      if (response.job?.id && response.job.status === "running") {
+        await pollWorkflowJob(response.job.id, status, progressBar, result);
+      return;
       }
+      renderWorkflowJob(response.job, status, progressBar);
+      setMarkdownPreview(response.result?.markdown || "");
+      result.textContent = JSON.stringify(response.result || response, null, 2);
+      status.textContent = "Completed";
     } catch (error) {
       status.textContent = "Failed";
-      output.textContent = error.message;
+      result.textContent = error.message;
     } finally {
       runButton.disabled = false;
     }
   });
+  setupDropZone();
 }
 
-function numberValue(selector) {
-  const value = Number.parseInt(document.querySelector(selector)?.value || "", 10);
-  return Number.isFinite(value) && value > 0 ? value : 0;
+function renderProviders() {
+  view.innerHTML = `
+    <div class="panel grid">
+      <h2>Providers</h2>
+      <div class="field">
+        <label for="provider-list">Provider</label>
+        <select id="provider-list"></select>
+      </div>
+      <div class="field">
+        <button id="load-models" type="button">Load models</button>
+      </div>
+      <div class="field">
+        <h3>Status</h3>
+        <p id="providers-status" class="status-line" role="status" aria-live="polite">Loading providers...</p>
+      </div>
+      <div class="field">
+        <h3>Model response</h3>
+        <pre id="providers-models" role="status" aria-live="polite"></pre>
+      </div>
+      <div class="field">
+        <h3>Configured providers</h3>
+        <pre id="provider-config" role="status" aria-live="polite"></pre>
+      </div>
+    </div>
+  `;
+  renderProvidersData();
 }
 
-async function pollWorkflowJob(jobID, status, progressBar, output) {
-  while (true) {
-    await sleep(900);
-    const job = await api(`/api/jobs/${encodeURIComponent(jobID)}`);
-    renderWorkflowJob(job, status, progressBar);
-    if (job.status === "completed") {
-      const result = parseJobOutput(job.output);
-      setMarkdownPreview(result?.markdown || "");
-      output.textContent = result ? JSON.stringify(result, null, 2) : "";
-      return;
+async function renderProvidersData() {
+  const providerStatus = document.querySelector("#providers-status");
+  const providerSelect = document.querySelector("#provider-list");
+  const modelOutput = document.querySelector("#providers-models");
+  const configOutput = document.querySelector("#provider-config");
+  providerSelect.innerHTML = getProviders().map((provider) => `<option value="${escapeHtml(provider.id)}">${escapeHtml(provider.name || provider.id)}</option>`).join("");
+  providerStatus.textContent = "Select a provider to load models.";
+  configOutput.textContent = JSON.stringify(state.settings.providers, null, 2);
+  const load = async () => {
+    const providerID = providerSelect.value;
+    providerStatus.textContent = `Loading models for ${providerID || "provider"}...`;
+    modelOutput.textContent = "";
+    try {
+      const payload = await api(`/api/providers/${encodeURIComponent(providerID)}/models`);
+      modelOutput.textContent = JSON.stringify(payload.models, null, 2);
+      providerStatus.textContent = "Models loaded";
+    } catch (error) {
+      modelOutput.textContent = error.message;
+      providerStatus.textContent = "Failed to load models";
     }
-    if (job.status === "failed") {
-      output.textContent = job.error || "Workflow failed";
-      return;
-    }
+  };
+  providerSelect.addEventListener("change", load);
+  document.querySelector("#load-models").addEventListener("click", load);
+  load();
+}
+
+function renderJobs() {
+  view.innerHTML = `
+    <div class="panel grid">
+      <h2>Jobs</h2>
+      <div class="field">
+        <h3>Status</h3>
+        <p id="jobs-status" class="status-line" role="status" aria-live="polite">Loading jobs...</p>
+      </div>
+      <div class="field">
+        <h3>Job list</h3>
+        <pre id="jobs-output" role="status" aria-live="polite"></pre>
+      </div>
+    </div>
+  `;
+  loadJobs();
+}
+
+async function loadJobs() {
+  const status = document.querySelector("#jobs-status");
+  const output = document.querySelector("#jobs-output");
+  status.textContent = "Loading jobs...";
+  try {
+    const payload = await api("/api/jobs");
+    output.textContent = JSON.stringify(payload.jobs, null, 2);
+    status.textContent = "Loaded";
+  } catch (error) {
+    output.textContent = error.message;
+    status.textContent = "Failed to load jobs";
   }
+}
+
+function renderTools() {
+  view.innerHTML = `
+    <div class="panel grid">
+      <h2>Tools</h2>
+      <div class="field">
+        <h3>Status</h3>
+        <p id="tools-status" class="status-line" role="status" aria-live="polite">Loading tools...</p>
+      </div>
+      <div class="field">
+        <h3>Tool metadata</h3>
+        <pre id="tools-output" role="status" aria-live="polite"></pre>
+      </div>
+    </div>
+  `;
+  loadTools();
+}
+
+async function loadTools() {
+  const status = document.querySelector("#tools-status");
+  const output = document.querySelector("#tools-output");
+  status.textContent = "Loading tools...";
+  try {
+    const payload = await api("/api/tools");
+    output.textContent = JSON.stringify(payload.tools, null, 2);
+    status.textContent = "Loaded";
+  } catch (error) {
+    output.textContent = error.message;
+    status.textContent = "Failed to load tools";
+  }
+}
+
+function renderSettings() {
+  view.innerHTML = `
+    <div class="panel grid">
+      <h2>Settings</h2>
+      <div class="field">
+        <label for="settings-editor">Configuration JSON</label>
+        <textarea id="settings-editor" rows="20">${escapeHtml(JSON.stringify(state.settings, null, 2))}</textarea>
+      </div>
+      <div class="field">
+        <button id="settings-save" type="button">Save</button>
+      </div>
+      <div class="field">
+        <h3>Status</h3>
+        <p id="settings-status" class="status-line" role="status" aria-live="polite">Ready</p>
+      </div>
+      <div class="field">
+        <h3>Save result</h3>
+        <pre id="settings-result" role="status" aria-live="polite"></pre>
+      </div>
+    </div>
+  `;
+  document.querySelector("#settings-save").addEventListener("click", async () => {
+    const status = document.querySelector("#settings-status");
+    const output = document.querySelector("#settings-result");
+    const editor = document.querySelector("#settings-editor");
+    status.textContent = "Saving...";
+    output.textContent = "";
+    try {
+      state.settings = await api("/api/settings", {
+        method: "PUT",
+        body: editor.value,
+      });
+      output.textContent = "saved";
+      status.textContent = "Saved";
+    } catch (error) {
+      output.textContent = error.message;
+      status.textContent = "Failed";
+    }
+  });
+}
+
+function setProgress(progressBar, percent) {
+  if (!progressBar) return;
+  progressBar.classList.remove("hidden");
+  progressBar.firstElementChild.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+}
+
+function pollWorkflowJob(jobID, status, progressBar, output) {
+  return (async () => {
+    while (true) {
+      await sleep(900);
+      const job = await api(`/api/jobs/${encodeURIComponent(jobID)}`);
+      renderWorkflowJob(job, status, progressBar);
+      if (job.status === "completed") {
+        const result = parseJobOutput(job.output);
+        setMarkdownPreview(result?.markdown || "");
+        output.textContent = result ? JSON.stringify(result, null, 2) : "";
+        status.textContent = "Completed";
+        return;
+      }
+      if (job.status === "failed") {
+        output.textContent = job.error || "Workflow failed";
+        status.textContent = "Failed";
+        return;
+      }
+    }
+  })();
 }
 
 function parseJobOutput(output) {
@@ -286,6 +992,16 @@ function parseJobOutput(output) {
   } catch {
     return { output };
   }
+}
+
+function renderWorkflowJob(job, status, progressBar) {
+  if (!job) return;
+  const percent = Math.round((job.progress || 0) * 100);
+  const elapsed = elapsedSeconds(job.created_at);
+  const eta = job.eta_seconds ? ` | ETA ${formatDuration(job.eta_seconds)}` : "";
+  const step = job.total_steps ? ` | ${job.current_step}/${job.total_steps}` : "";
+  status.textContent = `${job.status}: ${job.stage || "working"}${step} | ${percent}% | elapsed ${formatDuration(elapsed)}${eta}`;
+  setProgress(progressBar, percent);
 }
 
 function setSourcePreview(url) {
@@ -310,40 +1026,63 @@ function setMarkdownPreview(markdown) {
   }
 }
 
-function renderWorkflowJob(job, status, progressBar) {
-  if (!job) return;
-  const percent = Math.round((job.progress || 0) * 100);
-  const elapsed = elapsedSeconds(job.created_at);
-  const eta = job.eta_seconds ? ` | ETA ${formatDuration(job.eta_seconds)}` : "";
-  const step = job.total_steps ? ` | ${job.current_step}/${job.total_steps}` : "";
-  status.textContent = `${job.status}: ${job.stage || "working"}${step} | ${percent}% | elapsed ${formatDuration(elapsed)}${eta}`;
-  setProgress(progressBar, percent);
+async function uploadWorkflowFile(file) {
+  const status = document.querySelector("#workflow-status");
+  const output = document.querySelector("#workflow-result");
+  const dropZone = document.querySelector("#drop-zone");
+  if (status) status.textContent = `Uploading ${file.name}...`;
+  if (output) output.textContent = "";
+  if (dropZone) dropZone.classList.add("uploading");
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch("/api/fs/upload", { method: "POST", body: form });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(payload.error || response.statusText);
+    }
+    const result = await response.json();
+    const uploaded = (result.files || [])[0];
+    if (!uploaded) throw new Error("upload finished without a stored file");
+    autoSelectWorkflow(uploaded.name || file.name);
+    const workflow = getActiveWorkflow();
+    const primaryPathField = workflow.fields.find((field) => field.type === "path");
+    if (primaryPathField) {
+      setWorkflowPathValue(primaryPathField.id, uploaded.path);
+      setSourcePreview(uploaded.url);
+    }
+    if (status) {
+      status.textContent = `Ready: ${uploaded.name || file.name}`;
+    }
+  } catch (error) {
+    status.textContent = "Upload failed";
+    output.textContent = error.message;
+  } finally {
+    if (dropZone) dropZone.classList.remove("uploading");
+  }
 }
 
-function setProgress(progressBar, percent) {
-  if (!progressBar) return;
-  progressBar.classList.remove("hidden");
-  progressBar.firstElementChild.style.width = `${Math.max(0, Math.min(100, percent))}%`;
-}
-
-function elapsedSeconds(createdAt) {
-  const started = Date.parse(createdAt);
-  if (Number.isNaN(started)) return 0;
-  return Math.max(0, Math.round((Date.now() - started) / 1000));
-}
-
-function formatDuration(seconds) {
-  if (!seconds) return "0s";
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  if (!mins) return `${secs}s`;
-  const hours = Math.floor(mins / 60);
-  if (!hours) return `${mins}m ${secs}s`;
-  return `${hours}h ${mins % 60}m`;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function autoSelectWorkflow(fileName) {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".pdf")) {
+    state.workflow.workflowId = "ocr-pdf";
+    state.workflow.category = "Documents";
+  } else if (lower.endsWith(".zip")) {
+    state.workflow.workflowId = "ocr-run";
+    state.workflow.category = "Documents";
+  } else if (/\.(png|jpe?g|webp|gif|bmp|tiff?)$/.test(lower)) {
+    state.workflow.workflowId = "image-run";
+    state.workflow.category = "Images";
+  } else if (/\.(mp3|wav|m4a|flac|ogg|opus)$/.test(lower)) {
+    state.workflow.workflowId = "audio-transcribe";
+    state.workflow.category = "Audio";
+  } else if (/\.(mp4|mov|mkv|webm|avi|m4v)$/.test(lower)) {
+    state.workflow.workflowId = "video-info";
+    state.workflow.category = "Video";
+  }
+  if (state.view === "workflows") {
+    render();
+  }
 }
 
 function setupDropZone() {
@@ -372,48 +1111,16 @@ function setupDropZone() {
   });
 }
 
-async function uploadWorkflowFile(file) {
-  const status = document.querySelector("#workflow-status");
-  const output = document.querySelector("#workflow-result");
-  const dropZone = document.querySelector("#drop-zone");
-  const form = new FormData();
-  form.append("file", file);
-  status.textContent = `Uploading ${file.name}...`;
-  output.textContent = "";
-  dropZone.classList.add("uploading");
-  try {
-    const response = await fetch("/api/fs/upload", { method: "POST", body: form });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({ error: response.statusText }));
-      throw new Error(payload.error || response.statusText);
-    }
-    const result = await response.json();
-    const uploaded = (result.files || [])[0];
-    if (!uploaded) throw new Error("upload finished without a stored file");
-    selectBrowserPath("path", uploaded.path, false);
-    setSourcePreview(uploaded.url);
-    autoSelectWorkflow(uploaded.name || file.name);
-    status.textContent = `Ready: ${uploaded.name || file.name}`;
-  } catch (error) {
-    status.textContent = "Upload failed";
-    output.textContent = error.message;
-  } finally {
-    dropZone.classList.remove("uploading");
-  }
+function renderDropZone() {
+  return `
+    <div id="drop-zone" class="drop-zone" tabindex="0">
+      <strong>Drop a file to auto-select workflow</strong>
+      <span>PDFs and ZIPs auto-select OCR; image/audio/video uploads auto-select matching workflows.</span>
+    </div>
+  `;
 }
 
-function autoSelectWorkflow(name) {
-  const lower = name.toLowerCase();
-  const workflow = document.querySelector("#workflow");
-  if (!workflow) return;
-  if (lower.endsWith(".pdf")) workflow.value = "/api/workflows/ocr/pdf";
-  else if (lower.endsWith(".zip")) workflow.value = "/api/workflows/ocr/run";
-  else if (/\.(png|jpe?g|webp|gif|bmp|tiff?)$/.test(lower)) workflow.value = "/api/workflows/image/run";
-  else if (/\.(mp3|wav|m4a|flac|ogg|opus)$/.test(lower)) workflow.value = "/api/workflows/audio/transcribe";
-  else if (/\.(mp4|mov|mkv|webm|avi)$/.test(lower)) workflow.value = "/api/workflows/video/info";
-}
-
-async function openBrowser(target, path = "") {
+async function openBrowser(target, targetLabel, path = "") {
   state.browser.target = target;
   state.browser.path = path || state.browser.path;
   const browser = document.querySelector("#file-browser");
@@ -425,20 +1132,25 @@ async function openBrowser(target, path = "") {
     state.browser.path = result.path;
     browser.innerHTML = `
       <div class="browser-header">
-        <strong>${target === "path" ? "Choose input" : "Choose output / sidecar / asset dir"}</strong>
-        ${target === "output" ? `<button id="use-current-directory">Use current directory</button>` : ""}
-        <button id="close-browser">Close</button>
+        <strong>Choose ${escapeHtml(targetLabel || target)}</strong>
+        <div>
+          <button id="use-current-directory" type="button">Use current directory</button>
+          <button id="close-browser" type="button">Close</button>
+        </div>
       </div>
-      <code>${result.path}</code>
+      <code>${escapeHtml(result.path)}</code>
       <div class="browser-list">
         ${(result.entries || []).map((entry) => `
-          <button class="browser-entry ${entry.is_dir ? "dir" : "file"}" data-path="${entry.path}" data-dir="${entry.is_dir}">
-            ${entry.is_dir ? "▸" : "•"} ${entry.name}
+          <button class="browser-entry ${entry.is_dir ? "dir" : "file"}" data-path="${escapeHtml(entry.path)}" data-dir="${entry.is_dir}">
+            ${entry.is_dir ? "▸" : "•"} ${escapeHtml(entry.name)}
           </button>
         `).join("")}
       </div>
     `;
-    document.querySelector("#close-browser").addEventListener("click", () => browser.classList.add("hidden"));
+    const closeButton = document.querySelector("#close-browser");
+    if (closeButton) {
+      closeButton.addEventListener("click", () => browser.classList.add("hidden"));
+    }
     const useCurrentDirectory = document.querySelector("#use-current-directory");
     if (useCurrentDirectory) {
       useCurrentDirectory.addEventListener("click", () => selectBrowserPath(target, result.path));
@@ -448,7 +1160,7 @@ async function openBrowser(target, path = "") {
         const selectedPath = button.dataset.path;
         const isDir = button.dataset.dir === "true";
         if (isDir) {
-          openBrowser(target, selectedPath);
+          openBrowser(target, targetLabel, selectedPath);
           return;
         }
         selectBrowserPath(target, selectedPath);
@@ -456,98 +1168,89 @@ async function openBrowser(target, path = "") {
       button.addEventListener("dblclick", () => selectBrowserPath(target, button.dataset.path));
     });
   } catch (error) {
-    browser.innerHTML = `<pre>${error.message}</pre>`;
+    browser.innerHTML = `<pre>${escapeHtml(error.message)}</pre>`;
   }
 }
 
 function selectBrowserPath(target, selectedPath, hideBrowser = true) {
-  const display = document.querySelector(target === "path" ? "#path-display" : "#output-display");
-  display.dataset.path = selectedPath;
-  display.textContent = selectedPath;
+  setWorkflowPathValue(target, selectedPath);
   const browser = document.querySelector("#file-browser");
-  if (hideBrowser && browser) browser.classList.add("hidden");
-}
-
-async function renderProviders() {
-  const payload = await api("/api/providers");
-  view.innerHTML = `
-    <div class="panel grid">
-      <div class="row">
-        <select id="provider-list">${payload.providers.map((p) => `<option value="${p.id}">${p.name || p.id}</option>`).join("")}</select>
-        <button id="load-models">Load models</button>
-      </div>
-      <pre id="provider-config">${JSON.stringify(payload.providers, null, 2)}</pre>
-      <pre id="provider-models"></pre>
-    </div>
-  `;
-  const load = async () => {
-    const id = document.querySelector("#provider-list").value;
-    const output = document.querySelector("#provider-models");
-    output.textContent = "loading...";
-    try {
-      const result = await api(`/api/providers/${encodeURIComponent(id)}/models`);
-      output.textContent = JSON.stringify(result.models, null, 2);
-    } catch (error) {
-      output.textContent = error.message;
-    }
-  };
-  document.querySelector("#provider-list").addEventListener("change", load);
-  document.querySelector("#load-models").addEventListener("click", load);
-  load();
-}
-
-async function populateModelSelect(providerID, selector, force = false) {
-  const select = document.querySelector(selector);
-  if (!select || !providerID) return;
-  if (!state.models[providerID] || force) {
-    select.innerHTML = `<option>Loading models...</option>`;
-    try {
-      const result = await api(`/api/providers/${encodeURIComponent(providerID)}/models`);
-      state.models[providerID] = result.models || [];
-    } catch (error) {
-      select.innerHTML = `<option value="">${error.message}</option>`;
-      return;
-    }
+  if (hideBrowser && browser) {
+    browser.classList.add("hidden");
   }
-  const models = state.models[providerID];
-  if (!models.length) {
-    select.innerHTML = `<option value="">No models returned</option>`;
-    return;
-  }
-  select.innerHTML = models.map((m) => `<option value="${m.id}">${m.name || m.id}</option>`).join("");
 }
 
-async function renderTools() {
-  const payload = await api("/api/tools");
-  view.innerHTML = `<div class="panel"><pre>${JSON.stringify(payload.tools, null, 2)}</pre></div>`;
+function elapsedSeconds(createdAt) {
+  const started = Date.parse(createdAt);
+  if (Number.isNaN(started)) return 0;
+  return Math.max(0, Math.round((Date.now() - started) / 1000));
 }
 
-async function renderJobs() {
-  const payload = await api("/api/jobs");
-  view.innerHTML = `<div class="panel"><pre>${JSON.stringify(payload.jobs, null, 2)}</pre></div>`;
+function formatDuration(seconds) {
+  if (!seconds) return "0s";
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (!mins) return `${secs}s`;
+  const hours = Math.floor(mins / 60);
+  if (!hours) return `${mins}m ${secs}s`;
+  return `${hours}h ${mins % 60}m`;
 }
 
-function renderSettings() {
-  view.innerHTML = `
-    <div class="panel grid">
-      <textarea id="settings">${JSON.stringify(state.settings, null, 2)}</textarea>
-      <button id="save">Save</button>
-      <pre id="save-result"></pre>
-    </div>
-  `;
-  document.querySelector("#save").addEventListener("click", async () => {
-    const output = document.querySelector("#save-result");
-    try {
-      state.settings = await api("/api/settings", {
-        method: "PUT",
-        body: document.querySelector("#settings").value,
-      });
-      output.textContent = "saved";
-    } catch (error) {
-      output.textContent = error.message;
-    }
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function handlePrimaryTab(event) {
+  const button = event.target.closest('[role="tab"]');
+  if (!button || !button.dataset.view) return;
+  event.preventDefault();
+  state.view = button.dataset.view;
+  render();
+}
+
+function initNav() {
+  if (!primaryTabs) return;
+  primaryTabs.addEventListener("click", handlePrimaryTab);
+  enableTabKeyboard(primaryTabs, (tab) => {
+    state.view = tab.dataset.view;
+    render();
   });
 }
 
+function populateModelSelect(providerID, selector, force = false) {
+  const select = document.querySelector(selector);
+  if (!select) return;
+  if (!providerID) {
+    select.innerHTML = `<option value="">Select a provider first</option>`;
+    return;
+  }
+  if (!state.models[providerID] || force) {
+    select.innerHTML = `<option>Loading models...</option>`;
+    const load = async () => {
+      const result = await api(`/api/providers/${encodeURIComponent(providerID)}/models`);
+      state.models[providerID] = result.models || [];
+      if (!state.models[providerID].length) {
+        select.innerHTML = `<option value="">No models returned</option>`;
+        return;
+      }
+      select.innerHTML = state.models[providerID]
+        .map((m) => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name || m.id)}</option>`)
+        .join("");
+    };
+    load().catch((error) => {
+      select.innerHTML = `<option value="">${escapeHtml(error.message)}</option>`;
+    });
+    return;
+  }
+  if (!state.models[providerID].length) {
+    select.innerHTML = `<option value="">No models returned</option>`;
+    return;
+  }
+  select.innerHTML = state.models[providerID]
+    .map((m) => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name || m.id)}</option>`)
+    .join("");
+}
+
+initNav();
 checkHealth();
 render();
