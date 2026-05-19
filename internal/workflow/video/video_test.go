@@ -2,6 +2,9 @@ package video
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bhickta/aicli/internal/config"
@@ -13,11 +16,18 @@ type fakeRunner struct {
 	args    []string
 	out     []byte
 	err     error
+	calls   []runnerCall
+}
+
+type runnerCall struct {
+	command string
+	args    []string
 }
 
 func (f *fakeRunner) CombinedOutput(_ context.Context, command string, args ...string) ([]byte, error) {
 	f.command = command
 	f.args = args
+	f.calls = append(f.calls, runnerCall{command: command, args: append([]string(nil), args...)})
 	return f.out, f.err
 }
 
@@ -51,8 +61,100 @@ func TestCompressUsesFFmpeg(t *testing.T) {
 	if runner.command != "ffmpeg" {
 		t.Fatalf("command = %q, want ffmpeg", runner.command)
 	}
-	if res.Output != "video.compressed.mp4" {
-		t.Fatalf("Output = %q, want video.compressed.mp4", res.Output)
+	if res.Output != "video_240p.mp4" {
+		t.Fatalf("Output = %q, want video_240p.mp4", res.Output)
+	}
+	args := strings.Join(runner.args, " ")
+	for _, want := range []string{"-hwaccel cuda", "-vf scale_cuda=-2:240", "-c:v h264_nvenc", "-cq 30"} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("ffmpeg args = %q, want contains %q", args, want)
+		}
+	}
+}
+
+type courseRunner struct {
+	calls []runnerCall
+}
+
+func (r *courseRunner) CombinedOutput(_ context.Context, command string, args ...string) ([]byte, error) {
+	r.calls = append(r.calls, runnerCall{command: command, args: append([]string(nil), args...)})
+	if command == "ffprobe" {
+		return []byte("2.0\n"), nil
+	}
+	if len(args) > 0 {
+		outPath := args[len(args)-1]
+		if filepath.IsAbs(outPath) || strings.HasSuffix(outPath, ".mp4") {
+			if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+				return nil, err
+			}
+			if err := os.WriteFile(outPath, []byte("video"), 0o644); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return []byte("ok"), nil
+}
+
+func TestCourseCompressesFolderAndExportsMergedArtifacts(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	first := filepath.Join(dir, "01 intro.mp4")
+	second := filepath.Join(dir, "02 lesson.mp4")
+	for _, path := range []string{first, second} {
+		if err := os.WriteFile(path, []byte("video"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		srt := strings.TrimSuffix(path, filepath.Ext(path)) + ".srt"
+		if err := os.WriteFile(srt, []byte("1\n00:00:00,000 --> 00:00:01,000\nhello "+filepath.Base(path)+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runner := &courseRunner{}
+	res, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, runner).Course(
+		context.Background(),
+		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2"},
+	)
+	if err != nil {
+		t.Fatalf("Course() error = %v", err)
+	}
+	wantVideo := filepath.Join(dir, "Course", filepath.Base(dir)+"_Slideshow.mp4")
+	wantSRT := filepath.Join(dir, "Course", filepath.Base(dir)+".srt")
+	wantText := filepath.Join(dir, "Course", filepath.Base(dir)+".txt")
+	if res.VideoPath != wantVideo {
+		t.Fatalf("VideoPath = %q, want %q", res.VideoPath, wantVideo)
+	}
+	for _, path := range []string{wantVideo, wantSRT, wantText} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected artifact %s: %v", path, err)
+		}
+	}
+	srt, err := os.ReadFile(wantSRT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(srt), "00:00:02,000 --> 00:00:03,000") {
+		t.Fatalf("merged srt did not shift second transcript by first video duration:\n%s", string(srt))
+	}
+	text, err := os.ReadFile(wantText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(text), "--- Segment: 01 intro ---") || !strings.Contains(string(text), "hello 02 lesson.mp4") {
+		t.Fatalf("merged transcript text missing expected segments:\n%s", string(text))
+	}
+	if len(res.Compressed) != 2 {
+		t.Fatalf("compressed len = %d, want 2", len(res.Compressed))
+	}
+	foundNVENC := false
+	for _, call := range runner.calls {
+		if call.command == "ffmpeg" && strings.Contains(strings.Join(call.args, " "), "h264_nvenc") {
+			foundNVENC = true
+			break
+		}
+	}
+	if !foundNVENC {
+		t.Fatalf("course did not use NVENC compression calls: %#v", runner.calls)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -127,6 +128,7 @@ func TestUploadFilesStoresDroppedFile(t *testing.T) {
 	}
 	var payload struct {
 		Files []uploadEntry `json:"files"`
+		Root  string        `json:"root"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
 		t.Fatal(err)
@@ -158,6 +160,61 @@ func TestUploadFilesStoresDroppedFile(t *testing.T) {
 	}
 	if getRes.Body.String() != "%PDF-1.7\n" {
 		t.Fatalf("uploaded file body = %q, want %q", getRes.Body.String(), "%PDF-1.7\n")
+	}
+}
+
+func TestUploadFilesPreservesDroppedFolderShape(t *testing.T) {
+	t.Parallel()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for _, name := range []string{"Course/01.mp4", "Course/01.srt"} {
+		fileWriter, err := writer.CreateFormFile("file:"+name, filepath.Base(name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fileWriter.Write([]byte(name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	dataDir := t.TempDir()
+	handler := testHandlerWithSettings(config.DefaultSettings(), dataDir)
+	req := httptest.NewRequest(http.MethodPost, "/api/fs/upload", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body=%s", res.Code, res.Body.String())
+	}
+	var payload struct {
+		Files []uploadEntry `json:"files"`
+		Root  string        `json:"root"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Root != filepath.Join(dataDir, "uploads", "Course") {
+		t.Fatalf("root = %q, want Course upload root", payload.Root)
+	}
+	if len(payload.Files) != 2 {
+		t.Fatalf("files len = %d, want 2", len(payload.Files))
+	}
+	if payload.Files[0].Name != "Course/01.mp4" {
+		t.Fatalf("first name = %q, want Course/01.mp4", payload.Files[0].Name)
+	}
+	if payload.Files[0].URL != "/uploads/Course/01.mp4" {
+		t.Fatalf("first url = %q, want /uploads/Course/01.mp4", payload.Files[0].URL)
+	}
+	req = httptest.NewRequest(http.MethodGet, payload.Files[0].URL, nil)
+	res = httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("get nested upload status = %d, want 200", res.Code)
 	}
 }
 

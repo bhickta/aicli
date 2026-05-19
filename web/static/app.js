@@ -202,6 +202,43 @@ const WORKFLOW_DEFINITIONS = [
     buildPayload: (values) => ({ path: values.path }),
   },
   {
+    id: "video-course",
+    category: "Video",
+    label: "Course folder",
+    endpoint: "/api/workflows/video/course",
+    fields: [
+      { type: "path", id: "path", label: "Course source folder" },
+      { type: "path", id: "output_dir", label: "Course output folder (optional)" },
+      {
+        type: "select",
+        id: "preset",
+        label: "Compression preset",
+        default: "slideshow",
+        options: [
+          { value: "slideshow", label: "Slideshow" },
+          { value: "ultralight", label: "Ultralight" },
+          { value: "light", label: "Light" },
+          { value: "balanced", label: "Balanced" },
+        ],
+      },
+      { type: "number", id: "resolution", label: "Resolution (0 keeps original for slideshow)", min: 0, max: 1080, default: 0 },
+      { type: "number", id: "crf", label: "NVENC CQ quality (optional)", min: 0, max: 51, default: 0 },
+      { type: "text", id: "fps", label: "Frame rate", value: "1/2", placeholder: "1/2" },
+      { type: "number", id: "max_merge_hours", label: "Max hours per course part (0 = single file)", min: 0, max: 24, default: 0 },
+      { type: "checkbox", id: "fast_skip", label: "Fast keyframe skip", checked: true },
+    ],
+    buildPayload: (values) => ({
+      path: values.path,
+      output_dir: values.output_dir,
+      preset: values.preset || "slideshow",
+      resolution: values.resolution,
+      crf: values.crf,
+      fps: values.fps || "1/2",
+      max_merge_hours: values.max_merge_hours,
+      fast_skip: Boolean(values.fast_skip),
+    }),
+  },
+  {
     id: "video-compress",
     category: "Video",
     label: "Compress",
@@ -209,12 +246,31 @@ const WORKFLOW_DEFINITIONS = [
     fields: [
       { type: "path", id: "path", label: "Input video file" },
       { type: "path", id: "output", label: "Output video file (optional)" },
-      { type: "number", id: "crf", label: "CRF", min: 1, max: 51, default: 28 },
+      {
+        type: "select",
+        id: "preset",
+        label: "Compression preset",
+        default: "light",
+        options: [
+          { value: "ultralight", label: "Ultralight" },
+          { value: "light", label: "Light" },
+          { value: "balanced", label: "Balanced" },
+          { value: "slideshow", label: "Slideshow" },
+        ],
+      },
+      { type: "number", id: "resolution", label: "Resolution", min: 0, max: 1080, default: 240 },
+      { type: "number", id: "crf", label: "NVENC CQ quality (optional)", min: 0, max: 51, default: 0 },
+      { type: "text", id: "fps", label: "Frame rate override (optional)", value: "", placeholder: "15" },
+      { type: "checkbox", id: "fast_skip", label: "Fast keyframe skip", checked: false },
     ],
     buildPayload: (values) => ({
       path: values.path,
       output: values.output,
       crf: values.crf,
+      preset: values.preset || "light",
+      resolution: values.resolution,
+      fps: values.fps,
+      fast_skip: Boolean(values.fast_skip),
     }),
   },
   {
@@ -1027,38 +1083,65 @@ function setMarkdownPreview(markdown) {
 }
 
 async function uploadWorkflowFile(file) {
+  return uploadWorkflowFiles([{ file, relativePath: file.name }]);
+}
+
+async function uploadWorkflowFiles(entries) {
   const status = document.querySelector("#workflow-status");
   const output = document.querySelector("#workflow-result");
   const dropZone = document.querySelector("#drop-zone");
-  if (status) status.textContent = `Uploading ${file.name}...`;
+  const uploadLabel = entries.length === 1 ? entries[0].file.name : `${entries.length} files`;
+  if (status) status.textContent = `Uploading ${uploadLabel}...`;
   if (output) output.textContent = "";
   if (dropZone) dropZone.classList.add("uploading");
   try {
     const form = new FormData();
-    form.append("file", file);
+    entries.forEach((entry) => {
+      const relativePath = entry.relativePath || entry.file.name;
+      const fieldName = relativePath.includes("/") ? `file:${relativePath}` : "file";
+      form.append(fieldName, entry.file, entry.file.name);
+    });
     const response = await fetch("/api/fs/upload", { method: "POST", body: form });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({ error: response.statusText }));
       throw new Error(payload.error || response.statusText);
     }
     const result = await response.json();
-    const uploaded = (result.files || [])[0];
+    const uploadedFiles = result.files || [];
+    const uploaded = uploadedFiles[0];
     if (!uploaded) throw new Error("upload finished without a stored file");
-    autoSelectWorkflow(uploaded.name || file.name);
+    const isFolderUpload = entries.some((entry) => (entry.relativePath || "").includes("/"));
+    const hasCourseVideos = uploadedFiles.filter((file) => isVideoFileName(file.name)).length > 0;
+    if ((isFolderUpload && hasCourseVideos) || (hasCourseVideos && uploadedFiles.length > 1 && result.root)) {
+      state.workflow.category = "Video";
+      state.workflow.workflowId = "video-course";
+      if (state.view === "workflows") {
+        render();
+      }
+      setWorkflowPathValue("path", result.root);
+      const currentStatus = document.querySelector("#workflow-status");
+      if (currentStatus) currentStatus.textContent = `Ready: uploaded folder with ${uploadedFiles.length} files`;
+      return;
+    }
+    autoSelectWorkflow(uploaded.name || entries[0].file.name);
     const workflow = getActiveWorkflow();
     const primaryPathField = workflow.fields.find((field) => field.type === "path");
     if (primaryPathField) {
       setWorkflowPathValue(primaryPathField.id, uploaded.path);
       setSourcePreview(uploaded.url);
     }
-    if (status) {
-      status.textContent = `Ready: ${uploaded.name || file.name}`;
+    const currentStatus = document.querySelector("#workflow-status");
+    if (currentStatus) {
+      currentStatus.textContent = `Ready: ${uploaded.name || entries[0].file.name}`;
     }
   } catch (error) {
-    status.textContent = "Upload failed";
-    output.textContent = error.message;
+    const currentStatus = document.querySelector("#workflow-status");
+    const currentOutput = document.querySelector("#workflow-result");
+    if (currentStatus) currentStatus.textContent = "Upload failed";
+    if (currentOutput) currentOutput.textContent = error.message;
   } finally {
-    if (dropZone) dropZone.classList.remove("uploading");
+    const currentDropZone = document.querySelector("#drop-zone") || dropZone;
+    if (currentDropZone) currentDropZone.classList.remove("uploading");
   }
 }
 
@@ -1105,9 +1188,9 @@ function setupDropZone() {
     });
   });
   dropZone.addEventListener("drop", async (event) => {
-    const files = Array.from(event.dataTransfer.files || []);
-    if (!files.length) return;
-    await uploadWorkflowFile(files[0]);
+    const entries = await collectDroppedFiles(event.dataTransfer);
+    if (!entries.length) return;
+    await uploadWorkflowFiles(entries);
   });
 }
 
@@ -1118,6 +1201,70 @@ function renderDropZone() {
       <span>PDFs and ZIPs auto-select OCR; image/audio/video uploads auto-select matching workflows.</span>
     </div>
   `;
+}
+
+async function collectDroppedFiles(dataTransfer) {
+  const items = Array.from(dataTransfer?.items || []);
+  const entries = [];
+  const readers = items
+    .map((item) => (typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null))
+    .filter(Boolean);
+  if (readers.length) {
+    for (const entry of readers) {
+      await collectEntryFiles(entry, "", entries);
+    }
+  }
+  if (!entries.length) {
+    Array.from(dataTransfer?.files || []).forEach((file) => {
+      entries.push({ file, relativePath: file.webkitRelativePath || file.name });
+    });
+  }
+  return entries;
+}
+
+function collectEntryFiles(entry, prefix, out) {
+  return new Promise((resolve, reject) => {
+    if (entry.isFile) {
+      entry.file(
+        (file) => {
+          out.push({ file, relativePath: `${prefix}${file.name}` });
+          resolve();
+        },
+        reject,
+      );
+      return;
+    }
+    if (!entry.isDirectory) {
+      resolve();
+      return;
+    }
+    const reader = entry.createReader();
+    const directoryPrefix = `${prefix}${entry.name}/`;
+    const readBatch = () => {
+      reader.readEntries(
+        async (children) => {
+          if (!children.length) {
+            resolve();
+            return;
+          }
+          try {
+            for (const child of children) {
+              await collectEntryFiles(child, directoryPrefix, out);
+            }
+            readBatch();
+          } catch (error) {
+            reject(error);
+          }
+        },
+        reject,
+      );
+    };
+    readBatch();
+  });
+}
+
+function isVideoFileName(name) {
+  return /\.(mp4|mov|mkv|webm|avi|m4v)$/i.test(name || "");
 }
 
 async function openBrowser(target, targetLabel, path = "") {

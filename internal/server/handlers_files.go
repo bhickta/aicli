@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -98,6 +99,7 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	uploaded := []uploadEntry{}
+	rootSegments := map[string]bool{}
 	for {
 		part, err := reader.NextPart()
 		if errors.Is(err, io.EOF) {
@@ -107,13 +109,24 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if part.FormName() != "file" || part.FileName() == "" {
+		formName := part.FormName()
+		if (formName != "file" && !strings.HasPrefix(formName, "file:")) || part.FileName() == "" {
 			_ = part.Close()
 			continue
 		}
 
-		name := safeUploadName(part.FileName())
-		target := uniqueUploadPath(uploadDir, name)
+		uploadName := part.FileName()
+		if strings.HasPrefix(formName, "file:") {
+			uploadName = strings.TrimPrefix(formName, "file:")
+		}
+		relativeName := safeUploadRelativePath(uploadName)
+		rootSegments[rootSegment(relativeName)] = true
+		target := uniqueUploadPath(uploadDir, relativeName)
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			_ = part.Close()
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 		dst, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 		if err != nil {
 			_ = part.Close()
@@ -133,10 +146,14 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, closeErr)
 			return
 		}
+		relativeURL, err := filepath.Rel(uploadDir, target)
+		if err != nil {
+			relativeURL = filepath.Base(target)
+		}
 		uploaded = append(uploaded, uploadEntry{
-			Name: name,
+			Name: filepath.ToSlash(relativeName),
 			Path: target,
-			URL:  "/uploads/" + url.PathEscape(filepath.Base(target)),
+			URL:  "/uploads/" + escapeURLPath(filepath.ToSlash(relativeURL)),
 			Size: size,
 		})
 	}
@@ -144,7 +161,7 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("no files uploaded"))
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"files": uploaded})
+	writeJSON(w, http.StatusCreated, map[string]any{"files": uploaded, "root": uploadRoot(uploadDir, rootSegments)})
 }
 
 func safeUploadName(name string) string {
@@ -155,6 +172,27 @@ func safeUploadName(name string) string {
 	}
 	replacer := strings.NewReplacer("/", "-", "\\", "-", "\x00", "")
 	return replacer.Replace(name)
+}
+
+func safeUploadRelativePath(name string) string {
+	name = strings.ReplaceAll(name, "\\", "/")
+	cleaned := path.Clean(name)
+	cleaned = strings.TrimPrefix(cleaned, "/")
+	if cleaned == "." || cleaned == "" {
+		return safeUploadName(name)
+	}
+	parts := strings.Split(cleaned, "/")
+	safeParts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			continue
+		}
+		safeParts = append(safeParts, safeUploadName(part))
+	}
+	if len(safeParts) == 0 {
+		return safeUploadName(name)
+	}
+	return filepath.Join(safeParts...)
 }
 
 func uniqueUploadPath(uploadDir, name string) string {
@@ -170,4 +208,31 @@ func uniqueUploadPath(uploadDir, name string) string {
 			return candidate
 		}
 	}
+}
+
+func rootSegment(relativeName string) string {
+	parts := strings.Split(filepath.ToSlash(relativeName), "/")
+	if len(parts) > 1 {
+		return parts[0]
+	}
+	return ""
+}
+
+func uploadRoot(uploadDir string, roots map[string]bool) string {
+	if len(roots) == 1 {
+		for root := range roots {
+			if root != "" {
+				return filepath.Join(uploadDir, root)
+			}
+		}
+	}
+	return uploadDir
+}
+
+func escapeURLPath(relativePath string) string {
+	parts := strings.Split(relativePath, "/")
+	for i := range parts {
+		parts[i] = url.PathEscape(parts[i])
+	}
+	return strings.Join(parts, "/")
 }
