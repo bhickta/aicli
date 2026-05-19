@@ -208,34 +208,18 @@ const WORKFLOW_DEFINITIONS = [
     endpoint: "/api/workflows/video/course",
     fields: [
       { type: "path", id: "path", label: "Course source folder", picker: "directory" },
-      { type: "path", id: "output_dir", label: "Course output folder (optional)", picker: "directory" },
-      {
-        type: "select",
-        id: "preset",
-        label: "Compression preset",
-        default: "slideshow",
-        options: [
-          { value: "slideshow", label: "Slideshow" },
-          { value: "ultralight", label: "Ultralight" },
-          { value: "light", label: "Light" },
-          { value: "balanced", label: "Balanced" },
-        ],
-      },
-      { type: "number", id: "resolution", label: "Resolution (0 keeps original for slideshow)", min: 0, max: 1080, default: 0 },
-      { type: "number", id: "crf", label: "NVENC CQ quality (optional)", min: 0, max: 51, default: 0 },
-      { type: "text", id: "fps", label: "Frame rate", value: "1/2", placeholder: "1/2" },
-      { type: "number", id: "max_merge_hours", label: "Max hours per course part (0 = single file)", min: 0, max: 24, default: 0 },
-      { type: "checkbox", id: "fast_skip", label: "Fast keyframe skip", checked: true },
+      { type: "text", id: "whisper_model", label: "Whisper model", value: "large-v3", placeholder: "large-v3" },
+      { type: "number", id: "max_merge_hours", label: "Max hours per output video", min: 1, max: 24, default: 9 },
     ],
     buildPayload: (values) => ({
       path: values.path,
-      output_dir: values.output_dir,
-      preset: values.preset || "slideshow",
-      resolution: values.resolution,
-      crf: values.crf,
-      fps: values.fps || "1/2",
-      max_merge_hours: values.max_merge_hours,
-      fast_skip: Boolean(values.fast_skip),
+      whisper_model: values.whisper_model || "large-v3",
+      preset: "slideshow",
+      resolution: 0,
+      crf: 0,
+      fps: "1/2",
+      max_merge_hours: values.max_merge_hours || 9,
+      fast_skip: true,
     }),
   },
   {
@@ -393,6 +377,9 @@ function defaultProviderId() {
 }
 
 function activeWorkflowCategoryDefinitions(category) {
+  if (category === "Video") {
+    return WORKFLOW_DEFINITIONS.filter((workflow) => workflow.id === "video-course");
+  }
   return WORKFLOW_DEFINITIONS.filter((workflow) => workflow.category === category);
 }
 
@@ -1179,7 +1166,7 @@ function autoSelectWorkflow(fileName) {
     state.workflow.workflowId = "audio-transcribe";
     state.workflow.category = "Audio";
   } else if (/\.(mp4|mov|mkv|webm|avi|m4v)$/.test(lower)) {
-    state.workflow.workflowId = "video-info";
+    state.workflow.workflowId = "video-course";
     state.workflow.category = "Video";
   }
   if (state.view === "workflows") {

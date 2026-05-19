@@ -53,6 +53,7 @@ type CompressResponse struct {
 type CourseRequest struct {
 	Path          string  `json:"path"`
 	OutputDir     string  `json:"output_dir"`
+	WhisperModel  string  `json:"whisper_model"`
 	Resolution    int     `json:"resolution"`
 	Preset        string  `json:"preset"`
 	CRF           int     `json:"crf"`
@@ -63,12 +64,13 @@ type CourseRequest struct {
 }
 
 type CourseResponse struct {
-	CourseDir  string       `json:"course_dir"`
-	VideoPath  string       `json:"video_path,omitempty"`
-	SRTPath    string       `json:"srt_path,omitempty"`
-	TextPath   string       `json:"text_path,omitempty"`
-	Compressed []CourseItem `json:"compressed"`
-	Skipped    []string     `json:"skipped,omitempty"`
+	CourseDir   string       `json:"course_dir"`
+	VideoPath   string       `json:"video_path,omitempty"`
+	SRTPath     string       `json:"srt_path,omitempty"`
+	TextPath    string       `json:"text_path,omitempty"`
+	Compressed  []CourseItem `json:"compressed"`
+	Transcribed []CourseItem `json:"transcribed,omitempty"`
+	Skipped     []string     `json:"skipped,omitempty"`
 }
 
 type CourseItem struct {
@@ -179,13 +181,17 @@ func (s *Service) Course(ctx context.Context, req CourseRequest) (CourseResponse
 	}
 
 	items := make([]CourseItem, 0, len(files))
+	transcribed := []CourseItem{}
 	skipped := []string{}
 	usedNames := map[string]int{}
 	for _, file := range files {
 		targetName := courseTargetName(file, usedNames)
-		srtPath, textPath, prepErr := prepareTranscriptFiles(file, cacheDir)
+		srtPath, textPath, didTranscribe, prepErr := s.prepareTranscriptFiles(ctx, file, cacheDir, req.WhisperModel)
 		if prepErr != nil {
-			skipped = append(skipped, fmt.Sprintf("%s: %v", file, prepErr))
+			return CourseResponse{}, prepErr
+		}
+		if didTranscribe {
+			transcribed = append(transcribed, CourseItem{Source: file, SRTPath: srtPath, TextPath: textPath, TargetName: targetName})
 		}
 		output := filepath.Join(slidesDir, targetName+"_slideshow.mp4")
 		if _, statErr := os.Stat(output); statErr == nil {
@@ -227,7 +233,7 @@ func (s *Service) Course(ctx context.Context, req CourseRequest) (CourseResponse
 		return CourseResponse{}, err
 	}
 	folderName := filepath.Base(targetDir)
-	response := CourseResponse{CourseDir: courseDir, Compressed: items, Skipped: skipped}
+	response := CourseResponse{CourseDir: courseDir, Compressed: items, Transcribed: transcribed, Skipped: skipped}
 	multipart := len(parts) > 1
 	for i, part := range parts {
 		suffix := ""
@@ -527,33 +533,33 @@ func isVideoFile(path string) bool {
 	}
 }
 
-func prepareTranscriptFiles(videoPath, cacheDir string) (string, string, error) {
+func (s *Service) prepareTranscriptFiles(ctx context.Context, videoPath, cacheDir, whisperModel string) (string, string, bool, error) {
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 	stem := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
 	cacheSRT := filepath.Join(cacheDir, stem+".srt")
 	cacheText := filepath.Join(cacheDir, stem+".txt")
 	sidecarSRT := strings.TrimSuffix(videoPath, filepath.Ext(videoPath)) + ".srt"
-	sidecarText := strings.TrimSuffix(videoPath, filepath.Ext(videoPath)) + ".txt"
+	didTranscribe := false
 	if !fileExists(cacheSRT) && fileExists(sidecarSRT) {
 		if err := copyFile(sidecarSRT, cacheSRT); err != nil {
-			return "", "", err
+			return "", "", false, err
 		}
 	}
-	if !fileExists(cacheText) {
-		if fileExists(sidecarText) {
-			if err := copyFile(sidecarText, cacheText); err != nil {
-				return "", "", err
-			}
-		} else if fileExists(cacheSRT) {
-			text, err := srtToText(cacheSRT)
-			if err != nil {
-				return cacheSRT, "", err
-			}
-			if err := os.WriteFile(cacheText, []byte(text), 0o644); err != nil {
-				return cacheSRT, "", err
-			}
+	if !fileExists(cacheSRT) {
+		if err := s.transcribeVideo(ctx, videoPath, strings.TrimSuffix(cacheSRT, filepath.Ext(cacheSRT)), whisperModel); err != nil {
+			return "", "", false, err
+		}
+		didTranscribe = true
+	}
+	if fileExists(cacheSRT) {
+		text, err := srtToText(cacheSRT)
+		if err != nil {
+			return cacheSRT, "", didTranscribe, err
+		}
+		if err := os.WriteFile(cacheText, []byte(text), 0o644); err != nil {
+			return cacheSRT, "", didTranscribe, err
 		}
 	}
 	if !fileExists(cacheSRT) {
@@ -562,7 +568,25 @@ func prepareTranscriptFiles(videoPath, cacheDir string) (string, string, error) 
 	if !fileExists(cacheText) {
 		cacheText = ""
 	}
-	return cacheSRT, cacheText, nil
+	if cacheSRT == "" || cacheText == "" {
+		return cacheSRT, cacheText, didTranscribe, errors.New("transcription did not produce both .srt and .txt")
+	}
+	return cacheSRT, cacheText, didTranscribe, nil
+}
+
+func (s *Service) transcribeVideo(ctx context.Context, videoPath, outputBase, whisperModel string) error {
+	if strings.TrimSpace(s.tools.WhisperCLI) == "" {
+		return errors.New("whisper-cli is not configured")
+	}
+	if whisperModel == "" {
+		whisperModel = "large-v3"
+	}
+	args := []string{"-m", whisperModel, "-f", videoPath, "-osrt", "-otxt", "-of", outputBase}
+	out, err := s.runner.CombinedOutput(ctx, s.tools.WhisperCLI, args...)
+	if err != nil {
+		return errors.New(strings.TrimSpace(string(out)) + ": " + err.Error())
+	}
+	return nil
 }
 
 func courseTargetName(videoPath string, used map[string]int) string {

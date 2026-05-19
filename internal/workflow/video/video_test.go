@@ -81,6 +81,22 @@ func (r *courseRunner) CombinedOutput(_ context.Context, command string, args ..
 	if command == "ffprobe" {
 		return []byte("2.0\n"), nil
 	}
+	if command == "whisper-cli" {
+		outputBase := argAfter(args, "-of")
+		if outputBase == "" {
+			return []byte("missing -of"), os.ErrInvalid
+		}
+		if err := os.MkdirAll(filepath.Dir(outputBase), 0o755); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(outputBase+".srt", []byte("1\n00:00:00,000 --> 00:00:01,000\nwhisper transcript\n"), 0o644); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(outputBase+".txt", []byte("whisper transcript"), 0o644); err != nil {
+			return nil, err
+		}
+		return []byte("ok"), nil
+	}
 	if len(args) > 0 {
 		outPath := args[len(args)-1]
 		if filepath.IsAbs(outPath) || strings.HasSuffix(outPath, ".mp4") {
@@ -93,6 +109,15 @@ func (r *courseRunner) CombinedOutput(_ context.Context, command string, args ..
 		}
 	}
 	return []byte("ok"), nil
+}
+
+func argAfter(args []string, flag string) string {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == flag {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 func TestCourseCompressesFolderAndExportsMergedArtifacts(t *testing.T) {
@@ -155,6 +180,50 @@ func TestCourseCompressesFolderAndExportsMergedArtifacts(t *testing.T) {
 	}
 	if !foundNVENC {
 		t.Fatalf("course did not use NVENC compression calls: %#v", runner.calls)
+	}
+}
+
+func TestCourseTranscribesMissingSRTWithWhisperLargeV3(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	videoPath := filepath.Join(dir, "01 intro.mp4")
+	if err := os.WriteFile(videoPath, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner := &courseRunner{}
+	res, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe", WhisperCLI: "whisper-cli"}, runner).Course(
+		context.Background(),
+		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2", WhisperModel: "large-v3"},
+	)
+	if err != nil {
+		t.Fatalf("Course() error = %v", err)
+	}
+	if len(res.Transcribed) != 1 {
+		t.Fatalf("transcribed len = %d, want 1", len(res.Transcribed))
+	}
+	var whisperCall *runnerCall
+	for i := range runner.calls {
+		if runner.calls[i].command == "whisper-cli" {
+			whisperCall = &runner.calls[i]
+			break
+		}
+	}
+	if whisperCall == nil {
+		t.Fatal("whisper-cli was not called")
+	}
+	args := strings.Join(whisperCall.args, " ")
+	for _, want := range []string{"-m large-v3", "-osrt", "-otxt"} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("whisper args = %q, want contains %q", args, want)
+		}
+	}
+	mergedText, err := os.ReadFile(filepath.Join(dir, "Course", filepath.Base(dir)+".txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mergedText), "whisper transcript") {
+		t.Fatalf("merged text = %q, want whisper transcript", string(mergedText))
 	}
 }
 

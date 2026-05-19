@@ -260,7 +260,7 @@ func (s *Server) runVideoCourse(w http.ResponseWriter, r *http.Request) {
 	}
 	job := s.newJob("video-course", req.Path)
 	s.startWorkflow(w, r, job, func(ctx context.Context, progress progressFunc) (any, error) {
-		progress("compressing folder videos as slideshows", 2, 5)
+		progress("transcribing missing subtitles with Whisper", 2, 5)
 		result, err := video.New(s.deps.Settings.Tools, tool.ExecRunner{}).Course(ctx, req)
 		progress("merging course video, subtitles, and transcript", 4, 5)
 		return result, err
