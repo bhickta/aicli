@@ -43,7 +43,11 @@ func chunkCourseItems(ctx context.Context, svc *Service, items []CourseItem, max
 func (s *Service) duration(ctx context.Context, videoPath string) (float64, error) {
 	out, err := s.runner.CombinedOutput(ctx, s.tools.FFprobe, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", videoPath)
 	if err != nil {
-		return 0, err
+		message := strings.TrimSpace(string(out))
+		if message == "" {
+			return 0, err
+		}
+		return 0, errors.New(message + ": " + err.Error())
 	}
 	return strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
 }

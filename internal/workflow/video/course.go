@@ -34,12 +34,16 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 	if len(files) == 0 {
 		return CourseResponse{}, errors.New("no video files found")
 	}
-	totalSteps := len(files) + 1
 	courseDir, cacheDir, slidesDir, err := prepareCourseDirs(targetDir, req.OutputDir)
 	if err != nil {
 		return CourseResponse{}, err
 	}
-	reportCourseProgress(progress, fmt.Sprintf("found %d video(s); preparing transcripts and compressed files", len(files)), 0, totalSteps)
+	files, skipped := s.readableCourseFiles(ctx, files)
+	if len(files) == 0 {
+		return CourseResponse{}, errors.New("no readable video files found")
+	}
+	totalSteps := len(files) + 1
+	reportCourseProgress(progress, courseStartStage(len(files), len(skipped)), 0, totalSteps)
 
 	batchTranscribed, batchAttempted, err := s.prepareMissingTranscriptsWithFasterWhisper(ctx, files, cacheDir, req)
 	if err != nil {
@@ -58,6 +62,26 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 	}
 	reportCourseProgress(progress, "merging course video, subtitles, and transcript", len(files), totalSteps)
 	return s.exportCourseParts(ctx, targetDir, courseDir, items, transcribed, skipped, req.MaxMergeHours)
+}
+
+func (s *Service) readableCourseFiles(ctx context.Context, files []string) ([]string, []string) {
+	readable := make([]string, 0, len(files))
+	skipped := []string{}
+	for _, file := range files {
+		if _, err := s.duration(ctx, file); err != nil {
+			skipped = append(skipped, fmt.Sprintf("%s (%s)", file, err))
+			continue
+		}
+		readable = append(readable, file)
+	}
+	return readable, skipped
+}
+
+func courseStartStage(videoCount, skippedCount int) string {
+	if skippedCount == 0 {
+		return fmt.Sprintf("found %d video(s); preparing transcripts and compressed files", videoCount)
+	}
+	return fmt.Sprintf("found %d readable video(s), skipped %d unreadable file(s); preparing transcripts and compressed files", videoCount, skippedCount)
 }
 
 func courseTargetDir(source string) (string, error) {
