@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/bhickta/aicli/internal/config"
+	"github.com/bhickta/aicli/internal/server/fsapi"
 )
 
 func TestListFiles(t *testing.T) {
@@ -126,13 +127,13 @@ func uploadBody(t *testing.T, files map[string]string) (*bytes.Buffer, string) {
 }
 
 func decodeUploadPayload(t *testing.T, res *httptest.ResponseRecorder) struct {
-	Files []uploadEntry `json:"files"`
-	Root  string        `json:"root"`
+	Files []fsapi.UploadEntry `json:"files"`
+	Root  string              `json:"root"`
 } {
 	t.Helper()
 	var payload struct {
-		Files []uploadEntry `json:"files"`
-		Root  string        `json:"root"`
+		Files []fsapi.UploadEntry `json:"files"`
+		Root  string              `json:"root"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
 		t.Fatal(err)

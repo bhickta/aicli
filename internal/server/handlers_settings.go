@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/bhickta/aicli/internal/config"
-	"github.com/bhickta/aicli/internal/provider"
+	"github.com/bhickta/aicli/internal/provider/registry"
 )
 
 func (s *Server) getSettings(w http.ResponseWriter, _ *http.Request) {
@@ -23,6 +23,6 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.deps.Settings = settings
-	s.deps.Providers = provider.NewRegistry(settings.Providers)
+	s.deps.Providers = registry.New(settings.Providers)
 	writeJSON(w, http.StatusOK, settings)
 }

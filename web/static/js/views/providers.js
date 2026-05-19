@@ -1,8 +1,8 @@
-import { api } from "../api.js";
-import { view } from "../elements.js";
-import { getProviders } from "../provider-controls.js";
-import { state } from "../state.js";
-import { escapeHtml } from "../utils.js";
+import { api } from "../core/api.js";
+import { view } from "../core/elements.js";
+import { state } from "../core/state.js";
+import { escapeHtml } from "../core/utils.js";
+import { getProviders } from "../providers/controls.js";
 
 export function renderProviders() {
   view.innerHTML = `

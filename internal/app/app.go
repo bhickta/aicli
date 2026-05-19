@@ -10,7 +10,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/bhickta/aicli/internal/config"
-	"github.com/bhickta/aicli/internal/provider"
+	"github.com/bhickta/aicli/internal/provider/registry"
 	"github.com/bhickta/aicli/internal/server"
 	"github.com/bhickta/aicli/internal/storage"
 )
@@ -49,14 +49,14 @@ func New(opts Options, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
-	registry := provider.NewRegistry(settings.Providers)
+	providers := registry.New(settings.Providers)
 	handler := server.New(server.Dependencies{
 		Logger:       logger,
 		SettingsPath: opts.ConfigPath,
 		DataDir:      opts.DataDir,
 		Settings:     settings,
 		Store:        store,
-		Providers:    registry,
+		Providers:    providers,
 	})
 
 	return &App{db: db, handler: handler}, nil

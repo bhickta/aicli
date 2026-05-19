@@ -1,6 +1,6 @@
-import { api } from "../api.js";
-import { view } from "../elements.js";
-import { getProviderModelValues, renderProviderModelRow, setupProviderModel } from "../provider-controls.js";
+import { api } from "../core/api.js";
+import { view } from "../core/elements.js";
+import { getProviderModelValues, renderProviderModelRow, setupProviderModel } from "../providers/controls.js";
 
 export function renderChat() {
   view.innerHTML = `

@@ -1,3 +1,3 @@
-import { init } from "./js/main.js";
+import { init } from "./js/core/main.js";
 
 init();

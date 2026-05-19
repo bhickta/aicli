@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/bhickta/aicli/internal/config"
-	"github.com/bhickta/aicli/internal/provider"
+	"github.com/bhickta/aicli/internal/provider/registry"
+	"github.com/bhickta/aicli/internal/server/fsapi"
+	"github.com/bhickta/aicli/internal/server/workflowapi"
 	"github.com/bhickta/aicli/internal/storage"
 	"github.com/bhickta/aicli/web"
 )
@@ -20,7 +22,7 @@ type Dependencies struct {
 	DataDir      string
 	Settings     config.Settings
 	Store        storage.Store
-	Providers    *provider.Registry
+	Providers    *registry.Registry
 }
 
 type Server struct {
@@ -40,9 +42,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/settings", s.updateSettings)
 	s.mux.HandleFunc("GET /api/providers", s.listProviders)
 	s.mux.HandleFunc("GET /api/providers/", s.providerModels)
-	s.mux.HandleFunc("GET /api/fs/list", s.listFiles)
-	s.mux.HandleFunc("GET /api/fs/pick-directory", s.pickDirectory)
-	s.mux.HandleFunc("POST /api/fs/upload", s.uploadFiles)
+	files := fsapi.New(s.deps.DataDir)
+	s.mux.HandleFunc("GET /api/fs/list", files.ListFiles)
+	s.mux.HandleFunc("GET /api/fs/pick-directory", files.PickDirectory)
+	s.mux.HandleFunc("POST /api/fs/upload", files.UploadFiles)
 	if s.deps.DataDir != "" {
 		uploads := http.Dir(filepath.Join(s.deps.DataDir, "uploads"))
 		s.mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", http.FileServer(uploads)))
@@ -50,7 +53,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/tools", s.tools)
 	s.mux.HandleFunc("POST /api/chat", s.chat)
 	s.mux.HandleFunc("POST /api/chat/stream", s.chatStream)
-	s.registerWorkflowRoutes()
+	workflowapi.New(workflowapi.Dependencies{
+		Logger:      s.deps.Logger,
+		Store:       s.deps.Store,
+		Settings:    func() config.Settings { return s.deps.Settings },
+		ProviderFor: s.providerFor,
+	}).Register(s.mux)
 	s.mux.HandleFunc("GET /api/jobs", s.listJobs)
 	s.mux.HandleFunc("POST /api/jobs", s.createJob)
 	s.mux.HandleFunc("GET /api/jobs/", s.getJob)

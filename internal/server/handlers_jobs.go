@@ -3,29 +3,11 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/bhickta/aicli/internal/storage"
 )
-
-func (s *Server) newJob(jobType string, input string) storage.Job {
-	now := time.Now().UTC()
-	return storage.Job{
-		ID:          fmt.Sprintf("%s-%d", jobType, time.Now().UTC().UnixNano()),
-		Type:        jobType,
-		Status:      "running",
-		Stage:       "queued",
-		Progress:    0,
-		CurrentStep: 0,
-		TotalSteps:  4,
-		Input:       input,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-}
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 	jobs, err := s.deps.Store.ListJobs(r.Context())

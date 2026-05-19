@@ -1,7 +1,7 @@
-import { api } from "../api.js";
-import { view } from "../elements.js";
-import { state } from "../state.js";
-import { escapeHtml } from "../utils.js";
+import { api } from "../core/api.js";
+import { view } from "../core/elements.js";
+import { state } from "../core/state.js";
+import { escapeHtml } from "../core/utils.js";
 
 export function renderSettings() {
   view.innerHTML = `

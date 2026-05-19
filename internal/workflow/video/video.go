@@ -1,11 +1,14 @@
 package video
 
 import (
-	"encoding/json"
+	"context"
 
 	"github.com/bhickta/aicli/internal/config"
 	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/tool"
+	"github.com/bhickta/aicli/internal/workflow/video/info"
+	"github.com/bhickta/aicli/internal/workflow/video/llm"
+	"github.com/bhickta/aicli/internal/workflow/video/metadata"
 )
 
 type Service struct {
@@ -14,14 +17,8 @@ type Service struct {
 	provider provider.Provider
 }
 
-type InfoRequest struct {
-	Path string `json:"path"`
-}
-
-type InfoResponse struct {
-	Raw     json.RawMessage `json:"raw"`
-	Summary string          `json:"summary"`
-}
+type InfoRequest = info.Request
+type InfoResponse = info.Response
 
 type CompressRequest struct {
 	Path        string `json:"path"`
@@ -71,27 +68,11 @@ type CourseItem struct {
 	TargetName string `json:"target_name"`
 }
 
-type MetadataRequest struct {
-	Path    string `json:"path"`
-	Sidecar string `json:"sidecar"`
-	Output  string `json:"output"`
-}
+type MetadataRequest = metadata.Request
+type MetadataResponse = metadata.Response
 
-type MetadataResponse struct {
-	Sidecar string `json:"sidecar,omitempty"`
-	Output  string `json:"output,omitempty"`
-}
-
-type LLMRequest struct {
-	Model      string `json:"model"`
-	Title      string `json:"title"`
-	Transcript string `json:"transcript"`
-	Mode       string `json:"mode"`
-}
-
-type LLMResponse struct {
-	Text string `json:"text"`
-}
+type LLMRequest = llm.Request
+type LLMResponse = llm.Response
 
 func New(tools config.ToolConfig, runner tool.Runner, providers ...provider.Provider) *Service {
 	var p provider.Provider
@@ -99,4 +80,20 @@ func New(tools config.ToolConfig, runner tool.Runner, providers ...provider.Prov
 		p = providers[0]
 	}
 	return &Service{tools: tools, runner: runner, provider: p}
+}
+
+func (s *Service) Info(ctx context.Context, req InfoRequest) (InfoResponse, error) {
+	return info.New(s.tools, s.runner).Run(ctx, req)
+}
+
+func (s *Service) BackupMetadata(ctx context.Context, req MetadataRequest) (MetadataResponse, error) {
+	return metadata.New(s.tools, s.runner).Backup(ctx, req)
+}
+
+func (s *Service) RestoreMetadata(ctx context.Context, req MetadataRequest) (MetadataResponse, error) {
+	return metadata.New(s.tools, s.runner).Restore(ctx, req)
+}
+
+func (s *Service) Generate(ctx context.Context, req LLMRequest) (LLMResponse, error) {
+	return llm.New(s.provider).Generate(ctx, req)
 }

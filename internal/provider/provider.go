@@ -2,10 +2,6 @@ package provider
 
 import (
 	"context"
-	"net/http"
-	"time"
-
-	"github.com/bhickta/aicli/internal/config"
 )
 
 type Model struct {
@@ -45,35 +41,4 @@ type Provider interface {
 	Chat(ctx context.Context, req ChatRequest) (ChatResponse, error)
 	ChatStream(ctx context.Context, req ChatRequest, yield func(string) error) error
 	Vision(ctx context.Context, req VisionRequest) (ChatResponse, error)
-}
-
-type Registry struct {
-	providers map[string]Provider
-}
-
-func NewRegistry(configs []config.ProviderConfig) *Registry {
-	providers := make(map[string]Provider, len(configs))
-	client := &http.Client{Timeout: 30 * time.Minute}
-	for _, cfg := range configs {
-		switch cfg.Type {
-		case "ollama":
-			providers[cfg.ID] = NewOllama(cfg, client)
-		default:
-			providers[cfg.ID] = NewOpenAICompatible(cfg, client)
-		}
-	}
-	return &Registry{providers: providers}
-}
-
-func (r *Registry) List() []string {
-	ids := make([]string, 0, len(r.providers))
-	for id := range r.providers {
-		ids = append(ids, id)
-	}
-	return ids
-}
-
-func (r *Registry) Get(id string) (Provider, bool) {
-	p, ok := r.providers[id]
-	return p, ok
 }

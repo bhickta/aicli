@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/bhickta/aicli/internal/config"
-	"github.com/bhickta/aicli/internal/provider"
+	"github.com/bhickta/aicli/internal/provider/registry"
 	"github.com/bhickta/aicli/internal/storage"
 )
 
@@ -53,6 +53,6 @@ func testHandlerWithSettings(settings config.Settings, dataDir string) http.Hand
 		DataDir:   dataDir,
 		Settings:  settings,
 		Store:     &memoryStore{jobs: map[string]storage.Job{}},
-		Providers: provider.NewRegistry(settings.Providers),
+		Providers: registry.New(settings.Providers),
 	})
 }

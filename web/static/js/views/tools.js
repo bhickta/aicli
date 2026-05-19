@@ -1,5 +1,5 @@
-import { api } from "../api.js";
-import { view } from "../elements.js";
+import { api } from "../core/api.js";
+import { view } from "../core/elements.js";
 
 export function renderTools() {
   view.innerHTML = `

@@ -21,8 +21,8 @@ func TestServeStaticAssets(t *testing.T) {
 		substring string
 	}{
 		{name: "shell", path: "/", content: "text/html", substring: "<html"},
-		{name: "javascript entrypoint", path: "/app.js", content: "javascript", substring: "./js/main.js"},
-		{name: "javascript module", path: "/js/main.js", content: "javascript", substring: "export function init"},
+		{name: "javascript entrypoint", path: "/app.js", content: "javascript", substring: "./js/core/main.js"},
+		{name: "javascript module", path: "/js/core/main.js", content: "javascript", substring: "export function init"},
 		{name: "css", path: "/style.css", content: "text/css", substring: "body"},
 	}
 
