@@ -45,7 +45,7 @@ export const VIDEO_WORKFLOWS = [
       { type: "path", id: "path", label: "Course source folder", picker: "directory" },
       { type: "text", id: "whisper_model", label: "Whisper model", value: "large-v3", placeholder: "large-v3" },
       { type: "text", id: "whisper_device", label: "Whisper device", value: "cuda", placeholder: "cuda" },
-      { type: "number", id: "workers", label: "Parallel video workers", min: 1, max: 4, default: 2 },
+      { type: "number", id: "workers", label: "Parallel video workers", min: 1, max: 6, default: 2 },
       { type: "number", id: "max_merge_hours", label: "Max hours per output video", min: 1, max: 24, default: 9 },
     ],
     buildPayload: (values) => ({

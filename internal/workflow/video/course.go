@@ -186,13 +186,17 @@ func normalizedCourseWorkers(workers int, jobs int) int {
 	if workers <= 0 {
 		workers = 2
 	}
-	if workers > 4 {
-		workers = 4
+	if workers > 6 {
+		workers = 6
 	}
 	if workers > jobs {
 		return jobs
 	}
 	return workers
+}
+
+func EffectiveCourseWorkers(workers int, jobs int) int {
+	return normalizedCourseWorkers(workers, jobs)
 }
 
 func (s *Service) prepareCourseItem(ctx context.Context, file string, targetName string, cacheDir string, slidesDir string, req CourseRequest) (CourseItem, bool, error) {
