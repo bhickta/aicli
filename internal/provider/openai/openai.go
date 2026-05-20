@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/bhickta/aicli/internal/config"
@@ -58,7 +59,7 @@ func (p *OpenAICompatible) ListModels(ctx context.Context) ([]provider.Model, er
 	}
 	models := make([]provider.Model, 0, len(payload.Data))
 	for _, item := range payload.Data {
-		if item.ID != "" {
+		if item.ID != "" && p.allowsModel(item.ID) {
 			models = append(models, provider.Model{ID: item.ID, Name: item.ID})
 		}
 	}
@@ -66,6 +67,9 @@ func (p *OpenAICompatible) ListModels(ctx context.Context) ([]provider.Model, er
 }
 
 func (p *OpenAICompatible) Chat(ctx context.Context, req provider.ChatRequest) (provider.ChatResponse, error) {
+	if p.usesResponsesAPI() {
+		return p.responsesChat(ctx, req)
+	}
 	model := p.chatModel(req.Model)
 	if model == "" {
 		return provider.ChatResponse{}, errors.New("model is required")
@@ -130,12 +134,39 @@ func (p *OpenAICompatible) chatModel(model string) string {
 }
 
 func (p *OpenAICompatible) authorize(req *http.Request) {
-	if p.cfg.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+p.cfg.APIKey)
+	if apiKey := p.resolvedAPIKey(); apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 	for key, value := range p.cfg.Headers {
 		req.Header.Set(key, value)
 	}
+}
+
+func (p *OpenAICompatible) resolvedAPIKey() string {
+	if p.cfg.APIKey != "" {
+		return p.cfg.APIKey
+	}
+	if p.cfg.APIKeyEnv == "" {
+		return ""
+	}
+	return os.Getenv(p.cfg.APIKeyEnv)
+}
+
+func (p *OpenAICompatible) allowsModel(id string) bool {
+	filter := strings.TrimSpace(p.cfg.ModelFilter)
+	if filter == "" {
+		return true
+	}
+	id = strings.ToLower(id)
+	for _, term := range strings.FieldsFunc(filter, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n'
+	}) {
+		term = strings.ToLower(strings.TrimSpace(term))
+		if term != "" && strings.Contains(id, term) {
+			return true
+		}
+	}
+	return false
 }
 
 func openAIURL(baseURL string, path string) string {

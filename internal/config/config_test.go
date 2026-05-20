@@ -17,8 +17,56 @@ func TestLoadCreatesDefaultSettings(t *testing.T) {
 	if settings.DefaultProvider != "lms" {
 		t.Fatalf("DefaultProvider = %q, want lms", settings.DefaultProvider)
 	}
+	if !hasProvider(settings.Providers, "codex") {
+		t.Fatalf("default settings missing codex provider: %#v", settings.Providers)
+	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("settings file was not created: %v", err)
+	}
+}
+
+func TestNormalizeAppendsMissingDefaultProviders(t *testing.T) {
+	t.Parallel()
+
+	settings := Normalize(Settings{
+		DefaultProvider: "lms",
+		Providers: []ProviderConfig{
+			{ID: "lms", Type: "openai-compatible", Name: "Custom LMS", BaseURL: "http://example.test/v1"},
+		},
+	})
+	if len(settings.Providers) < 4 {
+		t.Fatalf("providers = %#v, want custom provider plus defaults", settings.Providers)
+	}
+	if settings.Providers[0].Name != "Custom LMS" {
+		t.Fatalf("first provider was overwritten: %#v", settings.Providers[0])
+	}
+	if !hasProvider(settings.Providers, "codex") {
+		t.Fatalf("Normalize() missing codex provider: %#v", settings.Providers)
+	}
+}
+
+func TestDefaultCodexProviderUsesAPIKeyEnv(t *testing.T) {
+	t.Parallel()
+
+	settings := DefaultSettings()
+	var codex ProviderConfig
+	for _, provider := range settings.Providers {
+		if provider.ID == "codex" {
+			codex = provider
+			break
+		}
+	}
+	if codex.Type != "openai-responses" {
+		t.Fatalf("codex type = %q, want openai-responses", codex.Type)
+	}
+	if codex.APIKey != "" {
+		t.Fatalf("codex APIKey = %q, want empty API key in default settings", codex.APIKey)
+	}
+	if codex.APIKeyEnv != "OPENAI_API_KEY" {
+		t.Fatalf("codex APIKeyEnv = %q, want OPENAI_API_KEY", codex.APIKeyEnv)
+	}
+	if codex.ModelFilter != "codex" {
+		t.Fatalf("codex ModelFilter = %q, want codex", codex.ModelFilter)
 	}
 }
 
@@ -32,4 +80,13 @@ func TestLoadRejectsInvalidJSON(t *testing.T) {
 	if _, err := Load(path); err == nil {
 		t.Fatal("Load() error = nil, want invalid JSON error")
 	}
+}
+
+func hasProvider(providers []ProviderConfig, id string) bool {
+	for _, provider := range providers {
+		if provider.ID == id {
+			return true
+		}
+	}
+	return false
 }

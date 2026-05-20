@@ -15,6 +15,16 @@ import (
 )
 
 func (p *OpenAICompatible) ChatStream(ctx context.Context, req provider.ChatRequest, yield func(string) error) error {
+	if p.usesResponsesAPI() {
+		res, err := p.Chat(ctx, req)
+		if err != nil {
+			return err
+		}
+		if res.Content == "" {
+			return nil
+		}
+		return yield(res.Content)
+	}
 	model := p.chatModel(req.Model)
 	if model == "" {
 		return errors.New("model is required")

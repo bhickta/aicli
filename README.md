@@ -1,12 +1,13 @@
 # aicli
 
-`aicli` is a single-binary Go web app for controlling local and OpenAI-compatible AI providers from one UI. It is focused on local workflows for LMS, Ollama, OpenRouter, and custom compatible endpoints without Frappe, auth, users, or migrations for an ERP stack.
+`aicli` is a single-binary Go web app for controlling local, Codex, and OpenAI-compatible AI providers from one UI. It is focused on local workflows for LMS, Ollama, OpenRouter, OpenAI Codex, and custom compatible endpoints without Frappe, auth, users, or migrations for an ERP stack.
 
 ## Features
 
 - Local web UI with chat, providers, tools, jobs, recall, and workflow screens.
-- Provider support for LMS, Ollama, OpenRouter, and custom OpenAI-compatible APIs.
+- Provider support for LMS, Ollama, OpenRouter, OpenAI Codex, and custom OpenAI-compatible APIs.
 - Model browser populated from the selected provider.
+- Codex workflow tab backed by OpenAI's Responses API, with model filtering and reasoning/verbosity controls.
 - Drag-and-drop workflow uploads stored under the app data directory.
 - PDF OCR workflow with side-by-side PDF preview and final Markdown review.
 - ZIP image OCR to Markdown.
@@ -25,6 +26,7 @@
   - LMS local server, usually `http://localhost:1234/v1`.
   - Ollama, usually `http://localhost:11434`.
   - OpenRouter or another OpenAI-compatible endpoint with an API key.
+  - OpenAI Codex through `OPENAI_API_KEY` or a configured provider API key.
 - Optional tools, depending on workflow:
   - `pdftoppm` for PDF OCR and PDF analysis.
   - `ffmpeg` and `ffprobe` for video/audio workflows.
@@ -126,6 +128,18 @@ The plugin in `obsidian/aicli-zettel-merge` is only a thin UI over the same `aic
 
 The older heavy `zettel-merge-ai` Obsidian plugin is no longer the target architecture and can be phased out after the AICLI flow is verified.
 
+## Codex Workflow
+
+The default settings include an `OpenAI Codex` provider:
+
+- Provider id: `codex`
+- Provider type: `openai-responses`
+- Base URL: `https://api.openai.com/v1`
+- API key source: `OPENAI_API_KEY`
+- Model filter: `codex`
+
+Use it from `Workflows` -> `Codex` -> `Coding task`. The model list is loaded from the provider and filtered to Codex models, so newer Codex model names can appear without a frontend change. Set `OPENAI_API_KEY` before starting `aicli`, or paste an `api_key` into the provider entry from `Settings`.
+
 ## Configuration
 
 On first run, a default settings file is created. The UI can edit it from `Settings`.
@@ -136,7 +150,7 @@ Typical provider entries:
 {
   "id": "lms",
   "name": "LMS",
-  "type": "openai",
+  "type": "openai-compatible",
   "base_url": "http://localhost:1234/v1",
   "api_key": ""
 }
@@ -149,6 +163,20 @@ Typical provider entries:
   "type": "ollama",
   "base_url": "http://localhost:11434",
   "api_key": ""
+}
+```
+
+```json
+{
+  "id": "codex",
+  "name": "OpenAI Codex",
+  "type": "openai-responses",
+  "base_url": "https://api.openai.com/v1",
+  "api_key_env": "OPENAI_API_KEY",
+  "model": "gpt-5.2-codex",
+  "model_filter": "codex",
+  "reasoning_effort": "medium",
+  "text_verbosity": "medium"
 }
 ```
 

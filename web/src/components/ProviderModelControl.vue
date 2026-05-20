@@ -19,17 +19,32 @@ const emit = defineEmits<{
 }>();
 
 const selectedProvider = shallowRef(props.providerId || defaultProviderId.value);
-const selectedModel = shallowRef(props.model || defaultModel.value);
+const selectedProviderConfig = computed(() => providers.value.find((provider) => provider.id === selectedProvider.value));
+const providerDefaultModel = computed(() => selectedProviderConfig.value?.model || defaultModel.value || "");
+const selectedModel = shallowRef(props.model || providerDefaultModel.value);
 const status = shallowRef("");
 const loading = shallowRef(false);
 
 const models = computed(() => appState.models[selectedProvider.value] || []);
+
+watch(defaultProviderId, (providerId) => {
+  if (!selectedProvider.value && providerId) selectedProvider.value = props.providerId || providerId;
+}, { immediate: true });
+
+watch(() => props.providerId, (providerId) => {
+  if (providerId && providerId !== selectedProvider.value) selectedProvider.value = providerId;
+});
+
+watch(() => props.model, (model) => {
+  selectedModel.value = model || providerDefaultModel.value;
+});
 
 watch([selectedProvider, selectedModel], () => {
   emit("change", { provider_id: selectedProvider.value, model: selectedModel.value });
 }, { immediate: true });
 
 watch(selectedProvider, () => {
+  selectedModel.value = props.model || providerDefaultModel.value;
   void loadModels(false);
 }, { immediate: true });
 
@@ -49,7 +64,7 @@ async function loadModels(force: boolean) {
   } catch (error) {
     status.value = error instanceof Error ? error.message : "Model load failed";
     appState.models[selectedProvider.value] = [];
-    selectedModel.value = "";
+    selectedModel.value = providerDefaultModel.value;
   } finally {
     loading.value = false;
   }
@@ -57,7 +72,12 @@ async function loadModels(force: boolean) {
 
 function ensureSelectedModel() {
   if (models.value.some((model) => model.id === selectedModel.value)) return;
-  selectedModel.value = models.value[0]?.id || defaultModel.value || "";
+  const fallback = providerDefaultModel.value;
+  if (!models.value.length) {
+    selectedModel.value = fallback;
+    return;
+  }
+  selectedModel.value = models.value.find((model) => model.id === fallback)?.id || models.value[0]?.id || fallback;
 }
 </script>
 
@@ -76,7 +96,7 @@ function ensureSelectedModel() {
       <label>Model</label>
       <select v-model="selectedModel">
         <option v-if="loading" value="">Loading models...</option>
-        <option v-else-if="!models.length" value="">{{ defaultModel || status || "Load models..." }}</option>
+        <option v-else-if="!models.length" :value="providerDefaultModel">{{ providerDefaultModel || status || "Load models..." }}</option>
         <option v-for="modelOption in models" v-else :key="modelOption.id" :value="modelOption.id">
           {{ modelOption.name || modelOption.id }}
         </option>

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/bhickta/aicli/internal/server/workflowapi/audioapi"
+	"github.com/bhickta/aicli/internal/server/workflowapi/codexapi"
 	"github.com/bhickta/aicli/internal/server/workflowapi/core"
 	"github.com/bhickta/aicli/internal/server/workflowapi/documentapi"
 	"github.com/bhickta/aicli/internal/server/workflowapi/imageapi"
@@ -25,6 +26,7 @@ func New(deps Dependencies) *Handler {
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	studyapi.New(h.runtime).Register(mux)
+	codexapi.New(h.runtime).Register(mux)
 	imageapi.New(h.runtime).Register(mux)
 	newsapi.New(h.runtime).Register(mux)
 	documentapi.New(h.runtime).Register(mux)

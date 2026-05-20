@@ -1,6 +1,6 @@
 import type { WorkflowDefinition } from "../types";
 
-export const workflowCategories = ["Study", "Documents", "Images", "Audio", "Video", "News"];
+export const workflowCategories = ["Study", "Codex", "Documents", "Images", "Audio", "Video", "News"];
 
 export const workflowDefinitions: WorkflowDefinition[] = [
   {
@@ -16,6 +16,49 @@ export const workflowDefinitions: WorkflowDefinition[] = [
       provider_id: values.provider_id,
       model: values.model,
       notes: values.notes,
+    }),
+  },
+  {
+    id: "codex-task",
+    category: "Codex",
+    label: "Coding task",
+    endpoint: "/api/workflows/codex/run",
+    preferredProviderId: "codex",
+    fields: [
+      { type: "providerModel" },
+      {
+        type: "select",
+        id: "reasoning_effort",
+        label: "Reasoning effort",
+        default: "medium",
+        options: [
+          { value: "low", label: "Low" },
+          { value: "medium", label: "Medium" },
+          { value: "high", label: "High" },
+          { value: "xhigh", label: "Extra high" },
+        ],
+      },
+      {
+        type: "select",
+        id: "text_verbosity",
+        label: "Response verbosity",
+        default: "medium",
+        options: [
+          { value: "low", label: "Low" },
+          { value: "medium", label: "Medium" },
+          { value: "high", label: "High" },
+        ],
+      },
+      { type: "textarea", id: "task", label: "Coding task", rows: 8, placeholder: "Describe the code change, review question, or debugging task..." },
+      { type: "textarea", id: "context", label: "Context (optional)", rows: 6, placeholder: "Paste relevant file paths, logs, constraints, or acceptance criteria..." },
+    ],
+    buildPayload: (values) => ({
+      provider_id: values.provider_id,
+      model: values.model,
+      reasoning_effort: values.reasoning_effort || "medium",
+      text_verbosity: values.text_verbosity || "medium",
+      task: values.task,
+      context: values.context,
     }),
   },
   {

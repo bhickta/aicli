@@ -16,13 +16,17 @@ type Settings struct {
 }
 
 type ProviderConfig struct {
-	ID      string            `json:"id"`
-	Type    string            `json:"type"`
-	Name    string            `json:"name"`
-	BaseURL string            `json:"base_url"`
-	APIKey  string            `json:"api_key"`
-	Model   string            `json:"model"`
-	Headers map[string]string `json:"headers"`
+	ID              string            `json:"id"`
+	Type            string            `json:"type"`
+	Name            string            `json:"name"`
+	BaseURL         string            `json:"base_url"`
+	APIKey          string            `json:"api_key"`
+	APIKeyEnv       string            `json:"api_key_env,omitempty"`
+	Model           string            `json:"model"`
+	ModelFilter     string            `json:"model_filter,omitempty"`
+	ReasoningEffort string            `json:"reasoning_effort,omitempty"`
+	TextVerbosity   string            `json:"text_verbosity,omitempty"`
+	Headers         map[string]string `json:"headers"`
 }
 
 type ToolConfig struct {
@@ -64,6 +68,17 @@ func DefaultSettings() Settings {
 				Name:    "OpenRouter",
 				BaseURL: "https://openrouter.ai/api/v1",
 			},
+			{
+				ID:              "codex",
+				Type:            "openai-responses",
+				Name:            "OpenAI Codex",
+				BaseURL:         "https://api.openai.com/v1",
+				APIKeyEnv:       "OPENAI_API_KEY",
+				Model:           "gpt-5.2-codex",
+				ModelFilter:     "codex",
+				ReasoningEffort: "medium",
+				TextVerbosity:   "medium",
+			},
 		},
 		Tools: ToolConfig{
 			FFmpeg:     "ffmpeg",
@@ -95,18 +110,22 @@ func Load(path string) (Settings, error) {
 	if err := json.Unmarshal(data, &settings); err != nil {
 		return Settings{}, err
 	}
-	return withDefaults(settings), nil
+	return Normalize(settings), nil
 }
 
 func Save(path string, settings Settings) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(withDefaults(settings), "", "  ")
+	data, err := json.MarshalIndent(Normalize(settings), "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, append(data, '\n'), 0o600)
+}
+
+func Normalize(settings Settings) Settings {
+	return withDefaults(settings)
 }
 
 func withDefaults(settings Settings) Settings {
@@ -116,6 +135,8 @@ func withDefaults(settings Settings) Settings {
 	}
 	if settings.Providers == nil {
 		settings.Providers = defaults.Providers
+	} else {
+		settings.Providers = mergeDefaultProviders(settings.Providers, defaults.Providers)
 	}
 	if settings.Tools.FFmpeg == "" {
 		settings.Tools.FFmpeg = defaults.Tools.FFmpeg
@@ -137,4 +158,21 @@ func withDefaults(settings Settings) Settings {
 		}
 	}
 	return settings
+}
+
+func mergeDefaultProviders(providers []ProviderConfig, defaults []ProviderConfig) []ProviderConfig {
+	seen := make(map[string]bool, len(providers))
+	for _, provider := range providers {
+		if provider.ID != "" {
+			seen[provider.ID] = true
+		}
+	}
+	for _, provider := range defaults {
+		if provider.ID == "" || seen[provider.ID] {
+			continue
+		}
+		providers = append(providers, provider)
+		seen[provider.ID] = true
+	}
+	return providers
 }

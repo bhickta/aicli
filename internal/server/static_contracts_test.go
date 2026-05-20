@@ -152,4 +152,13 @@ func TestAPISmokeContracts(t *testing.T) {
 			t.Fatalf("status = %d, want 400, body=%s", res.Code, res.Body.String())
 		}
 	})
+
+	t.Run("codex workflow registered", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/workflows/codex/run", strings.NewReader("{"))
+		res := httptest.NewRecorder()
+		handler.ServeHTTP(res, req)
+		if res.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400, body=%s", res.Code, res.Body.String())
+		}
+	})
 }

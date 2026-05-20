@@ -18,6 +18,7 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	settings = config.Normalize(settings)
 	if err := config.Save(s.deps.SettingsPath, settings); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

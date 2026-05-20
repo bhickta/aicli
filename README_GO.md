@@ -21,9 +21,11 @@ External tools are detected at runtime. On this machine, FFmpeg, FFprobe, and Po
 - LMS/OpenAI-compatible provider adapter.
 - Ollama provider adapter.
 - OpenRouter/custom endpoint support through the OpenAI-compatible adapter.
+- OpenAI Codex provider support through the Responses API, including Codex model filtering and reasoning controls.
 - Health, settings, provider, chat, and jobs APIs.
 - Tool readiness checks for `ffmpeg`, `ffprobe`, `pdftoppm`, and `whisper-cli`.
 - UPSC Recall workflow.
+- Codex coding workflow.
 - Image rename/junk/digitize workflow.
 - OCR ZIP-to-Markdown workflow.
 - Analyze PDF-to-report workflow.

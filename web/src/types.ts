@@ -6,7 +6,11 @@ export interface ProviderConfig {
   name: string;
   base_url: string;
   api_key: string;
+  api_key_env?: string;
   model: string;
+  model_filter?: string;
+  reasoning_effort?: string;
+  text_verbosity?: string;
   headers?: Record<string, string>;
 }
 
@@ -59,6 +63,8 @@ export interface WorkflowDefinition {
   category: string;
   label: string;
   endpoint: string;
+  preferredProviderId?: string;
+  preferredModel?: string;
   fields: WorkflowField[];
   buildPayload: (values: Record<string, unknown>) => Record<string, unknown>;
 }

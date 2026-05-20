@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -55,6 +56,9 @@ func (h *Handler) UploadFiles(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("no files uploaded"))
 		return
 	}
+	sort.SliceStable(uploaded, func(i, j int) bool {
+		return uploaded[i].Name < uploaded[j].Name
+	})
 	writeJSON(w, http.StatusCreated, map[string]any{"files": uploaded, "root": uploadRoot(uploadDir, rootSegments)})
 }
 

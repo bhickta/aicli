@@ -228,7 +228,12 @@ function handleBrowserSelect(id: string, path: string) {
     <DropZone @upload="handleDrop" />
     <p class="muted">Workflow controls are shown only for the selected workflow. Recall is included in the <strong>Study</strong> workflow set.</p>
     <div id="workflow-fields" class="grid">
-      <ProviderModelControl v-if="hasProviderModel" @change="Object.assign(providerModel, $event)" />
+      <ProviderModelControl
+        v-if="hasProviderModel"
+        :provider-id="activeWorkflow?.preferredProviderId || ''"
+        :model="activeWorkflow?.preferredModel || ''"
+        @change="Object.assign(providerModel, $event)"
+      />
       <WorkflowField
         v-for="field in nonProviderFields"
         :key="field.id"

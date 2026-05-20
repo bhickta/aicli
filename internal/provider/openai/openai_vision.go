@@ -9,6 +9,9 @@ import (
 )
 
 func (p *OpenAICompatible) Vision(ctx context.Context, req provider.VisionRequest) (provider.ChatResponse, error) {
+	if p.usesResponsesAPI() {
+		return provider.ChatResponse{}, errors.New("vision is not supported by this Responses API provider")
+	}
 	model := p.chatModel(req.Model)
 	if model == "" {
 		return provider.ChatResponse{}, errors.New("model is required")
