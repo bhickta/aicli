@@ -15,6 +15,7 @@
 - Audio workflows for transcription and LLM-assisted analysis.
 - Video workflows for info, compression, metadata backup/restore, and notes/tags/course generation.
 - News workflow for JSON/XLSX import, dedupe, merge, similarity grouping, and optional LLM cleanup.
+- Zettelkasten merge workflow with local embeddings, DeepSeek-compatible judging, exact line clipping, archive, and rollback.
 - Job history with status, stage, progress, elapsed time, and ETA in the UI.
 
 ## Requirements
@@ -38,7 +39,7 @@ go run ./cmd/aicli
 Then open:
 
 ```text
-http://127.0.0.1:8080
+http://127.0.0.1:8765
 ```
 
 Useful flags:
@@ -46,6 +47,14 @@ Useful flags:
 ```bash
 go run ./cmd/aicli --host 127.0.0.1 --port 8080
 go run ./cmd/aicli --data-dir ~/.local/share/aicli --config ~/.config/aicli/settings.json
+```
+
+Build the Vue UI bundle after frontend changes:
+
+```bash
+npm install
+npm run check:web
+npm run build:web
 ```
 
 Build a binary:
@@ -70,6 +79,52 @@ Uploaded files are copied into:
 ```text
 <data-dir>/uploads
 ```
+
+## Zettelkasten Merge
+
+The merge engine lives in `aicli`, not Obsidian. It scans a vault folder, builds or imports embeddings, finds similar notes, asks a local DeepSeek-compatible model to select exact source line ranges, generates a merge preview, validates it, then applies only after approval.
+
+Default safety behavior:
+
+- Review before apply.
+- Source notes are clipped only by exact approved line ranges.
+- Source notes are not deleted by default.
+- Active/source files are hash-checked before writing.
+- Originals are archived in `.aicli-zettel-merge/jobs/<job-id>`.
+- Rollback restores the active note and source notes.
+
+### AICLI-only workflow
+
+1. Start `aicli`.
+2. Open `http://127.0.0.1:8765`.
+3. Open the `Zettel` tab.
+4. Set:
+   - Vault folder, for example `/home/bhickta/development/upsc`
+   - Active note path, for example `zettelkasten/.../Note.md`
+   - Zettelkasten folder, usually `zettelkasten`
+   - Provider ID, usually `lms`
+   - DeepSeek judge/merge model
+   - Embedding model, usually `text-embedding-nomic-embed-text-v1.5`
+5. Click `Build Index` once, or when notes/model changed.
+6. Click `Suggest`.
+7. Select candidate cards.
+8. Click `Preview Merge`.
+9. Review the final markdown.
+10. Click `Apply`.
+
+Use `Rollback` from the same tab to restore the latest applied merge, or enter a job id before rolling back.
+
+### Optional Obsidian workflow
+
+The plugin in `obsidian/aicli-zettel-merge` is only a thin UI over the same `aicli` APIs. Use it when you want current-note workflow inside Obsidian:
+
+1. Copy or symlink `obsidian/aicli-zettel-merge` into the vault plugin folder.
+2. Enable `AICLI Zettel Merge` in Obsidian.
+3. Open a note under `zettelkasten`.
+4. Run `AICLI: Suggest Zettel Merges`.
+5. Select candidates, preview, apply, or rollback.
+
+The older heavy `zettel-merge-ai` Obsidian plugin is no longer the target architecture and can be phased out after the AICLI flow is verified.
 
 ## Configuration
 
@@ -100,6 +155,8 @@ Typical provider entries:
 ## Test
 
 ```bash
+npm run check:web
+npm run build:web
 go test ./...
 ```
 

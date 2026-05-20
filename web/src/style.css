@@ -300,6 +300,88 @@ h3 {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+.zettel-panel {
+  max-width: 1280px;
+}
+
+.zettel-grid,
+.zettel-review-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+  gap: 12px;
+}
+
+.zettel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 8px 0;
+  background: #161a21;
+}
+
+.zettel-actions .mod-cta {
+  border-color: #6ea8fe;
+  background: #2d405e;
+}
+
+.zettel-candidates,
+.zettel-preview {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.zettel-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #2b313b;
+  border-radius: 8px;
+  background: #10141b;
+}
+
+.zettel-card-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.zettel-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.zettel-badges span {
+  padding: 5px 7px;
+  border: 1px solid #343b46;
+  border-radius: 999px;
+  background: #202630;
+  color: #9aa4b2;
+  font-size: 12px;
+}
+
+.zettel-card pre {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.zettel-preview textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 520px;
+  resize: vertical;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
 textarea {
   min-height: 160px;
   resize: vertical;
@@ -400,6 +482,11 @@ output {
   .review-pane iframe,
   .review-pane textarea {
     min-height: 420px;
+  }
+
+  .zettel-grid,
+  .zettel-review-grid {
+    grid-template-columns: 1fr;
   }
 
   .tabs {

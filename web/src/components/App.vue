@@ -9,10 +9,12 @@ import ProvidersView from "../views/ProvidersView.vue";
 import SettingsView from "../views/SettingsView.vue";
 import ToolsView from "../views/ToolsView.vue";
 import WorkflowsView from "../views/WorkflowsView.vue";
+import ZettelView from "../views/ZettelView.vue";
 
 const views: Array<{ id: ViewName; label: string }> = [
   { id: "chat", label: "Chat" },
   { id: "workflows", label: "Workflows" },
+  { id: "zettel", label: "Zettel" },
   { id: "jobs", label: "Jobs" },
   { id: "providers", label: "Providers" },
   { id: "tools", label: "Tools" },
@@ -23,6 +25,8 @@ const activeComponent = computed(() => {
   switch (appState.view) {
     case "workflows":
       return WorkflowsView;
+    case "zettel":
+      return ZettelView;
     case "jobs":
       return JobsView;
     case "providers":

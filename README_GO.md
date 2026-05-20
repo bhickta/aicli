@@ -35,7 +35,9 @@ External tools are detected at runtime. On this machine, FFmpeg, FFprobe, and Po
 - News JSON/XLSX dedupe workflow.
 - News similarity clustering.
 - Image safe rename and stale reference pruning.
+- Vue 3 web UI served from the embedded Go binary.
+- AICLI-owned Zettelkasten merge workflow with exact line clipping, validation, archive, and rollback.
 
 ## Remaining Polish
 
-Core local backend workflows are represented as Go use cases. Remaining polish is optional UI depth: replacing the built-in static shell with a richer Vue workspace or Wails wrapper.
+Core local backend workflows are represented as Go use cases. Remaining polish is optional workflow depth, packaging, and richer job-specific review screens where useful.
