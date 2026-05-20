@@ -4,7 +4,7 @@ import { readStoredRecord, writeStoredJSON } from "../lib/persistence";
 import { appState } from "../stores/appState";
 import type { WorkflowDefinition } from "../types";
 
-interface ProviderModelSelection {
+export interface ProviderModelSelection {
   provider_id: string;
   model: string;
 }

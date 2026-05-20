@@ -16,16 +16,16 @@ func (r *Runtime) CancelJob(ctx context.Context, jobID string) (storage.Job, err
 	if err != nil {
 		return storage.Job{}, err
 	}
-	if job.Status != "running" {
+	if job.Status != storage.JobStatusRunning {
 		return job, nil
 	}
 	if cancel, ok := r.cancelFunc(jobID); ok {
 		cancel()
 	}
-	job.Status = "cancelled"
-	job.Stage = "cancelled"
+	job.Status = storage.JobStatusCancelled
+	job.Stage = storage.JobStatusCancelled
 	job.ETASeconds = 0
-	job.Error = "cancelled"
+	job.Error = storage.JobStatusCancelled
 	job.FinishedAt = time.Now().UTC()
 	if err := r.store.UpdateJob(ctx, job); err != nil {
 		return storage.Job{}, err

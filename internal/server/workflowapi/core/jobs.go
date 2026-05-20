@@ -12,7 +12,7 @@ func NewJob(jobType string, input string) storage.Job {
 	return storage.Job{
 		ID:          fmt.Sprintf("%s-%d", jobType, now.UnixNano()),
 		Type:        jobType,
-		Status:      "running",
+		Status:      storage.JobStatusRunning,
 		Stage:       "queued",
 		Progress:    0,
 		CurrentStep: 0,

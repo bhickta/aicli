@@ -68,17 +68,17 @@ func (r *Runtime) finishJobStore(ctx context.Context, job storage.Job, result an
 	job.ETASeconds = 0
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			job.Status = "cancelled"
-			job.Stage = "cancelled"
-			job.Error = "cancelled"
+			job.Status = storage.JobStatusCancelled
+			job.Stage = storage.JobStatusCancelled
+			job.Error = storage.JobStatusCancelled
 			_ = r.store.UpdateJob(ctx, job)
 			if r.logger != nil {
 				r.logger.Info("workflow cancelled", "job", job.ID, "type", job.Type)
 			}
 			return
 		}
-		job.Status = "failed"
-		job.Stage = "failed"
+		job.Status = storage.JobStatusFailed
+		job.Stage = storage.JobStatusFailed
 		job.Error = err.Error()
 		_ = r.store.UpdateJob(ctx, job)
 		if r.logger != nil {
@@ -88,8 +88,8 @@ func (r *Runtime) finishJobStore(ctx context.Context, job storage.Job, result an
 	}
 	output, marshalErr := json.Marshal(result)
 	if marshalErr != nil {
-		job.Status = "failed"
-		job.Stage = "failed"
+		job.Status = storage.JobStatusFailed
+		job.Stage = storage.JobStatusFailed
 		job.Error = marshalErr.Error()
 		_ = r.store.UpdateJob(ctx, job)
 		if r.logger != nil {
@@ -97,8 +97,8 @@ func (r *Runtime) finishJobStore(ctx context.Context, job storage.Job, result an
 		}
 		return
 	}
-	job.Status = "completed"
-	job.Stage = "completed"
+	job.Status = storage.JobStatusCompleted
+	job.Stage = storage.JobStatusCompleted
 	job.Progress = 1
 	job.CurrentStep = job.TotalSteps
 	job.Output = string(output)
