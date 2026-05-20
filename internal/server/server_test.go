@@ -53,6 +53,6 @@ func testHandlerWithSettings(settings config.Settings, dataDir string) http.Hand
 		DataDir:   dataDir,
 		Settings:  settings,
 		Store:     &memoryStore{jobs: map[string]storage.Job{}},
-		Providers: registry.New(settings.Providers),
+		Providers: registry.New(settings.Providers, settings.Tools),
 	})
 }

@@ -24,6 +24,6 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.deps.Settings = settings
-	s.deps.Providers = registry.New(settings.Providers)
+	s.deps.Providers = registry.New(settings.Providers, settings.Tools)
 	writeJSON(w, http.StatusOK, settings)
 }

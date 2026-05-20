@@ -22,7 +22,7 @@ External tools are detected at runtime. On this machine, FFmpeg, FFprobe, and Po
 - Ollama provider adapter.
 - OpenRouter/custom endpoint support through the OpenAI-compatible adapter.
 - OpenAI Codex provider support through the Responses API, including Codex model filtering and reasoning controls.
-- Codex CLI support for ChatGPT/Codex-authenticated workflows that do not use `OPENAI_API_KEY`.
+- Codex CLI provider support for ChatGPT/Codex-authenticated chat and workflows that do not use `OPENAI_API_KEY`, with model lists loaded from `codex debug models`.
 - Health, settings, provider, chat, and jobs APIs.
 - Tool readiness checks for `ffmpeg`, `ffprobe`, `pdftoppm`, `whisper-cli`, and `codex`.
 - UPSC Recall workflow.

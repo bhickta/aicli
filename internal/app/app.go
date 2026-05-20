@@ -49,7 +49,7 @@ func New(opts Options, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
-	providers := registry.New(settings.Providers)
+	providers := registry.New(settings.Providers, settings.Tools)
 	handler := server.New(server.Dependencies{
 		Logger:       logger,
 		SettingsPath: opts.ConfigPath,

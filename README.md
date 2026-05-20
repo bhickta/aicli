@@ -5,9 +5,9 @@
 ## Features
 
 - Local web UI with chat, providers, tools, jobs, recall, and workflow screens.
-- Provider support for LMS, Ollama, OpenRouter, OpenAI Codex, and custom OpenAI-compatible APIs.
+- Provider support for LMS, Ollama, OpenRouter, OpenAI Codex API, Codex CLI / Pro, and custom OpenAI-compatible APIs.
 - Model browser populated from the selected provider.
-- Codex workflow tab backed by OpenAI's Responses API, with model filtering and reasoning/verbosity controls.
+- Codex workflow tab backed by OpenAI's Responses API or the local Codex CLI, with dynamic model lists.
 - Drag-and-drop workflow uploads stored under the app data directory.
 - PDF OCR workflow with side-by-side PDF preview and final Markdown review.
 - ZIP image OCR to Markdown.
@@ -26,7 +26,7 @@
   - LMS local server, usually `http://localhost:1234/v1`.
   - Ollama, usually `http://localhost:11434`.
   - OpenRouter or another OpenAI-compatible endpoint with an API key.
-  - OpenAI Codex through `OPENAI_API_KEY` or a configured provider API key.
+  - OpenAI Codex through `OPENAI_API_KEY`, a configured provider API key, or a logged-in `codex` CLI.
 - Optional tools, depending on workflow:
   - `pdftoppm` for PDF OCR and PDF analysis.
   - `ffmpeg` and `ffprobe` for video/audio workflows.
@@ -136,7 +136,9 @@ There are two Codex workflows:
 - `Coding task (Codex CLI / Pro)` runs `codex exec` locally and uses the official Codex CLI authentication. If `codex doctor` shows `stored auth mode chatgpt`, this path uses your ChatGPT/Codex plan instead of `OPENAI_API_KEY`.
 - `Coding task (API key)` calls the OpenAI API directly and uses API project billing/quota.
 
-The CLI workflow defaults to `read-only` sandbox and `never` approval because it runs non-interactively from the web app. Switch sandbox to `workspace-write` only when you want Codex CLI to edit the selected workspace folder.
+The CLI workflow defaults to `read-only` sandbox and `never` approval because it runs non-interactively from the web app. Switch sandbox to `workspace-write` only when you want Codex CLI to edit the selected workspace folder. Its model picker is populated by `codex debug models`, so it follows the models available to your logged-in CLI account.
+
+Chat can also use the CLI auth path. In the `Chat` tab, select provider `Codex CLI / Pro`, refresh models, choose a model, and send the prompt. This path runs `codex exec` locally and does not require `OPENAI_API_KEY`.
 
 The default settings also include an `OpenAI Codex` API provider:
 
@@ -147,6 +149,13 @@ The default settings also include an `OpenAI Codex` API provider:
 - Model filter: `codex`
 
 Use API-key mode from `Workflows` -> `Codex` -> `Coding task (API key)`. The model list is loaded from the provider and filtered to Codex models, so newer Codex model names can appear without a frontend change. Set `OPENAI_API_KEY` before starting `aicli`, or paste an `api_key` into the provider entry from `Settings`.
+
+The default settings also include a CLI-backed provider:
+
+- Provider id: `codex-cli`
+- Provider type: `codex-cli`
+- Tool source: `tools.codex_cli`
+- Model source: `codex debug models`
 
 ## Configuration
 
@@ -185,6 +194,15 @@ Typical provider entries:
   "model_filter": "codex",
   "reasoning_effort": "medium",
   "text_verbosity": "medium"
+}
+```
+
+```json
+{
+  "id": "codex-cli",
+  "name": "Codex CLI / Pro",
+  "type": "codex-cli",
+  "model": "gpt-5.5"
 }
 ```
 

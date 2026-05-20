@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/bhickta/aicli/internal/config"
+	"github.com/bhickta/aicli/internal/tool"
 )
 
 type CLIRequest struct {
@@ -55,7 +55,7 @@ func (s *CLIService) Run(ctx context.Context, req CLIRequest) (CLIResponse, erro
 		return CLIResponse{}, errors.New("task is required")
 	}
 
-	outputPath, cleanup, err := tempOutputPath()
+	outputPath, cleanup, err := tool.TempOutputPath("aicli-codex-last-*.txt")
 	if err != nil {
 		return CLIResponse{}, err
 	}
@@ -66,14 +66,14 @@ func (s *CLIService) Run(ctx context.Context, req CLIRequest) (CLIResponse, erro
 		return CLIResponse{}, err
 	}
 	raw, runErr := s.runner.CombinedOutputWithInput(ctx, command, prompt, args...)
-	output := finalCLIOutput(outputPath, raw)
+	output := tool.FinalOutput(outputPath, raw)
 	res := CLIResponse{
 		Output:  output,
 		Command: command + " exec",
 		Workdir: strings.TrimSpace(req.Workdir),
 	}
 	if runErr != nil {
-		return res, fmt.Errorf("codex CLI failed: %w: %s", runErr, limitedOutput(raw))
+		return res, fmt.Errorf("codex CLI failed: %w: %s", runErr, tool.LimitedOutput(raw, 2000))
 	}
 	if output == "" {
 		return res, errors.New("codex CLI completed without a final response")
@@ -148,34 +148,4 @@ func normalizeApproval(value string) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported codex approval policy %q", value)
 	}
-}
-
-func tempOutputPath() (string, func(), error) {
-	file, err := os.CreateTemp("", "aicli-codex-last-*.txt")
-	if err != nil {
-		return "", func() {}, err
-	}
-	path := file.Name()
-	if err := file.Close(); err != nil {
-		_ = os.Remove(path)
-		return "", func() {}, err
-	}
-	return path, func() { _ = os.Remove(path) }, nil
-}
-
-func finalCLIOutput(outputPath string, raw []byte) string {
-	if data, err := os.ReadFile(outputPath); err == nil {
-		if text := strings.TrimSpace(string(data)); text != "" {
-			return text
-		}
-	}
-	return strings.TrimSpace(string(raw))
-}
-
-func limitedOutput(raw []byte) string {
-	text := strings.TrimSpace(string(raw))
-	if len(text) <= 2000 {
-		return text
-	}
-	return text[:2000] + "..."
 }

@@ -6,8 +6,9 @@ export const codexWorkflowDefinitions: WorkflowDefinition[] = [
     category: "Codex",
     label: "Coding task (Codex CLI / Pro)",
     endpoint: "/api/workflows/codex/cli",
+    preferredProviderId: "codex-cli",
     fields: [
-      { type: "text", id: "model", label: "Model override (optional)", value: "", placeholder: "Leave empty for Codex CLI default" },
+      { type: "providerModel" },
       { type: "text", id: "profile", label: "Codex profile (optional)", value: "", placeholder: "Optional config.toml profile" },
       { type: "path", id: "workdir", label: "Workspace folder (optional)", picker: "directory" },
       {

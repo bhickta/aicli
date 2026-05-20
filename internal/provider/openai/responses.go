@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/bhickta/aicli/internal/provider"
+	"github.com/bhickta/aicli/internal/textutil"
 )
 
 const responsesProviderType = "openai-responses"
@@ -66,10 +67,10 @@ func (p *OpenAICompatible) responsesBody(model string, req provider.ChatRequest)
 	if req.MaxTokens > 0 {
 		body["max_output_tokens"] = req.MaxTokens
 	}
-	if effort := firstNonEmpty(req.ReasoningEffort, p.cfg.ReasoningEffort); effort != "" {
+	if effort := textutil.FirstNonBlank(req.ReasoningEffort, p.cfg.ReasoningEffort); effort != "" {
 		body["reasoning"] = map[string]any{"effort": effort}
 	}
-	if verbosity := firstNonEmpty(req.TextVerbosity, p.cfg.TextVerbosity); verbosity != "" {
+	if verbosity := textutil.FirstNonBlank(req.TextVerbosity, p.cfg.TextVerbosity); verbosity != "" {
 		body["text"] = map[string]any{"verbosity": verbosity}
 	}
 	return body
@@ -112,13 +113,4 @@ func decodeResponseText(body io.Reader) (string, error) {
 		return "", errors.New("response has no output text")
 	}
 	return text.String(), nil
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }

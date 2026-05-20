@@ -80,6 +80,12 @@ func DefaultSettings() Settings {
 				ReasoningEffort: "medium",
 				TextVerbosity:   "medium",
 			},
+			{
+				ID:    "codex-cli",
+				Type:  "codex-cli",
+				Name:  "Codex CLI / Pro",
+				Model: "gpt-5.5",
+			},
 		},
 		Tools: ToolConfig{
 			FFmpeg:     "ffmpeg",
