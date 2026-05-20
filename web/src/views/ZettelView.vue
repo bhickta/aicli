@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef, watch } from "vue";
+import { computed, onMounted, reactive, shallowRef, watch } from "vue";
 import ZettelMergeDiff from "../components/zettel/ZettelMergeDiff.vue";
+import ZettelNotePicker from "../components/zettel/ZettelNotePicker.vue";
 import ZettelProviderSettings from "../components/zettel/ZettelProviderSettings.vue";
 import { api, parseJobOutput, pollJob } from "../lib/api";
 import { elapsedSeconds, formatDuration, readNumberValue, stringify } from "../lib/format";
@@ -32,15 +33,23 @@ interface Proposal {
   judge?: { verdict?: string; score?: number; notes?: string };
 }
 
+const legacyProviderId = localStorage.getItem("aicli.zettel.providerId") || "lms";
+const legacyJudgeModel = localStorage.getItem("aicli.zettel.judgeModel") || "deepseek-reasoner";
+
 const config = reactive({
   vaultPath: localStorage.getItem("aicli.zettel.vaultPath") || "",
   activePath: localStorage.getItem("aicli.zettel.activePath") || "",
   rootFolder: localStorage.getItem("aicli.zettel.rootFolder") || "zettelkasten",
   dataFolder: localStorage.getItem("aicli.zettel.dataFolder") || ".aicli-zettel-merge",
-  providerId: localStorage.getItem("aicli.zettel.providerId") || "lms",
+  providerId: legacyProviderId,
+  candidateProviderId: localStorage.getItem("aicli.zettel.candidateProviderId") || legacyProviderId,
+  mergeProviderId: localStorage.getItem("aicli.zettel.mergeProviderId") || legacyProviderId,
+  validationProviderId: localStorage.getItem("aicli.zettel.validationProviderId") || legacyProviderId,
   embeddingProviderId: localStorage.getItem("aicli.zettel.embeddingProviderId") || "lms",
-  judgeModel: localStorage.getItem("aicli.zettel.judgeModel") || "deepseek-reasoner",
+  judgeModel: legacyJudgeModel,
+  candidateModel: localStorage.getItem("aicli.zettel.candidateModel") || legacyJudgeModel,
   mergeModel: localStorage.getItem("aicli.zettel.mergeModel") || "deepseek-reasoner",
+  validationModel: localStorage.getItem("aicli.zettel.validationModel") || legacyJudgeModel,
   embeddingModel: localStorage.getItem("aicli.zettel.embeddingModel") || "text-embedding-nomic-embed-text-v1.5",
   candidateLimit: Number(localStorage.getItem("aicli.zettel.candidateLimit") || 12),
   reviewThreshold: Number(localStorage.getItem("aicli.zettel.reviewThreshold") || 0.85),
@@ -48,9 +57,11 @@ const config = reactive({
 });
 
 const candidates = shallowRef<Candidate[]>([]);
+const notes = shallowRef<string[]>([]);
 const selectedPaths = shallowRef<string[]>([]);
 const proposal = shallowRef<Proposal | null>(null);
 const status = shallowRef("Ready");
+const notesStatus = shallowRef("Load notes after selecting a vault.");
 const result = shallowRef("");
 const progress = shallowRef(0);
 const busy = shallowRef(false);
@@ -70,23 +81,47 @@ const proposalQuality = computed(() => {
   return `coverage ${coverage} | judge ${judge} | ${proposal.value.judge?.verdict || "unknown"}`;
 });
 
+onMounted(() => {
+  if (!config.vaultPath) return;
+  void refreshNotes().catch((error) => {
+    notesStatus.value = error instanceof Error ? error.message : "Unable to load notes";
+  });
+});
+
 watch(config, () => {
   localStorage.setItem("aicli.zettel.vaultPath", config.vaultPath);
   localStorage.setItem("aicli.zettel.activePath", config.activePath);
   localStorage.setItem("aicli.zettel.rootFolder", config.rootFolder);
   localStorage.setItem("aicli.zettel.dataFolder", config.dataFolder);
   localStorage.setItem("aicli.zettel.providerId", config.providerId);
+  localStorage.setItem("aicli.zettel.candidateProviderId", config.candidateProviderId);
+  localStorage.setItem("aicli.zettel.mergeProviderId", config.mergeProviderId);
+  localStorage.setItem("aicli.zettel.validationProviderId", config.validationProviderId);
   localStorage.setItem("aicli.zettel.embeddingProviderId", config.embeddingProviderId);
   localStorage.setItem("aicli.zettel.judgeModel", config.judgeModel);
+  localStorage.setItem("aicli.zettel.candidateModel", config.candidateModel);
   localStorage.setItem("aicli.zettel.mergeModel", config.mergeModel);
+  localStorage.setItem("aicli.zettel.validationModel", config.validationModel);
   localStorage.setItem("aicli.zettel.embeddingModel", config.embeddingModel);
   localStorage.setItem("aicli.zettel.candidateLimit", String(config.candidateLimit));
   localStorage.setItem("aicli.zettel.reviewThreshold", String(config.reviewThreshold));
   localStorage.setItem("aicli.zettel.validationThreshold", String(config.validationThreshold));
 });
 
-function updateProviderSettings(value: Partial<Pick<typeof config, "providerId" | "judgeModel" | "mergeModel" | "embeddingProviderId" | "embeddingModel">>) {
+function updateProviderSettings(value: Partial<Pick<
+  typeof config,
+  "candidateProviderId" |
+  "mergeProviderId" |
+  "validationProviderId" |
+  "embeddingProviderId" |
+  "candidateModel" |
+  "mergeModel" |
+  "validationModel" |
+  "embeddingModel"
+>>) {
   Object.assign(config, value);
+  config.providerId = config.candidateProviderId;
+  config.judgeModel = config.candidateModel;
 }
 
 function basePayload() {
@@ -94,10 +129,15 @@ function basePayload() {
     vault_path: config.vaultPath,
     root_folder: config.rootFolder,
     data_folder: config.dataFolder,
-    provider_id: config.providerId,
+    provider_id: config.candidateProviderId,
+    candidate_provider_id: config.candidateProviderId,
+    merge_provider_id: config.mergeProviderId,
+    validation_provider_id: config.validationProviderId,
     embedding_provider_id: config.embeddingProviderId,
-    judge_model: config.judgeModel,
+    judge_model: config.candidateModel,
+    candidate_model: config.candidateModel,
     merge_model: config.mergeModel,
+    validation_model: config.validationModel,
     embedding_model: config.embeddingModel,
     candidate_limit: readNumberValue(config.candidateLimit, 12, 1),
     review_threshold: readNumberValue(config.reviewThreshold, 0.85, 0),
@@ -112,7 +152,25 @@ async function pickVault() {
     config.vaultPath = picked.path;
     status.value = "Vault selected";
     result.value = picked.path;
+    await refreshNotes();
   });
+}
+
+async function loadNotes() {
+  await run("Loading notes", refreshNotes);
+}
+
+async function refreshNotes() {
+  notesStatus.value = "Loading notes...";
+  const output = await api<{ notes?: string[]; count?: number }>("/api/workflows/zettel/notes", {
+    method: "POST",
+    body: JSON.stringify(basePayload()),
+  });
+  notes.value = output.notes || [];
+  notesStatus.value = `${output.count ?? notes.value.length} note(s) loaded`;
+  if (config.activePath && !notes.value.includes(config.activePath)) {
+    notesStatus.value += " | active note is outside the loaded list";
+  }
 }
 
 async function buildIndex() {
@@ -246,10 +304,14 @@ function formatRanges(ranges: LineRange[]) {
             <button type="button" :disabled="busy" @click="pickVault">Browse vault</button>
           </div>
         </div>
-        <div class="field">
-          <label for="zettel-active">Active note path</label>
-          <input id="zettel-active" v-model="config.activePath" type="text" placeholder="zettelkasten/.../Note.md">
-        </div>
+        <ZettelNotePicker
+          :active-path="config.activePath"
+          :notes="notes"
+          :status="notesStatus"
+          :busy="busy"
+          @update-active-path="config.activePath = $event"
+          @load="loadNotes"
+        />
         <div class="field-row">
           <div class="field">
             <label for="zettel-root">Zettelkasten folder</label>

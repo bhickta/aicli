@@ -10,10 +10,18 @@ import (
 )
 
 type fakeZettelProvider struct {
+	id             string
 	embeddingCalls int
+	chatCalls      []provider.ChatRequest
+	chatResponse   string
 }
 
-func (f *fakeZettelProvider) ID() string { return "fake" }
+func (f *fakeZettelProvider) ID() string {
+	if f.id != "" {
+		return f.id
+	}
+	return "fake"
+}
 
 func (f *fakeZettelProvider) Health(context.Context) error { return nil }
 
@@ -21,8 +29,12 @@ func (f *fakeZettelProvider) ListModels(context.Context) ([]provider.Model, erro
 	return []provider.Model{}, nil
 }
 
-func (f *fakeZettelProvider) Chat(context.Context, provider.ChatRequest) (provider.ChatResponse, error) {
-	return provider.ChatResponse{}, errors.New("chat should not be called")
+func (f *fakeZettelProvider) Chat(_ context.Context, req provider.ChatRequest) (provider.ChatResponse, error) {
+	f.chatCalls = append(f.chatCalls, req)
+	if f.chatResponse == "" {
+		return provider.ChatResponse{}, errors.New("chat should not be called")
+	}
+	return provider.ChatResponse{Content: f.chatResponse}, nil
 }
 
 func (f *fakeZettelProvider) ChatStream(context.Context, provider.ChatRequest, func(string) error) error {
@@ -65,5 +77,70 @@ func TestServiceIndexUsesSeparateEmbeddingProvider(t *testing.T) {
 	}
 	if resp.Updated != 1 || embeddingProvider.embeddingCalls != 1 {
 		t.Fatalf("Index() = %#v, embedding calls = %d; want one updated note through embedding provider", resp, embeddingProvider.embeddingCalls)
+	}
+}
+
+func TestServiceProposeUsesSeparateStepProvidersAndModels(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "active.md"), "# Active\n")
+	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "source.md"), "- copied fact\n")
+
+	candidateProvider := &fakeZettelProvider{id: "candidate"}
+	mergeProvider := &fakeZettelProvider{
+		id:           "merge",
+		chatResponse: `{"insertions":[{"after_line":1,"markdown":"- copied fact","reason":"keep fact"}],"notes":"ok"}`,
+	}
+	validationProvider := &fakeZettelProvider{
+		id:           "validation",
+		chatResponse: `{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"}`,
+	}
+	embeddingProvider := &fakeZettelProvider{id: "embedding"}
+
+	resp, err := NewWithProviders(
+		candidateProvider,
+		mergeProvider,
+		validationProvider,
+		embeddingProvider,
+	).Propose(context.Background(), ProposeRequest{
+		Options: Options{
+			VaultPath:            vaultDir,
+			RootFolder:           "zettelkasten",
+			DataFolder:           ".aicli-zettel-merge",
+			CandidateProviderID:  "candidate",
+			MergeProviderID:      "merge",
+			ValidationProviderID: "validation",
+			EmbeddingProviderID:  "embedding",
+			CandidateModel:       "candidate-model",
+			MergeModel:           "merge-model",
+			ValidationModel:      "validation-model",
+			EmbeddingModel:       "embedding-model",
+		},
+		ActivePath: "zettelkasten/active.md",
+		Selections: []Selection{{
+			Path:             "zettelkasten/source.md",
+			SourceLineRanges: []LineRange{{StartLine: 1, EndLine: 1}},
+		}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Propose() error = %v", err)
+	}
+	if len(candidateProvider.chatCalls) != 0 {
+		t.Fatalf("candidate provider chat calls = %d, want 0 during propose", len(candidateProvider.chatCalls))
+	}
+	if len(mergeProvider.chatCalls) != 1 || mergeProvider.chatCalls[0].Model != "merge-model" {
+		t.Fatalf("merge calls = %#v, want one merge-model call", mergeProvider.chatCalls)
+	}
+	if len(validationProvider.chatCalls) != 1 || validationProvider.chatCalls[0].Model != "validation-model" {
+		t.Fatalf("validation calls = %#v, want one validation-model call", validationProvider.chatCalls)
+	}
+
+	proposal := resp.Proposal
+	if proposal.Models.Merge != "merge-model" || proposal.Models.ValidationJudge != "validation-model" {
+		t.Fatalf("proposal models = %#v, want step models recorded", proposal.Models)
+	}
+	if proposal.Providers.Merge != "merge" || proposal.Providers.ValidationJudge != "validation" || proposal.Providers.Embedding != "embedding" {
+		t.Fatalf("proposal providers = %#v, want step providers recorded", proposal.Providers)
 	}
 }

@@ -102,8 +102,8 @@ function handleBrowserSelect(id: string, path: string) {
     <div id="workflow-fields" class="grid">
       <ProviderModelControl
         v-if="hasProviderModel"
-        :provider-id="activeWorkflow?.preferredProviderId || ''"
-        :model="activeWorkflow?.preferredModel || ''"
+        :provider-id="providerModel.provider_id || activeWorkflow?.preferredProviderId || ''"
+        :model="providerModel.model || activeWorkflow?.preferredModel || ''"
         @change="Object.assign(providerModel, $event)"
       />
       <WorkflowField

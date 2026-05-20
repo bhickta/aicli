@@ -1,18 +1,23 @@
-import { computed, reactive } from "vue";
+import { computed, reactive, watch } from "vue";
+import { readStoredRecord, readStoredString, writeStoredJSON, writeStoredString } from "../lib/persistence";
 import type { Model, Settings, SystemResources, ViewName } from "../types";
 import { workflowDefinitions } from "../workflows/definitions";
 
+const storedView = readStoredString("aicli.view", "chat") as ViewName;
+const storedWorkflowCategory = readStoredString("aicli.workflow.category", "Study");
+const storedWorkflowID = readStoredString("aicli.workflow.id", "recall");
+
 export const appState = reactive({
-  view: "chat" as ViewName,
+  view: storedView,
   health: "checking",
   settings: null as Settings | null,
   systemResources: null as SystemResources | null,
   models: {} as Record<string, Model[]>,
-  browserPath: "",
+  browserPath: readStoredString("aicli.browserPath", ""),
   workflow: {
-    category: "Study",
-    workflowId: "recall",
-    pathValues: {} as Record<string, string>,
+    category: storedWorkflowCategory,
+    workflowId: storedWorkflowID,
+    pathValues: readStoredRecord("aicli.workflow.pathValues") as Record<string, string>,
   },
 });
 
@@ -36,3 +41,9 @@ export function selectWorkflowCategory(category: string) {
   appState.workflow.category = category;
   appState.workflow.workflowId = activeWorkflowDefinitions.value[0]?.id || "";
 }
+
+watch(() => appState.view, (view) => writeStoredString("aicli.view", view));
+watch(() => appState.browserPath, (path) => writeStoredString("aicli.browserPath", path));
+watch(() => appState.workflow.category, (category) => writeStoredString("aicli.workflow.category", category));
+watch(() => appState.workflow.workflowId, (workflowId) => writeStoredString("aicli.workflow.id", workflowId));
+watch(() => appState.workflow.pathValues, (values) => writeStoredJSON("aicli.workflow.pathValues", values), { deep: true });

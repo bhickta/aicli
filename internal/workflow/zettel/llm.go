@@ -16,6 +16,9 @@ type embedder interface {
 
 func chatJSON[T any](ctx context.Context, p provider.Provider, model string, messages []provider.Message) (T, error) {
 	var out T
+	if p == nil {
+		return out, errors.New("provider is required")
+	}
 	res, err := p.Chat(ctx, provider.ChatRequest{
 		Model:       model,
 		Messages:    messages,

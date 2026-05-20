@@ -4,9 +4,12 @@ import ProviderModelControl from "../ProviderModelControl.vue";
 import { providers } from "../../stores/appState";
 
 interface ProviderSettings {
-  providerId: string;
-  judgeModel: string;
+  candidateProviderId: string;
+  mergeProviderId: string;
+  validationProviderId: string;
+  candidateModel: string;
   mergeModel: string;
+  validationModel: string;
   embeddingProviderId: string;
   embeddingModel: string;
 }
@@ -21,13 +24,15 @@ const emit = defineEmits<{
 
 const embeddingProviders = computed(() => providers.value.filter((provider) => provider.type !== "codex-cli"));
 
-function updateLLMProvider(value: { provider_id: string; model: string }) {
-  const patch: Partial<ProviderSettings> = { providerId: value.provider_id };
-  if (value.model) {
-    patch.judgeModel = value.model;
-    patch.mergeModel = value.model;
-  }
-  emit("update", patch);
+function updateProviderModel(
+  providerKey: "candidateProviderId" | "mergeProviderId" | "validationProviderId",
+  modelKey: "candidateModel" | "mergeModel" | "validationModel",
+  value: { provider_id: string; model: string },
+) {
+  emit("update", {
+    [providerKey]: value.provider_id,
+    [modelKey]: value.model,
+  });
 }
 
 function updateField(key: keyof ProviderSettings, value: string) {
@@ -38,18 +43,30 @@ function updateField(key: keyof ProviderSettings, value: string) {
 <template>
   <div class="zettel-provider-settings">
     <section class="provider-section">
-      <h3>Merge provider</h3>
-      <ProviderModelControl :provider-id="settings.providerId" :model="settings.judgeModel" @change="updateLLMProvider" />
-      <div class="field-row">
-        <div class="field">
-          <label for="zettel-judge">Judge model</label>
-          <input id="zettel-judge" :value="settings.judgeModel" type="text" @input="updateField('judgeModel', ($event.target as HTMLInputElement).value)">
-        </div>
-        <div class="field">
-          <label for="zettel-merge">Merge model</label>
-          <input id="zettel-merge" :value="settings.mergeModel" type="text" @input="updateField('mergeModel', ($event.target as HTMLInputElement).value)">
-        </div>
-      </div>
+      <h3>Candidate judge</h3>
+      <ProviderModelControl
+        :provider-id="settings.candidateProviderId"
+        :model="settings.candidateModel"
+        @change="updateProviderModel('candidateProviderId', 'candidateModel', $event)"
+      />
+    </section>
+
+    <section class="provider-section">
+      <h3>Merge planner</h3>
+      <ProviderModelControl
+        :provider-id="settings.mergeProviderId"
+        :model="settings.mergeModel"
+        @change="updateProviderModel('mergeProviderId', 'mergeModel', $event)"
+      />
+    </section>
+
+    <section class="provider-section">
+      <h3>Validation judge</h3>
+      <ProviderModelControl
+        :provider-id="settings.validationProviderId"
+        :model="settings.validationModel"
+        @change="updateProviderModel('validationProviderId', 'validationModel', $event)"
+      />
     </section>
 
     <section class="provider-section">

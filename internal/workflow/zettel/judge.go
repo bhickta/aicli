@@ -21,7 +21,7 @@ func (s *Service) judgeCandidates(ctx context.Context, activePath string, active
 	}
 	response, err := chatJSON[struct {
 		Decisions []decision `json:"decisions"`
-	}](ctx, s.provider, options.JudgeModel, judgeCandidatesPrompt(activePath, activeContent, similar, options))
+	}](ctx, s.candidateProvider, options.CandidateModel, judgeCandidatesPrompt(activePath, activeContent, similar, options))
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (s *Service) runMergeAttempts(ctx context.Context, activePath string, activ
 		if err != nil {
 			return proposal, err
 		}
-		plan, err := chatJSON[MergePlan](ctx, s.provider, options.MergeModel, messages)
+		plan, err := chatJSON[MergePlan](ctx, s.mergeProvider, options.MergeModel, messages)
 		if err != nil {
 			return proposal, err
 		}
@@ -78,7 +78,7 @@ func (s *Service) runMergeAttempts(ctx context.Context, activePath string, activ
 			progress(fmt.Sprintf("validating merge proposal %d/%d", attempt, options.MaxMergeRetries), 4, 6)
 		}
 		coverage := buildCoverageReport(sourceMaterial, finalContent)
-		judge, err := chatJSON[MergeJudge](ctx, s.provider, options.JudgeModel, validationMessages(sourceMaterial, finalContent))
+		judge, err := chatJSON[MergeJudge](ctx, s.validationProvider, options.ValidationModel, validationMessages(sourceMaterial, finalContent))
 		if err != nil {
 			return proposal, err
 		}

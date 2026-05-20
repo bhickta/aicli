@@ -1,13 +1,22 @@
 <script setup lang="ts">
-import { shallowReactive, shallowRef } from "vue";
+import { shallowReactive, shallowRef, watch } from "vue";
 import ProviderModelControl from "../components/ProviderModelControl.vue";
 import { api } from "../lib/api";
+import { readStoredString, writeStoredString } from "../lib/persistence";
 
-const providerModel = shallowReactive({ provider_id: "", model: "" });
+const providerModel = shallowReactive({
+  provider_id: readStoredString("aicli.chat.providerId"),
+  model: readStoredString("aicli.chat.model"),
+});
 const prompt = shallowRef("");
 const status = shallowRef("Ready");
 const answer = shallowRef("");
 const busy = shallowRef(false);
+
+watch(providerModel, () => {
+  writeStoredString("aicli.chat.providerId", providerModel.provider_id);
+  writeStoredString("aicli.chat.model", providerModel.model);
+});
 
 async function sendChat() {
   busy.value = true;
@@ -37,7 +46,11 @@ async function sendChat() {
 <template>
   <div class="panel grid">
     <h2>Chat</h2>
-    <ProviderModelControl @change="Object.assign(providerModel, $event)" />
+    <ProviderModelControl
+      :provider-id="providerModel.provider_id"
+      :model="providerModel.model"
+      @change="Object.assign(providerModel, $event)"
+    />
     <div class="field">
       <label for="chat-prompt">Prompt</label>
       <textarea id="chat-prompt" v-model="prompt" rows="8" placeholder="Ask a local model..." />

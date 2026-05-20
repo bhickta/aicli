@@ -11,8 +11,10 @@ import (
 )
 
 type Service struct {
-	provider          provider.Provider
-	embeddingProvider provider.Provider
+	candidateProvider  provider.Provider
+	mergeProvider      provider.Provider
+	validationProvider provider.Provider
+	embeddingProvider  provider.Provider
 }
 
 func New(p provider.Provider) *Service {
@@ -20,7 +22,21 @@ func New(p provider.Provider) *Service {
 }
 
 func NewWithEmbedding(p provider.Provider, embeddingProvider provider.Provider) *Service {
-	return &Service{provider: p, embeddingProvider: embeddingProvider}
+	return NewWithProviders(p, p, p, embeddingProvider)
+}
+
+func NewWithProviders(
+	candidateProvider provider.Provider,
+	mergeProvider provider.Provider,
+	validationProvider provider.Provider,
+	embeddingProvider provider.Provider,
+) *Service {
+	return &Service{
+		candidateProvider:  candidateProvider,
+		mergeProvider:      mergeProvider,
+		validationProvider: validationProvider,
+		embeddingProvider:  embeddingProvider,
+	}
 }
 
 func (s *Service) Index(ctx context.Context, req IndexRequest, progress ProgressFunc) (IndexResponse, error) {
@@ -90,9 +106,17 @@ func (s *Service) Propose(ctx context.Context, req ProposeRequest, progress Prog
 	proposal.ActiveMarkdown = activeContent
 	proposal.SourceExtractions = extractions
 	proposal.Models = ProposalModels{
-		Judge:     options.JudgeModel,
-		Merge:     options.MergeModel,
-		Embedding: options.EmbeddingModel,
+		Judge:           options.CandidateModel,
+		CandidateJudge:  options.CandidateModel,
+		Merge:           options.MergeModel,
+		ValidationJudge: options.ValidationModel,
+		Embedding:       options.EmbeddingModel,
+	}
+	proposal.Providers = ProposalProviders{
+		CandidateJudge:  providerID(s.candidateProvider),
+		Merge:           providerID(s.mergeProvider),
+		ValidationJudge: providerID(s.validationProvider),
+		Embedding:       providerID(s.embeddingProvider),
 	}
 	return ProposeResponse{Proposal: proposal}, nil
 }
@@ -180,4 +204,11 @@ func (s *Service) Rollback(_ context.Context, req RollbackRequest, progress Prog
 		return RollbackResponse{}, err
 	}
 	return RollbackResponse{JobID: jobID}, nil
+}
+
+func providerID(p provider.Provider) string {
+	if p == nil {
+		return ""
+	}
+	return p.ID()
 }

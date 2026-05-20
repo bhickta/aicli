@@ -20,11 +20,25 @@ func New(runtime *core.Runtime) *Handler {
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/workflows/zettel/notes", h.notes)
 	mux.HandleFunc("POST /api/workflows/zettel/index", h.index)
 	mux.HandleFunc("POST /api/workflows/zettel/suggest", h.suggest)
 	mux.HandleFunc("POST /api/workflows/zettel/propose", h.propose)
 	mux.HandleFunc("POST /api/workflows/zettel/apply", h.apply)
 	mux.HandleFunc("POST /api/workflows/zettel/rollback", h.rollback)
+}
+
+func (h *Handler) notes(w http.ResponseWriter, r *http.Request) {
+	req, ok := core.DecodeJSON[zettel.ListNotesRequest](w, r)
+	if !ok {
+		return
+	}
+	resp, err := zettel.ListNotes(req.Options)
+	if err != nil {
+		core.WriteError(w, http.StatusBadRequest, err)
+		return
+	}
+	core.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
@@ -105,12 +119,20 @@ func (h *Handler) rollback(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) service(options zettel.Options) (*zettel.Service, error) {
 	requestedEmbeddingProviderID := strings.TrimSpace(options.EmbeddingProviderID)
 	options = zettel.NormalizeOptions(options)
-	p, ok := h.runtime.ProviderFor(options.ProviderID)
+	candidateProvider, ok := h.runtime.ProviderFor(options.CandidateProviderID)
 	if !ok {
-		return nil, errors.New("provider not found")
+		return nil, errors.New("candidate judge provider not found")
+	}
+	mergeProvider, ok := h.runtime.ProviderFor(options.MergeProviderID)
+	if !ok {
+		return nil, errors.New("merge provider not found")
+	}
+	validationProvider, ok := h.runtime.ProviderFor(options.ValidationProviderID)
+	if !ok {
+		return nil, errors.New("validation judge provider not found")
 	}
 	embeddingProviderID := options.EmbeddingProviderID
-	if requestedEmbeddingProviderID == "" && !supportsEmbeddings(p) {
+	if requestedEmbeddingProviderID == "" && !supportsEmbeddings(candidateProvider) {
 		if fallback := strings.TrimSpace(h.runtime.Settings().DefaultProvider); fallback != "" {
 			embeddingProviderID = fallback
 		}
@@ -119,7 +141,7 @@ func (h *Handler) service(options zettel.Options) (*zettel.Service, error) {
 	if !ok {
 		return nil, errors.New("embedding provider not found")
 	}
-	return zettel.NewWithEmbedding(p, embeddingProvider), nil
+	return zettel.NewWithProviders(candidateProvider, mergeProvider, validationProvider, embeddingProvider), nil
 }
 
 type embeddingProvider interface {

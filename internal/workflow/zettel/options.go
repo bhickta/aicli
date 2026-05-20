@@ -44,12 +44,38 @@ func normalizeOptions(options Options) Options {
 	options.DataFolder = strings.Trim(strings.TrimSpace(options.DataFolder), "/")
 	options.VaultPath = strings.TrimSpace(options.VaultPath)
 	options.ProviderID = strings.TrimSpace(options.ProviderID)
+	options.CandidateProviderID = strings.TrimSpace(options.CandidateProviderID)
+	if options.CandidateProviderID == "" {
+		options.CandidateProviderID = options.ProviderID
+	}
+	if options.ProviderID == "" {
+		options.ProviderID = options.CandidateProviderID
+	}
+	options.MergeProviderID = strings.TrimSpace(options.MergeProviderID)
+	if options.MergeProviderID == "" {
+		options.MergeProviderID = options.ProviderID
+	}
+	options.ValidationProviderID = strings.TrimSpace(options.ValidationProviderID)
+	if options.ValidationProviderID == "" {
+		options.ValidationProviderID = options.CandidateProviderID
+	}
 	options.EmbeddingProviderID = strings.TrimSpace(options.EmbeddingProviderID)
 	if options.EmbeddingProviderID == "" {
 		options.EmbeddingProviderID = options.ProviderID
 	}
 	options.JudgeModel = strings.TrimSpace(options.JudgeModel)
+	options.CandidateModel = strings.TrimSpace(options.CandidateModel)
+	if options.CandidateModel == "" {
+		options.CandidateModel = options.JudgeModel
+	}
+	if options.JudgeModel == "" {
+		options.JudgeModel = options.CandidateModel
+	}
 	options.MergeModel = strings.TrimSpace(options.MergeModel)
+	options.ValidationModel = strings.TrimSpace(options.ValidationModel)
+	if options.ValidationModel == "" {
+		options.ValidationModel = options.JudgeModel
+	}
 	options.EmbeddingModel = strings.TrimSpace(options.EmbeddingModel)
 	return options
 }

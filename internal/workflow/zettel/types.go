@@ -21,9 +21,14 @@ type Options struct {
 	RootFolder           string  `json:"root_folder"`
 	DataFolder           string  `json:"data_folder"`
 	ProviderID           string  `json:"provider_id"`
+	CandidateProviderID  string  `json:"candidate_provider_id"`
+	MergeProviderID      string  `json:"merge_provider_id"`
+	ValidationProviderID string  `json:"validation_provider_id"`
 	EmbeddingProviderID  string  `json:"embedding_provider_id"`
 	JudgeModel           string  `json:"judge_model"`
+	CandidateModel       string  `json:"candidate_model"`
 	MergeModel           string  `json:"merge_model"`
+	ValidationModel      string  `json:"validation_model"`
 	EmbeddingModel       string  `json:"embedding_model"`
 	CandidateLimit       int     `json:"candidate_limit"`
 	ReviewThreshold      float64 `json:"review_threshold"`
@@ -103,6 +108,15 @@ type RollbackResponse struct {
 	JobID string `json:"job_id"`
 }
 
+type ListNotesRequest struct {
+	Options
+}
+
+type ListNotesResponse struct {
+	Notes []string `json:"notes"`
+	Count int      `json:"count"`
+}
+
 type Proposal struct {
 	ID                string             `json:"id"`
 	CreatedAt         time.Time          `json:"created_at"`
@@ -118,12 +132,22 @@ type Proposal struct {
 	Coverage          CoverageReport     `json:"coverage"`
 	Judge             MergeJudge         `json:"judge"`
 	Models            ProposalModels     `json:"models"`
+	Providers         ProposalProviders  `json:"providers"`
 }
 
 type ProposalModels struct {
-	Judge     string `json:"judge"`
-	Merge     string `json:"merge"`
-	Embedding string `json:"embedding"`
+	Judge           string `json:"judge"`
+	CandidateJudge  string `json:"candidate_judge"`
+	Merge           string `json:"merge"`
+	ValidationJudge string `json:"validation_judge"`
+	Embedding       string `json:"embedding"`
+}
+
+type ProposalProviders struct {
+	CandidateJudge  string `json:"candidate_judge"`
+	Merge           string `json:"merge"`
+	ValidationJudge string `json:"validation_judge"`
+	Embedding       string `json:"embedding"`
 }
 
 type SourceExtraction struct {

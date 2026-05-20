@@ -1,5 +1,6 @@
 import { computed, reactive, watch, type ComputedRef } from "vue";
 import { readNumberValue } from "../lib/format";
+import { readStoredRecord, writeStoredJSON } from "../lib/persistence";
 import { appState } from "../stores/appState";
 import type { WorkflowDefinition } from "../types";
 
@@ -16,23 +17,36 @@ export function useWorkflowForm(activeWorkflow: ComputedRef<WorkflowDefinition |
   const hasProviderModel = computed(() => activeWorkflow.value?.fields.some((field) => field.type === "providerModel") || false);
 
   watch(activeWorkflow, initializeValues, { immediate: true });
+  watch(providerModel, saveProviderModel, { deep: true });
 
   function initializeValues() {
     for (const key of Object.keys(values)) delete values[key];
     const workflow = activeWorkflow.value;
     if (!workflow) return;
+    const stored = readStoredRecord(workflowStorageKey(workflow.id));
     for (const field of workflow.fields) {
       if (!field.id) continue;
-      if (field.type === "path") values[field.id] = appState.workflow.pathValues[field.id] || "";
-      else if (field.type === "checkbox") values[field.id] = Boolean(field.checked);
-      else if (field.type === "number") values[field.id] = field.default ?? 0;
-      else values[field.id] = field.value ?? field.default ?? "";
+      const storedValue = stored[field.id];
+      if (storedValue !== undefined) {
+        values[field.id] = storedValue;
+      } else if (field.type === "path") {
+        values[field.id] = appState.workflow.pathValues[field.id] || "";
+      } else if (field.type === "checkbox") {
+        values[field.id] = Boolean(field.checked);
+      } else if (field.type === "number") {
+        values[field.id] = field.default ?? 0;
+      } else {
+        values[field.id] = field.value ?? field.default ?? "";
+      }
     }
+    providerModel.provider_id = String(stored.provider_id || workflow.preferredProviderId || "");
+    providerModel.model = String(stored.model || workflow.preferredModel || "");
   }
 
   function updateField(id: string, value: unknown) {
     values[id] = value;
     appState.workflow.pathValues[id] = typeof value === "string" ? value : appState.workflow.pathValues[id] || "";
+    saveWorkflowValues();
   }
 
   function collectValues() {
@@ -48,6 +62,21 @@ export function useWorkflowForm(activeWorkflow: ComputedRef<WorkflowDefinition |
     return out;
   }
 
+  function saveWorkflowValues() {
+    const workflow = activeWorkflow.value;
+    if (!workflow) return;
+    writeStoredJSON(workflowStorageKey(workflow.id), {
+      ...values,
+      provider_id: providerModel.provider_id,
+      model: providerModel.model,
+    });
+  }
+
+  function saveProviderModel() {
+    if (!hasProviderModel.value) return;
+    saveWorkflowValues();
+  }
+
   return {
     values,
     providerModel,
@@ -57,4 +86,8 @@ export function useWorkflowForm(activeWorkflow: ComputedRef<WorkflowDefinition |
     updateField,
     collectValues,
   };
+}
+
+function workflowStorageKey(workflowID: string) {
+  return `aicli.workflow.${workflowID}.values`;
 }
