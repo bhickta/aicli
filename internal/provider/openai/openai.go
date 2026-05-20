@@ -46,7 +46,7 @@ func (p *OpenAICompatible) ListModels(ctx context.Context) ([]provider.Model, er
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
 		msg, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
-		return nil, fmt.Errorf("list models %s: %s: %s", modelsURL, res.Status, strings.TrimSpace(string(msg)))
+		return nil, p.apiStatusError("list models "+modelsURL, res.Status, msg)
 	}
 
 	var payload struct {
@@ -109,7 +109,7 @@ func (p *OpenAICompatible) chatRaw(ctx context.Context, body map[string]any) (pr
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
 		msg, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
-		return provider.ChatResponse{}, fmt.Errorf("chat: %s: %s", res.Status, strings.TrimSpace(string(msg)))
+		return provider.ChatResponse{}, p.apiStatusError("chat", res.Status, msg)
 	}
 
 	var payload struct {
@@ -167,6 +167,28 @@ func (p *OpenAICompatible) allowsModel(id string) bool {
 		}
 	}
 	return false
+}
+
+func (p *OpenAICompatible) apiStatusError(operation string, status string, body []byte) error {
+	if p.resolvedAPIKey() == "" && strings.HasPrefix(status, "401") {
+		return fmt.Errorf("%s: %s: missing api authentication for provider %q; %s", operation, status, p.cfg.ID, p.authenticationHint())
+	}
+	message := strings.TrimSpace(string(body))
+	if message == "" {
+		return fmt.Errorf("%s: %s", operation, status)
+	}
+	return fmt.Errorf("%s: %s: %s", operation, status, message)
+}
+
+func (p *OpenAICompatible) authenticationHint() string {
+	hint := "set the provider api_key in Settings"
+	if p.cfg.APIKeyEnv != "" {
+		hint = "set " + p.cfg.APIKeyEnv + " before starting aicli, or set the provider api_key in Settings"
+	}
+	if p.cfg.ID == "codex" || p.usesResponsesAPI() {
+		hint += "; for Codex Pro plan usage choose Workflows > Codex > Coding task (Codex CLI / Pro)"
+	}
+	return hint
 }
 
 func openAIURL(baseURL string, path string) string {

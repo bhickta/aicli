@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -48,7 +47,7 @@ func (p *OpenAICompatible) responsesChat(ctx context.Context, req provider.ChatR
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
 		msg, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
-		return provider.ChatResponse{}, fmt.Errorf("responses chat: %s: %s", res.Status, strings.TrimSpace(string(msg)))
+		return provider.ChatResponse{}, p.apiStatusError("responses chat", res.Status, msg)
 	}
 
 	content, err := decodeResponseText(res.Body)

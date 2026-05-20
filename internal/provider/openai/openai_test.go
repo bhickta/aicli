@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/bhickta/aicli/internal/config"
@@ -163,6 +164,40 @@ func TestOpenAIResponsesChat(t *testing.T) {
 	}
 	if res.Content != "done" {
 		t.Fatalf("content = %q, want done", res.Content)
+	}
+}
+
+func TestOpenAIResponsesChatMissingAuthGivesCodexProHint(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":{"message":"Missing bearer or basic authentication in header"}}`))
+	}))
+	defer srv.Close()
+
+	p := NewCompatible(config.ProviderConfig{
+		ID:        "codex",
+		Type:      "openai-responses",
+		BaseURL:   srv.URL + "/v1",
+		APIKeyEnv: "OPENAI_API_KEY",
+		Model:     "gpt-5.2-codex",
+	}, srv.Client())
+
+	_, err := p.Chat(context.Background(), provider.ChatRequest{
+		Messages: []provider.Message{{Role: "user", Content: "fix this"}},
+	})
+	if err == nil {
+		t.Fatal("Chat() error = nil, want authentication hint")
+	}
+	got := err.Error()
+	for _, want := range []string{"missing api authentication", "OPENAI_API_KEY", "Codex CLI / Pro"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("error = %q, want contains %q", got, want)
+		}
+	}
+	if strings.Contains(got, "Missing bearer") {
+		t.Fatalf("error = %q, should not expose raw missing bearer response as primary guidance", got)
 	}
 }
 
