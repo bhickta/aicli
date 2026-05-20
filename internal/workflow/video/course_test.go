@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/bhickta/aicli/internal/config"
+	progressmodel "github.com/bhickta/aicli/internal/progress"
 )
 
 type courseRunner struct {
@@ -255,8 +256,8 @@ func TestCourseWithProgressReportsPerVideoCompletion(t *testing.T) {
 	_, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, &courseRunner{}).CourseWithProgress(
 		context.Background(),
 		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2", Workers: 1},
-		func(stage string, currentStep, totalSteps int) {
-			events = append(events, event{stage: stage, current: currentStep, total: totalSteps})
+		func(update progressmodel.Update) {
+			events = append(events, event{stage: update.Stage, current: update.CompletedUnits, total: update.TotalUnits})
 		},
 	)
 	if err != nil {
@@ -268,13 +269,13 @@ func TestCourseWithProgressReportsPerVideoCompletion(t *testing.T) {
 	if events[0].current != 0 || events[0].total != 5 {
 		t.Fatalf("first event = %#v, want 0/5", events[0])
 	}
-	if events[1].current != 3 || events[1].total != 5 {
-		t.Fatalf("second event = %#v, want 3/5", events[1])
+	if events[1].current != 2 || events[1].total != 5 {
+		t.Fatalf("second event = %#v, want 2/5", events[1])
 	}
 	if events[2].current != 4 || events[2].total != 5 {
 		t.Fatalf("third event = %#v, want 4/5", events[2])
 	}
-	if !strings.Contains(events[len(events)-1].stage, "merging") || events[len(events)-1].current != 4 {
+	if !strings.Contains(events[len(events)-1].stage, "merging") || events[len(events)-1].current != 4 || events[len(events)-1].total != 5 {
 		t.Fatalf("last event = %#v, want merge stage at 4/5", events[len(events)-1])
 	}
 }

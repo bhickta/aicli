@@ -4,8 +4,9 @@ import ZettelMergeDiff from "../components/zettel/ZettelMergeDiff.vue";
 import ZettelNotePicker from "../components/zettel/ZettelNotePicker.vue";
 import ZettelProviderSettings from "../components/zettel/ZettelProviderSettings.vue";
 import { api, parseJobOutput, pollJob } from "../lib/api";
-import { elapsedSeconds, formatDuration, readNumberValue, stringify } from "../lib/format";
-import type { Job } from "../types";
+import { readNumberValue, stringify } from "../lib/format";
+import { describeJobProgress, progressBarWidth } from "../lib/jobProgress";
+import type { Job, ProgressMode } from "../types";
 
 interface LineRange {
   start_line: number;
@@ -64,6 +65,8 @@ const status = shallowRef("Ready");
 const notesStatus = shallowRef("Load notes after selecting a vault.");
 const result = shallowRef("");
 const progress = shallowRef(0);
+const progressMode = shallowRef<ProgressMode>("determinate");
+const progressVisible = shallowRef(false);
 const busy = shallowRef(false);
 const rollbackJobID = shallowRef("");
 
@@ -80,6 +83,13 @@ const proposalQuality = computed(() => {
   const judge = formatScore(proposal.value.judge?.score);
   return `coverage ${coverage} | judge ${judge} | ${proposal.value.judge?.verdict || "unknown"}`;
 });
+const progressClass = computed(() => ({
+  hidden: !progressVisible.value,
+  indeterminate: progressMode.value === "indeterminate",
+}));
+const progressStyle = computed(() => ({
+  width: progressBarWidth(progressMode.value, progress.value),
+}));
 
 onMounted(() => {
   if (!config.vaultPath) return;
@@ -253,22 +263,25 @@ async function run(label: string, task: () => Promise<void>) {
   status.value = `${label}...`;
   result.value = "";
   progress.value = 0;
+  progressMode.value = "indeterminate";
+  progressVisible.value = true;
   try {
     await task();
   } catch (error) {
     status.value = `${label} failed`;
     result.value = error instanceof Error ? error.message : "operation failed";
+    if (progress.value <= 0) progressVisible.value = false;
   } finally {
     busy.value = false;
   }
 }
 
 function renderJob(job: Job) {
-  const percent = Math.round((job.progress || 0) * 100);
-  const eta = job.eta_seconds ? ` | ETA ${formatDuration(job.eta_seconds)}` : "";
-  const step = job.total_steps ? ` | ${job.current_step}/${job.total_steps}` : "";
-  status.value = `${job.status}: ${job.stage || "working"}${step} | ${percent}% | elapsed ${formatDuration(elapsedSeconds(job.created_at))}${eta}`;
-  progress.value = percent;
+  const presentation = describeJobProgress(job);
+  status.value = presentation.text;
+  progress.value = presentation.percent;
+  progressMode.value = presentation.mode;
+  progressVisible.value = presentation.visible;
 }
 
 function toggleCandidate(path: string, checked: boolean) {
@@ -355,8 +368,8 @@ function formatRanges(ranges: LineRange[]) {
       <h3>Status</h3>
       <p class="status-line" role="status" aria-live="polite">{{ status }}</p>
     </div>
-    <div class="progress" :class="{ hidden: progress <= 0 }">
-      <div :style="{ width: `${Math.max(0, Math.min(100, progress))}%` }" />
+    <div class="progress" :class="progressClass">
+      <div :style="progressStyle" />
     </div>
 
     <div class="zettel-review-grid">

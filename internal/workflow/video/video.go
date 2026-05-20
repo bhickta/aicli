@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/bhickta/aicli/internal/config"
+	progressmodel "github.com/bhickta/aicli/internal/progress"
 	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/tool"
 	"github.com/bhickta/aicli/internal/workflow/video/info"
@@ -72,7 +73,7 @@ type CourseItem struct {
 	TargetName string `json:"target_name"`
 }
 
-type CourseProgressFunc func(stage string, currentStep, totalSteps int)
+type CourseProgressFunc = progressmodel.Func
 
 type MetadataRequest = metadata.Request
 type MetadataResponse = metadata.Response

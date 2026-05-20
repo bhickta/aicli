@@ -328,6 +328,20 @@ h3 {
   transition: width 180ms ease;
 }
 
+.progress.indeterminate div {
+  background: linear-gradient(90deg, #6ea8fe, #8bd5ca);
+  animation: progress-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes progress-indeterminate {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
 .review-pane {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);

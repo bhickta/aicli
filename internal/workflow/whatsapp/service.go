@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bhickta/aicli/internal/config"
+	progressmodel "github.com/bhickta/aicli/internal/progress"
 )
 
 type Runner interface {
@@ -42,22 +43,22 @@ func (s *Service) Schedule(ctx context.Context, req ScheduleRequest, progress Pr
 	}
 
 	if progress != nil {
-		progress("waiting until scheduled time", 1, 5)
+		progress(progressmodel.Timed("waiting until scheduled time", s.now(), normalized.scheduledAt))
 	}
-	if err := waitUntil(ctx, normalized.scheduledAt, s.now, progress); err != nil {
+	if err := waitUntil(ctx, normalized.scheduledAt, s.now(), s.now, progress); err != nil {
 		return ScheduleResponse{}, err
 	}
 
 	chatURL := whatsappURL(normalized.recipientPhone, normalized.message)
 	if progress != nil {
-		progress("opening WhatsApp Web in Firefox", 2, 5)
+		progress(progressmodel.Indeterminate("opening WhatsApp Web in Firefox"))
 	}
 	if err := s.runner.Start(ctx, toolValue(s.tools.Firefox, "firefox"), chatURL); err != nil {
 		return ScheduleResponse{}, fmt.Errorf("open firefox: %w", err)
 	}
 	if !normalized.autoSend {
 		if progress != nil {
-			progress("draft opened in WhatsApp Web", 5, 5)
+			progress(progressmodel.Units("draft opened in WhatsApp Web", 1, 1, "operation"))
 		}
 		return ScheduleResponse{
 			RecipientName:  normalized.recipientName,
@@ -70,13 +71,13 @@ func (s *Service) Schedule(ctx context.Context, req ScheduleRequest, progress Pr
 	}
 
 	if progress != nil {
-		progress("waiting for WhatsApp Web message box", 3, 5)
+		progress(progressmodel.Timed("waiting for WhatsApp Web message box", s.now(), s.now().Add(time.Duration(normalized.waitSeconds)*time.Second)))
 	}
 	if err := sleepContext(ctx, time.Duration(normalized.waitSeconds)*time.Second); err != nil {
 		return ScheduleResponse{}, err
 	}
 	if progress != nil {
-		progress("sending WhatsApp message", 4, 5)
+		progress(progressmodel.Indeterminate("sending WhatsApp message"))
 	}
 	windowID, err := s.findWhatsAppWindow(ctx)
 	if err != nil {
@@ -87,7 +88,7 @@ func (s *Service) Schedule(ctx context.Context, req ScheduleRequest, progress Pr
 		return ScheduleResponse{}, err
 	}
 	if progress != nil {
-		progress("completed", 5, 5)
+		progress(progressmodel.Units("completed", 1, 1, "operation"))
 	}
 	return ScheduleResponse{
 		RecipientName:  normalized.recipientName,

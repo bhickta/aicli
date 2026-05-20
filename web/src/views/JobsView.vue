@@ -1,25 +1,52 @@
 <script setup lang="ts">
-import { computed, onMounted, shallowRef } from "vue";
+import { computed, onMounted, onUnmounted, shallowRef } from "vue";
 import { api } from "../lib/api";
 import { stringify } from "../lib/format";
+import { describeJobProgress, progressBarWidth } from "../lib/jobProgress";
 import type { Job } from "../types";
 
 const status = shallowRef("Loading jobs...");
 const jobs = shallowRef<Job[]>([]);
+let refreshTimer: number | undefined;
 const output = computed(() => stringify(jobs.value));
 const runningJobs = computed(() => jobs.value.filter((job) => job.status === "running"));
+const runningJobRows = computed(() =>
+  runningJobs.value.map((job) => {
+    const progress = describeJobProgress(job);
+    return {
+      job,
+      progress,
+      progressClass: {
+        hidden: !progress.visible,
+        indeterminate: progress.mode === "indeterminate",
+      },
+      progressStyle: {
+        width: progressBarWidth(progress.mode, progress.percent),
+      },
+    };
+  }),
+);
 
-onMounted(loadJobs);
+onMounted(() => {
+  void loadJobs();
+  refreshTimer = window.setInterval(() => void loadJobs({ silent: true }), 2_000);
+});
 
-async function loadJobs() {
-  status.value = "Loading jobs...";
+onUnmounted(() => {
+  if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
+});
+
+async function loadJobs(options: { silent?: boolean } = {}) {
+  if (!options.silent) status.value = "Loading jobs...";
   try {
     const payload = await api<{ jobs: Job[] }>("/api/jobs");
     jobs.value = payload.jobs || [];
-    status.value = "Loaded";
+    if (!options.silent) status.value = "Loaded";
   } catch (error) {
-    jobs.value = [];
-    status.value = "Failed to load jobs";
+    if (!options.silent) {
+      jobs.value = [];
+      status.value = "Failed to load jobs";
+    }
   }
 }
 
@@ -39,15 +66,19 @@ async function cancelJob(job: Job) {
   <div class="panel grid">
     <h2>Jobs</h2>
     <div class="field">
-      <button type="button" @click="loadJobs">Refresh jobs</button>
+      <button type="button" @click="loadJobs()">Refresh jobs</button>
     </div>
-    <div v-if="runningJobs.length" class="field">
+    <div v-if="runningJobRows.length" class="field">
       <h3>Running jobs</h3>
       <div class="job-actions">
-        <article v-for="job in runningJobs" :key="job.id" class="job-action-row">
+        <article v-for="{ job, progress, progressClass, progressStyle } in runningJobRows" :key="job.id" class="job-action-row">
           <div>
             <strong>{{ job.type }}</strong>
-            <p class="muted">{{ job.input || job.id }} · {{ job.stage || "running" }}</p>
+            <p class="muted">{{ job.input || job.id }}</p>
+            <p class="status-line compact">{{ progress.text }}</p>
+            <div class="progress" :class="progressClass">
+              <div :style="progressStyle" />
+            </div>
           </div>
           <button type="button" @click="cancelJob(job)">
             {{ job.type === "whatsapp-scheduled-message" ? "Cancel schedule" : "Cancel job" }}

@@ -8,20 +8,26 @@ import (
 )
 
 type Job struct {
-	ID          string    `json:"id"`
-	Type        string    `json:"type"`
-	Status      string    `json:"status"`
-	Stage       string    `json:"stage"`
-	Progress    float64   `json:"progress"`
-	CurrentStep int       `json:"current_step"`
-	TotalSteps  int       `json:"total_steps"`
-	ETASeconds  int       `json:"eta_seconds"`
-	Input       string    `json:"input"`
-	Output      string    `json:"output"`
-	Error       string    `json:"error"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	FinishedAt  time.Time `json:"finished_at,omitempty"`
+	ID                string    `json:"id"`
+	Type              string    `json:"type"`
+	Status            string    `json:"status"`
+	Stage             string    `json:"stage"`
+	Progress          float64   `json:"progress"`
+	CurrentStep       int       `json:"current_step"`
+	TotalSteps        int       `json:"total_steps"`
+	ETASeconds        int       `json:"eta_seconds"`
+	ProgressMode      string    `json:"progress_mode"`
+	CompletedUnits    int       `json:"completed_units"`
+	TotalUnits        int       `json:"total_units"`
+	UnitLabel         string    `json:"unit_label"`
+	ProgressStartedAt time.Time `json:"progress_started_at,omitempty"`
+	ProgressEndsAt    time.Time `json:"progress_ends_at,omitempty"`
+	Input             string    `json:"input"`
+	Output            string    `json:"output"`
+	Error             string    `json:"error"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	FinishedAt        time.Time `json:"finished_at,omitempty"`
 }
 
 type Store interface {

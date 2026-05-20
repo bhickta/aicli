@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	progressmodel "github.com/bhickta/aicli/internal/progress"
 	"github.com/bhickta/aicli/internal/provider"
 )
 
@@ -55,14 +56,14 @@ func (s *Service) Suggest(ctx context.Context, req SuggestRequest, progress Prog
 		return SuggestResponse{}, err
 	}
 	if progress != nil {
-		progress("finding similar zettelkasten notes", 2, 5)
+		progress(progressmodel.Indeterminate("finding similar zettelkasten notes"))
 	}
 	similar, err := newEmbeddingIndex(v, options, s.embeddingProvider).Similar(ctx, activePath, activeContent)
 	if err != nil {
 		return SuggestResponse{}, err
 	}
 	if progress != nil {
-		progress("judging candidate line ranges", 3, 5)
+		progress(progressmodel.Indeterminate("judging candidate line ranges"))
 	}
 	candidates, err := s.judgeCandidates(ctx, activePath, activeContent, similar, options)
 	if err != nil {
@@ -85,7 +86,7 @@ func (s *Service) Propose(ctx context.Context, req ProposeRequest, progress Prog
 		return ProposeResponse{}, errors.New("at least one selected candidate is required")
 	}
 	if progress != nil {
-		progress("extracting approved source ranges", 2, 6)
+		progress(progressmodel.Indeterminate("extracting approved source ranges"))
 	}
 	extractions, sourceMaterial, err := buildExtractions(v, options, req.Selections)
 	if err != nil {
@@ -161,7 +162,7 @@ func (s *Service) Apply(_ context.Context, req ApplyRequest, progress ProgressFu
 		sourcePaths = append(sourcePaths, extraction.Path)
 	}
 	if progress != nil {
-		progress("archiving originals", 2, 4)
+		progress(progressmodel.Units("archiving originals", 0, 2, "operation"))
 	}
 	archive := newArchiveStore(v, options)
 	archivePath, err := archive.WriteBeforeApply(proposal, activeContent, sourceContents)
@@ -169,7 +170,7 @@ func (s *Service) Apply(_ context.Context, req ApplyRequest, progress ProgressFu
 		return ApplyResponse{}, err
 	}
 	if progress != nil {
-		progress("applying merged note and clipping source ranges", 3, 4)
+		progress(progressmodel.Units("applying merged note and clipping source ranges", 1, 2, "operation"))
 	}
 	if err := os.WriteFile(activeAbs, []byte(ensureTrailingNewline(proposal.FinalMarkdown)), 0o600); err != nil {
 		return ApplyResponse{}, fmt.Errorf("write active note: %w", err)
@@ -197,7 +198,7 @@ func (s *Service) Rollback(_ context.Context, req RollbackRequest, progress Prog
 		return RollbackResponse{}, err
 	}
 	if progress != nil {
-		progress("restoring latest zettel merge archive", 2, 4)
+		progress(progressmodel.Indeterminate("restoring latest zettel merge archive"))
 	}
 	jobID, err := newArchiveStore(v, options).Rollback(req.JobID)
 	if err != nil {

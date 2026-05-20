@@ -38,10 +38,9 @@ func (h *Handler) runOCR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.runtime.StartJob(w, r, "ocr", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("extracting images from ZIP", 2, 5)
-		progress("OCR pages in parallel", 3, 5)
+		progress(core.Indeterminate("extracting images from ZIP"))
+		progress(core.Indeterminate("OCR pages in parallel"))
 		result, err := ocr.New(p).Run(ctx, req.Request)
-		progress("assembling markdown", 4, 5)
 		return result, err
 	})
 }
@@ -59,12 +58,12 @@ func (h *Handler) runPDFOCR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.runtime.StartJob(w, r, "pdf-ocr", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress(fmt.Sprintf("rendering PDF pages with %d worker(s)", req.RenderWorkers), 2, 5)
+		progress(core.Indeterminate(fmt.Sprintf("rendering PDF pages with %d worker(s)", req.RenderWorkers)))
 		result, err := ocr.New(
 			p,
 			ocr.WithPDFRenderer(h.runtime.Settings().Tools, tool.ExecRunner{}),
 		).RunPDFWithProgress(ctx, req.Request, func(stage string) {
-			progress(stage, 3, 5)
+			progress(core.Indeterminate(stage))
 		})
 		return result, err
 	})
@@ -83,10 +82,9 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.runtime.StartJob(w, r, "analyze", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("rendering and reading PDF", 2, 5)
-		progress("analyzing OCR text", 3, 5)
+		progress(core.Indeterminate("rendering and reading PDF"))
+		progress(core.Indeterminate("analyzing OCR text"))
 		result, err := analyze.New(h.runtime.Settings().Tools, tool.ExecRunner{}, p).Run(ctx, req.Request)
-		progress("saving analysis", 4, 5)
 		return result, err
 	})
 }

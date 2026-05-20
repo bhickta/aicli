@@ -7,21 +7,24 @@ import (
 	"path/filepath"
 )
 
-func (s *Service) readableCourseFiles(ctx context.Context, files []string, skipUnreadable bool) ([]string, []string, error) {
+func (s *Service) readableCourseFiles(ctx context.Context, files []string, skipUnreadable bool) ([]string, map[string]float64, []string, error) {
 	readable := make([]string, 0, len(files))
+	durations := make(map[string]float64, len(files))
 	skipped := []string{}
 	for _, file := range files {
-		if _, err := s.duration(ctx, file); err != nil {
+		duration, err := s.duration(ctx, file)
+		if err != nil {
 			message := unreadableVideoMessage(file, err)
 			if !skipUnreadable {
-				return nil, nil, errors.New(message)
+				return nil, nil, nil, errors.New(message)
 			}
 			skipped = append(skipped, message)
 			continue
 		}
 		readable = append(readable, file)
+		durations[file] = duration
 	}
-	return readable, skipped, nil
+	return readable, durations, skipped, nil
 }
 
 func courseStartStage(videoCount, skippedCount int) string {

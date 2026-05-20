@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	progressmodel "github.com/bhickta/aicli/internal/progress"
 	"github.com/bhickta/aicli/internal/systemresources"
 )
 
@@ -37,7 +38,7 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 	if err != nil {
 		return CourseResponse{}, err
 	}
-	files, skipped, err := s.readableCourseFiles(ctx, files, req.SkipUnreadable)
+	files, durations, skipped, err := s.readableCourseFiles(ctx, files, req.SkipUnreadable)
 	if err != nil {
 		return CourseResponse{}, err
 	}
@@ -46,24 +47,35 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 	}
 	resources := systemresources.Collect(ctx)
 	req = withCourseWorkerDefaults(req, len(files), resources)
-	totalSteps := len(files)*2 + 1
-	reportCourseProgress(progress, courseStartStage(len(files), len(skipped)), 0, totalSteps)
+	progressPlan := newCourseProgressPlan(files, durations, cacheDir)
+	reportCourseProgress(progress, progressmodel.Units(courseStartStage(len(files), len(skipped)), 0, progressPlan.totalUnits, "video second"))
 
-	batchTranscribed, batchAttempted, err := s.prepareMissingTranscriptsWithFasterWhisper(ctx, files, cacheDir, req, progress, totalSteps)
+	batchTranscribed, batchAttempted, err := s.prepareMissingTranscriptsWithFasterWhisper(ctx, files, cacheDir, req, progress, progressPlan, progressPlan.totalUnits)
 	if err != nil {
 		return CourseResponse{}, err
 	}
+	completedUnits := progressPlan.completedTranscriptUnits(batchTranscribed)
 	if batchAttempted && len(batchTranscribed) > 0 {
-		reportCourseProgress(progress, fmt.Sprintf("transcribed %d/%d video(s) with faster-whisper; compressing", len(batchTranscribed), len(files)), len(batchTranscribed), totalSteps)
+		reportCourseProgress(progress, progressmodel.Units(
+			fmt.Sprintf("transcribed %d/%d video(s) with faster-whisper; compressing", len(batchTranscribed), progressPlan.missingTranscriptCount),
+			completedUnits,
+			progressPlan.totalUnits,
+			"video second",
+		))
 	}
 
-	items, transcribed, skipped, err := s.prepareCourseItems(ctx, files, cacheDir, slidesDir, req, skipped, progress, totalSteps)
+	items, transcribed, skipped, err := s.prepareCourseItems(ctx, files, cacheDir, slidesDir, req, skipped, progressPlan, completedUnits, progress, progressPlan.totalUnits)
 	if err != nil {
 		return CourseResponse{}, err
 	}
 	if len(batchTranscribed) > 0 {
 		transcribed = mergeBatchTranscribedItems(items, transcribed, batchTranscribed)
 	}
-	reportCourseProgress(progress, "merging course video, subtitles, and transcript", len(files)*2, totalSteps)
+	reportCourseProgress(progress, progressmodel.Units(
+		"merging course video, subtitles, and transcript",
+		progressPlan.totalUnits-1,
+		progressPlan.totalUnits,
+		"video second",
+	))
 	return s.exportCourseParts(ctx, targetDir, courseDir, items, transcribed, skipped, req.MaxMergeHours)
 }

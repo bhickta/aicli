@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	progressmodel "github.com/bhickta/aicli/internal/progress"
 )
 
-func (s *Service) prepareCourseItems(ctx context.Context, files []string, cacheDir string, slidesDir string, req CourseRequest, skipped []string, progress CourseProgressFunc, totalSteps int) ([]CourseItem, []CourseItem, []string, error) {
+func (s *Service) prepareCourseItems(ctx context.Context, files []string, cacheDir string, slidesDir string, req CourseRequest, skipped []string, progressPlan courseProgressPlan, completedUnits int, progress CourseProgressFunc, totalUnits int) ([]CourseItem, []CourseItem, []string, error) {
 	usedNames := map[string]int{}
 	targetNames := make([]string, len(files))
 	for i, file := range files {
@@ -16,12 +18,12 @@ func (s *Service) prepareCourseItems(ctx context.Context, files []string, cacheD
 
 	workers := normalizedCourseWorkers(courseCompressionWorkers(req), len(files))
 	if workers == 1 {
-		return s.prepareCourseItemsSequential(ctx, files, targetNames, cacheDir, slidesDir, req, skipped, progress, totalSteps)
+		return s.prepareCourseItemsSequential(ctx, files, targetNames, cacheDir, slidesDir, req, skipped, progressPlan, completedUnits, progress, totalUnits)
 	}
-	return s.prepareCourseItemsParallel(ctx, files, targetNames, cacheDir, slidesDir, req, skipped, workers, progress, totalSteps)
+	return s.prepareCourseItemsParallel(ctx, files, targetNames, cacheDir, slidesDir, req, skipped, workers, progressPlan, completedUnits, progress, totalUnits)
 }
 
-func (s *Service) prepareCourseItemsSequential(ctx context.Context, files []string, targetNames []string, cacheDir string, slidesDir string, req CourseRequest, skipped []string, progress CourseProgressFunc, totalSteps int) ([]CourseItem, []CourseItem, []string, error) {
+func (s *Service) prepareCourseItemsSequential(ctx context.Context, files []string, targetNames []string, cacheDir string, slidesDir string, req CourseRequest, skipped []string, progressPlan courseProgressPlan, completedUnits int, progress CourseProgressFunc, totalUnits int) ([]CourseItem, []CourseItem, []string, error) {
 	items := make([]CourseItem, 0, len(files))
 	transcribed := []CourseItem{}
 	for i, file := range files {
@@ -31,14 +33,16 @@ func (s *Service) prepareCourseItemsSequential(ctx context.Context, files []stri
 		}
 		if didTranscribe {
 			transcribed = append(transcribed, CourseItem{Source: item.Source, SRTPath: item.SRTPath, TextPath: item.TextPath, TargetName: item.TargetName})
+			completedUnits += progressPlan.transcriptUnits(file)
 		}
 		items = append(items, item)
-		reportCourseProgress(progress, fmt.Sprintf("compressed %d/%d video(s)", i+1, len(files)), len(files)+i+1, totalSteps)
+		completedUnits += progressPlan.compressionUnits(file)
+		reportCourseProgress(progress, progressmodel.Units(fmt.Sprintf("compressed %d/%d video(s)", i+1, len(files)), completedUnits, totalUnits, "video second"))
 	}
 	return items, transcribed, skipped, nil
 }
 
-func (s *Service) prepareCourseItemsParallel(ctx context.Context, files []string, targetNames []string, cacheDir string, slidesDir string, req CourseRequest, skipped []string, workers int, progress CourseProgressFunc, totalSteps int) ([]CourseItem, []CourseItem, []string, error) {
+func (s *Service) prepareCourseItemsParallel(ctx context.Context, files []string, targetNames []string, cacheDir string, slidesDir string, req CourseRequest, skipped []string, workers int, progressPlan courseProgressPlan, completedUnits int, progress CourseProgressFunc, totalUnits int) ([]CourseItem, []CourseItem, []string, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -97,7 +101,11 @@ func (s *Service) prepareCourseItemsParallel(ctx context.Context, files []string
 		items[res.index] = res.item
 		transcribedByIndex[res.index] = res.didTranscribe
 		completed++
-		reportCourseProgress(progress, fmt.Sprintf("compressed %d/%d video(s) with %d worker(s)", completed, len(files), workers), len(files)+completed, totalSteps)
+		if res.didTranscribe {
+			completedUnits += progressPlan.transcriptUnits(files[res.index])
+		}
+		completedUnits += progressPlan.compressionUnits(files[res.index])
+		reportCourseProgress(progress, progressmodel.Units(fmt.Sprintf("compressed %d/%d video(s) with %d worker(s)", completed, len(files), workers), completedUnits, totalUnits, "video second"))
 	}
 	if firstErr != nil {
 		return nil, nil, nil, firstErr
@@ -168,8 +176,8 @@ func mergeBatchTranscribedItems(items []CourseItem, transcribed []CourseItem, ba
 	return merged
 }
 
-func reportCourseProgress(progress CourseProgressFunc, stage string, currentStep, totalSteps int) {
+func reportCourseProgress(progress CourseProgressFunc, update progressmodel.Update) {
 	if progress != nil {
-		progress(stage, currentStep, totalSteps)
+		progress(update)
 	}
 }

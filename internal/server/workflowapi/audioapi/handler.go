@@ -28,9 +28,8 @@ func (h *Handler) runAudioTranscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.runtime.StartJob(w, r, "audio-transcribe", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("transcribing audio", 2, 4)
+		progress(core.Indeterminate("transcribing audio"))
 		result, err := audio.New(h.runtime.Settings().Tools, tool.ExecRunner{}).Transcribe(ctx, req)
-		progress("saving transcript", 3, 4)
 		return result, err
 	})
 }
@@ -48,9 +47,8 @@ func (h *Handler) runAudioAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.runtime.StartJob(w, r, "audio-analyze", "", func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("analyzing audio text", 2, 4)
+		progress(core.Indeterminate("analyzing audio text"))
 		result, err := audio.New(h.runtime.Settings().Tools, tool.ExecRunner{}, p).Analyze(ctx, req.AnalyzeRequest)
-		progress("saving analysis", 3, 4)
 		return result, err
 	})
 }

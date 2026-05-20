@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	progressmodel "github.com/bhickta/aicli/internal/progress"
 	"github.com/bhickta/aicli/internal/workflow/whisper"
 )
 
@@ -56,7 +57,7 @@ func (s *Service) prepareTranscriptFiles(ctx context.Context, videoPath, cacheDi
 	return cacheSRT, cacheText, didTranscribe, nil
 }
 
-func (s *Service) prepareMissingTranscriptsWithFasterWhisper(ctx context.Context, files []string, cacheDir string, req CourseRequest, progress CourseProgressFunc, totalSteps int) (map[string]bool, bool, error) {
+func (s *Service) prepareMissingTranscriptsWithFasterWhisper(ctx context.Context, files []string, cacheDir string, req CourseRequest, progress CourseProgressFunc, progressPlan courseProgressPlan, totalUnits int) (map[string]bool, bool, error) {
 	transcribed := map[string]bool{}
 	if !whisper.CanRunFasterBatch(s.runner) {
 		return transcribed, false, nil
@@ -94,7 +95,8 @@ func (s *Service) prepareMissingTranscriptsWithFasterWhisper(ctx context.Context
 	if model == "" {
 		model = "large-v3"
 	}
-	var completed atomic.Int64
+	var completedFiles atomic.Int64
+	var completedUnits atomic.Int64
 	missingByBase := make(map[string]string, len(missing))
 	for _, file := range missing {
 		missingByBase[filepath.Base(file)] = file
@@ -112,8 +114,14 @@ func (s *Service) prepareMissingTranscriptsWithFasterWhisper(ctx context.Context
 		if file == "" {
 			return
 		}
-		current := int(completed.Add(1))
-		reportCourseProgress(progress, fmt.Sprintf("transcribed %d/%d video(s): %s", current, len(missing), filepath.Base(file)), current, totalSteps)
+		currentFile := int(completedFiles.Add(1))
+		currentUnits := int(completedUnits.Add(int64(progressPlan.transcriptUnits(file))))
+		reportCourseProgress(progress, progressmodel.Units(
+			fmt.Sprintf("transcribed %d/%d video(s): %s", currentFile, len(missing), filepath.Base(file)),
+			currentUnits,
+			totalUnits,
+			"video second",
+		))
 	})
 	if err != nil {
 		if whisper.FasterBatchUnavailable(out, err) {

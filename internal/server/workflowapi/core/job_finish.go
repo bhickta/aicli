@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	progressmodel "github.com/bhickta/aicli/internal/progress"
 	"github.com/bhickta/aicli/internal/storage"
 )
 
@@ -31,8 +32,15 @@ func (r *Runtime) finishJobStore(ctx context.Context, job storage.Job, result an
 
 	job.Status = storage.JobStatusCompleted
 	job.Stage = storage.JobStatusCompleted
+	job.ProgressMode = progressmodel.ModeDeterminate
 	job.Progress = 1
-	job.CurrentStep = job.TotalSteps
+	if job.TotalUnits > 0 {
+		job.CompletedUnits = job.TotalUnits
+		job.CurrentStep = job.TotalUnits
+		job.TotalSteps = job.TotalUnits
+	} else if job.TotalSteps > 0 {
+		job.CurrentStep = job.TotalSteps
+	}
 	job.Output = string(output)
 	if err := r.store.UpdateJob(ctx, job); err != nil && r.logger != nil {
 		r.logger.Error("workflow completion update failed", "job", job.ID, "type", job.Type, "error", err)

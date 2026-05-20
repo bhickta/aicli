@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	progressmodel "github.com/bhickta/aicli/internal/progress"
 )
 
 func (s *Service) judgeCandidates(ctx context.Context, activePath string, activeContent string, similar []scoredCandidate, options Options) ([]Candidate, error) {
@@ -62,7 +64,7 @@ func (s *Service) runMergeAttempts(ctx context.Context, activePath string, activ
 	var hint string
 	for attempt := 1; attempt <= options.MaxMergeRetries; attempt++ {
 		if progress != nil {
-			progress(fmt.Sprintf("building merge proposal %d/%d", attempt, options.MaxMergeRetries), 3, 6)
+			progress(progressmodel.Indeterminate(fmt.Sprintf("building merge proposal %d/%d", attempt, options.MaxMergeRetries)))
 		}
 		messages, err := mergeMessages(activePath, activeContent, extractions, options, hint)
 		if err != nil {
@@ -75,7 +77,7 @@ func (s *Service) runMergeAttempts(ctx context.Context, activePath string, activ
 		plan = normalizeMergePlan(plan, len(splitLines(activeContent)))
 		finalContent := applyMergePlan(activeContent, plan)
 		if progress != nil {
-			progress(fmt.Sprintf("validating merge proposal %d/%d", attempt, options.MaxMergeRetries), 4, 6)
+			progress(progressmodel.Indeterminate(fmt.Sprintf("validating merge proposal %d/%d", attempt, options.MaxMergeRetries)))
 		}
 		coverage := buildCoverageReport(sourceMaterial, finalContent)
 		judge, err := chatJSON[MergeJudge](ctx, s.validationProvider, options.ValidationModel, validationMessages(sourceMaterial, finalContent))

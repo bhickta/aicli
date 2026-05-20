@@ -36,9 +36,8 @@ func (h *Handler) runCodex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.runtime.StartJob(w, r, "codex", req.Task, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("running Codex coding workflow", 2, 4)
+		progress(core.Indeterminate("running Codex coding workflow"))
 		result, err := codex.New(p).Run(ctx, req.Request)
-		progress("saving Codex response", 3, 4)
 		return result, err
 	})
 }
@@ -50,9 +49,8 @@ func (h *Handler) runCodexCLI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.runtime.StartJob(w, r, "codex-cli", req.Task, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("running Codex CLI with local ChatGPT auth", 2, 4)
+		progress(core.Indeterminate("running Codex CLI with local ChatGPT auth"))
 		result, err := codex.NewCLI(h.runtime.Settings().Tools, tool.ExecRunner{}).Run(ctx, req)
-		progress("saving Codex CLI response", 3, 4)
 		return result, err
 	})
 }

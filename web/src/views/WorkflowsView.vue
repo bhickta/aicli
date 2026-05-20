@@ -21,6 +21,8 @@ const {
   markdownPreview,
   sourcePreview,
   progress,
+  progressMode,
+  progressVisible,
   running,
   currentJob,
   runWorkflow: runActiveWorkflow,
@@ -80,6 +82,8 @@ function cancelButtonLabel() {
     <WorkflowResult
       :status="status"
       :progress="progress"
+      :progress-mode="progressMode"
+      :progress-visible="progressVisible"
       :result="result"
       :source-preview="sourcePreview"
       :markdown-preview="markdownPreview"

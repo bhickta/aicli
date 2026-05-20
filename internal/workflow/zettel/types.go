@@ -1,6 +1,10 @@
 package zettel
 
-import "time"
+import (
+	"time"
+
+	progressmodel "github.com/bhickta/aicli/internal/progress"
+)
 
 const (
 	DefaultRootFolder           = "zettelkasten"
@@ -193,4 +197,4 @@ type MergeJudge struct {
 	Notes                string   `json:"notes"`
 }
 
-type ProgressFunc = func(stage string, currentStep, totalSteps int)
+type ProgressFunc = progressmodel.Func

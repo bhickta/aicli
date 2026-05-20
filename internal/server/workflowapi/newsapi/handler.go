@@ -35,9 +35,8 @@ func (h *Handler) runNews(w http.ResponseWriter, r *http.Request) {
 		p = selected
 	}
 	h.runtime.StartJob(w, r, "news", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("loading and deduplicating news", 2, 4)
+		progress(core.Indeterminate("loading and deduplicating news"))
 		result, err := news.New(p).Run(ctx, req)
-		progress("saving result", 3, 4)
 		return result, err
 	})
 }

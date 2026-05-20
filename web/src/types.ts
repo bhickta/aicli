@@ -65,6 +65,8 @@ export interface Model {
   name: string;
 }
 
+export type ProgressMode = "determinate" | "indeterminate" | "timed";
+
 export interface Job {
   id: string;
   type: string;
@@ -74,6 +76,12 @@ export interface Job {
   current_step: number;
   total_steps: number;
   eta_seconds: number;
+  progress_mode?: ProgressMode;
+  completed_units?: number;
+  total_units?: number;
+  unit_label?: string;
+  progress_started_at?: string;
+  progress_ends_at?: string;
   input: string;
   output: string;
   error: string;

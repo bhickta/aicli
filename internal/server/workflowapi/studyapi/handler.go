@@ -35,9 +35,8 @@ func (h *Handler) runRecall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.runtime.StartJob(w, r, "recall", req.Notes, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("generating recall triggers", 2, 4)
+		progress(core.Indeterminate("generating recall triggers"))
 		result, err := recall.New(p).Generate(ctx, recall.Request{Model: req.Model, Notes: req.Notes})
-		progress("saving triggers", 3, 4)
 		return result, err
 	})
 }

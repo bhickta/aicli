@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	progressmodel "github.com/bhickta/aicli/internal/progress"
 )
 
 func parseScheduledAt(value string, loc *time.Location) (time.Time, error) {
@@ -42,7 +44,7 @@ func istLocation() *time.Location {
 	return time.FixedZone("IST", 5*60*60+30*60)
 }
 
-func waitUntil(ctx context.Context, scheduledAt time.Time, now func() time.Time, progress ProgressFunc) error {
+func waitUntil(ctx context.Context, scheduledAt time.Time, startedAt time.Time, now func() time.Time, progress ProgressFunc) error {
 	for {
 		remaining := time.Until(scheduledAt)
 		if now != nil {
@@ -57,7 +59,7 @@ func waitUntil(ctx context.Context, scheduledAt time.Time, now func() time.Time,
 			wait = time.Minute
 		}
 		if progress != nil {
-			progress("waiting until "+scheduledAt.Format(time.RFC3339), 1, 5)
+			progress(progressmodel.Timed("waiting until "+scheduledAt.Format(time.RFC3339), startedAt, scheduledAt))
 		}
 		if err := sleepContext(ctx, wait); err != nil {
 			return err

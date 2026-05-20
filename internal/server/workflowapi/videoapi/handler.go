@@ -34,9 +34,8 @@ func (h *Handler) runVideoInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.runtime.StartJob(w, r, "video-info", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("probing media metadata", 2, 4)
+		progress(core.Indeterminate("probing media metadata"))
 		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}).Info(ctx, req)
-		progress("saving result", 3, 4)
 		return result, err
 	})
 }
@@ -47,9 +46,8 @@ func (h *Handler) runVideoCompress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.runtime.StartJob(w, r, "video-compress", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("compressing video", 2, 4)
+		progress(core.Indeterminate("compressing video"))
 		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}).Compress(ctx, req)
-		progress("saving result", 3, 4)
 		return result, err
 	})
 }
@@ -75,7 +73,7 @@ func (h *Handler) runVideoCourse(w http.ResponseWriter, r *http.Request) {
 		if compressionWorkers <= 0 {
 			compressionWorkers = systemresources.DefaultCompressionWorkers(6, resources)
 		}
-		progress(fmt.Sprintf("processing course with Whisper model %s on %s using %d transcribe/%d compress worker(s)", displayValue(req.WhisperModel, "large-v3"), displayValue(req.WhisperDevice, "cuda"), transcriptWorkers, compressionWorkers), 2, 5)
+		progress(core.Indeterminate(fmt.Sprintf("processing course with Whisper model %s on %s using %d transcribe/%d compress worker(s)", displayValue(req.WhisperModel, "large-v3"), displayValue(req.WhisperDevice, "cuda"), transcriptWorkers, compressionWorkers)))
 		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}).CourseWithProgress(ctx, req, progress)
 		return result, err
 	})
@@ -94,9 +92,8 @@ func (h *Handler) runVideoMetadataBackup(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	h.runtime.StartJob(w, r, "video-metadata-backup", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("backing up metadata", 2, 4)
+		progress(core.Indeterminate("backing up metadata"))
 		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}).BackupMetadata(ctx, req)
-		progress("saving result", 3, 4)
 		return result, err
 	})
 }
@@ -107,9 +104,8 @@ func (h *Handler) runVideoMetadataRestore(w http.ResponseWriter, r *http.Request
 		return
 	}
 	h.runtime.StartJob(w, r, "video-metadata-restore", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("restoring metadata", 2, 4)
+		progress(core.Indeterminate("restoring metadata"))
 		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}).RestoreMetadata(ctx, req)
-		progress("saving result", 3, 4)
 		return result, err
 	})
 }
@@ -127,9 +123,8 @@ func (h *Handler) runVideoGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.runtime.StartJob(w, r, "video-"+req.Mode, req.Title, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("generating video workflow text", 2, 4)
+		progress(core.Indeterminate("generating video workflow text"))
 		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}, p).Generate(ctx, req.LLMRequest)
-		progress("saving result", 3, 4)
 		return result, err
 	})
 }

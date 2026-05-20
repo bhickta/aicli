@@ -17,8 +17,8 @@ func (s *SQLiteStore) CreateJob(ctx context.Context, job Job) error {
 	}
 	_, err := s.db.ExecContext(
 		ctx,
-		`INSERT INTO jobs (id, type, status, stage, progress, current_step, total_steps, eta_seconds, input, output, error, created_at, updated_at, finished_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO jobs (id, type, status, stage, progress, current_step, total_steps, eta_seconds, progress_mode, completed_units, total_units, unit_label, progress_started_at, progress_ends_at, input, output, error, created_at, updated_at, finished_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID,
 		job.Type,
 		job.Status,
@@ -27,6 +27,12 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.CurrentStep,
 		job.TotalSteps,
 		job.ETASeconds,
+		job.ProgressMode,
+		job.CompletedUnits,
+		job.TotalUnits,
+		job.UnitLabel,
+		nullableTime(job.ProgressStartedAt),
+		nullableTime(job.ProgressEndsAt),
 		job.Input,
 		job.Output,
 		job.Error,
@@ -41,7 +47,7 @@ func (s *SQLiteStore) GetJob(ctx context.Context, id string) (Job, error) {
 	var job Job
 	row := s.db.QueryRowContext(
 		ctx,
-		`SELECT id, type, status, stage, progress, current_step, total_steps, eta_seconds, input, output, error, created_at, updated_at, finished_at FROM jobs WHERE id = ?`,
+		`SELECT id, type, status, stage, progress, current_step, total_steps, eta_seconds, progress_mode, completed_units, total_units, unit_label, progress_started_at, progress_ends_at, input, output, error, created_at, updated_at, finished_at FROM jobs WHERE id = ?`,
 		id,
 	)
 	err := scanJob(row, &job)
@@ -54,7 +60,7 @@ func (s *SQLiteStore) GetJob(ctx context.Context, id string) (Job, error) {
 func (s *SQLiteStore) ListJobs(ctx context.Context) ([]Job, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, type, status, stage, progress, current_step, total_steps, eta_seconds, input, output, error, created_at, updated_at, finished_at FROM jobs ORDER BY created_at DESC`,
+		`SELECT id, type, status, stage, progress, current_step, total_steps, eta_seconds, progress_mode, completed_units, total_units, unit_label, progress_started_at, progress_ends_at, input, output, error, created_at, updated_at, finished_at FROM jobs ORDER BY created_at DESC`,
 	)
 	if err != nil {
 		return nil, err
@@ -76,13 +82,19 @@ func (s *SQLiteStore) UpdateJob(ctx context.Context, job Job) error {
 	job.UpdatedAt = time.Now().UTC()
 	res, err := s.db.ExecContext(
 		ctx,
-		`UPDATE jobs SET status = ?, stage = ?, progress = ?, current_step = ?, total_steps = ?, eta_seconds = ?, input = ?, output = ?, error = ?, updated_at = ?, finished_at = ? WHERE id = ?`,
+		`UPDATE jobs SET status = ?, stage = ?, progress = ?, current_step = ?, total_steps = ?, eta_seconds = ?, progress_mode = ?, completed_units = ?, total_units = ?, unit_label = ?, progress_started_at = ?, progress_ends_at = ?, input = ?, output = ?, error = ?, updated_at = ?, finished_at = ? WHERE id = ?`,
 		job.Status,
 		job.Stage,
 		job.Progress,
 		job.CurrentStep,
 		job.TotalSteps,
 		job.ETASeconds,
+		job.ProgressMode,
+		job.CompletedUnits,
+		job.TotalUnits,
+		job.UnitLabel,
+		nullableTime(job.ProgressStartedAt),
+		nullableTime(job.ProgressEndsAt),
 		job.Input,
 		job.Output,
 		job.Error,
@@ -109,6 +121,8 @@ type rowScanner interface {
 
 func scanJob(row rowScanner, job *Job) error {
 	var finishedAt sql.NullTime
+	var progressStartedAt sql.NullTime
+	var progressEndsAt sql.NullTime
 	err := row.Scan(
 		&job.ID,
 		&job.Type,
@@ -118,6 +132,12 @@ func scanJob(row rowScanner, job *Job) error {
 		&job.CurrentStep,
 		&job.TotalSteps,
 		&job.ETASeconds,
+		&job.ProgressMode,
+		&job.CompletedUnits,
+		&job.TotalUnits,
+		&job.UnitLabel,
+		&progressStartedAt,
+		&progressEndsAt,
 		&job.Input,
 		&job.Output,
 		&job.Error,
@@ -130,6 +150,12 @@ func scanJob(row rowScanner, job *Job) error {
 	}
 	if finishedAt.Valid {
 		job.FinishedAt = finishedAt.Time
+	}
+	if progressStartedAt.Valid {
+		job.ProgressStartedAt = progressStartedAt.Time
+	}
+	if progressEndsAt.Valid {
+		job.ProgressEndsAt = progressEndsAt.Time
 	}
 	return nil
 }

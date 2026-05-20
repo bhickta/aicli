@@ -35,9 +35,8 @@ func (h *Handler) runImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.runtime.StartJob(w, r, "image", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("analyzing image with vision model", 2, 4)
+		progress(core.Indeterminate("analyzing image with vision model"))
 		result, err := image.New(p).Run(ctx, req.Request)
-		progress("saving result", 3, 4)
 		return result, err
 	})
 }
@@ -55,9 +54,8 @@ func (h *Handler) runImageRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.runtime.StartJob(w, r, "image-rename", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("planning safe rename", 2, 4)
+		progress(core.Indeterminate("planning safe rename"))
 		result, err := image.New(p).Rename(ctx, req.RenameRequest)
-		progress("saving result", 3, 4)
 		return result, err
 	})
 }
@@ -68,9 +66,8 @@ func (h *Handler) runImagePruneRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.runtime.StartJob(w, r, "image-prune-refs", req.MarkdownPath, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress("checking referenced assets", 2, 4)
+		progress(core.Indeterminate("checking referenced assets"))
 		result, err := image.PruneRefs(req)
-		progress("saving result", 3, 4)
 		return result, err
 	})
 }

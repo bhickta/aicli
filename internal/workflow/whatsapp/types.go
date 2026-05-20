@@ -1,5 +1,7 @@
 package whatsapp
 
+import progressmodel "github.com/bhickta/aicli/internal/progress"
+
 type ScheduleRequest struct {
 	Recipient      string `json:"recipient"`
 	RecipientName  string `json:"recipient_name"`
@@ -21,4 +23,4 @@ type ScheduleResponse struct {
 	SendAttempts   int    `json:"send_attempts,omitempty"`
 }
 
-type ProgressFunc = func(stage string, currentStep, totalSteps int)
+type ProgressFunc = progressmodel.Func

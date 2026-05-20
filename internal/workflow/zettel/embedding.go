@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	progressmodel "github.com/bhickta/aicli/internal/progress"
 	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/systemresources"
 )
@@ -66,6 +67,12 @@ func (idx *embeddingIndex) Build(ctx context.Context, progress ProgressFunc) (In
 		return IndexResponse{}, err
 	}
 	resp.Reused = reused
+	pending := 0
+	for _, item := range prepared {
+		if !item.reused {
+			pending++
+		}
+	}
 	batch := make([]string, 0, idx.options.EmbeddingBatchSize)
 	batchPaths := make([]string, 0, idx.options.EmbeddingBatchSize)
 	batchHashes := make([]string, 0, idx.options.EmbeddingBatchSize)
@@ -97,7 +104,12 @@ func (idx *embeddingIndex) Build(ctx context.Context, progress ProgressFunc) (In
 	}
 	for i, item := range prepared {
 		if progress != nil && i%250 == 0 {
-			progress(fmt.Sprintf("indexing zettelkasten embeddings (%d/%d)", i, len(notes)), 2, 4)
+			progress(progressmodel.Units(
+				fmt.Sprintf("indexing zettelkasten embeddings (%d/%d)", resp.Updated, pending),
+				resp.Updated,
+				pending,
+				"embedding",
+			))
 		}
 		if item.reused {
 			continue
@@ -180,7 +192,12 @@ func (idx *embeddingIndex) prepareEmbeddingSources(ctx context.Context, notes []
 		}
 		seen++
 		if progress != nil && seen%500 == 0 {
-			progress(fmt.Sprintf("reading zettelkasten notes (%d/%d)", seen, len(notes)), 1, 4)
+			progress(progressmodel.Units(
+				fmt.Sprintf("reading zettelkasten notes (%d/%d)", seen, len(notes)),
+				seen,
+				len(notes),
+				"note",
+			))
 		}
 	}
 	if seen != len(notes) {
