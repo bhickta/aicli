@@ -10,6 +10,7 @@ export function useWorkflowRunner() {
   const sourcePreview = shallowRef("");
   const progress = shallowRef(0);
   const running = shallowRef(false);
+  const currentJob = shallowRef<Job | null>(null);
 
   async function runWorkflow(workflow: WorkflowDefinition | undefined, inputValues: Record<string, unknown>) {
     if (!workflow) return;
@@ -24,6 +25,7 @@ export function useWorkflowRunner() {
         body: JSON.stringify(workflow.buildPayload(inputValues)),
       });
       if (response.job?.id && response.job.status === "running") {
+        currentJob.value = response.job;
         await pollJob(response.job.id, renderWorkflowJob);
         return;
       }
@@ -35,10 +37,25 @@ export function useWorkflowRunner() {
       result.value = error instanceof Error ? error.message : "Workflow failed";
     } finally {
       running.value = false;
+      currentJob.value = null;
+    }
+  }
+
+  async function cancelWorkflow() {
+    if (!currentJob.value?.id) return;
+    status.value = "Cancelling workflow...";
+    try {
+      const job = await api<Job>(`/api/jobs/${encodeURIComponent(currentJob.value.id)}/cancel`, {
+        method: "POST",
+      });
+      renderWorkflowJob(job);
+    } catch (error) {
+      result.value = error instanceof Error ? error.message : "Cancel failed";
     }
   }
 
   function renderWorkflowJob(job: Job) {
+    currentJob.value = job;
     const percent = Math.round((job.progress || 0) * 100);
     const eta = job.eta_seconds ? ` | ETA ${formatDuration(job.eta_seconds)}` : "";
     const step = job.total_steps ? ` | ${job.current_step}/${job.total_steps}` : "";
@@ -55,6 +72,10 @@ export function useWorkflowRunner() {
       result.value = job.error || "Workflow failed";
       status.value = "Failed";
     }
+    if (job.status === "cancelled") {
+      result.value = job.error || "Workflow cancelled";
+      status.value = "Cancelled";
+    }
   }
 
   return {
@@ -64,7 +85,9 @@ export function useWorkflowRunner() {
     sourcePreview,
     progress,
     running,
+    currentJob,
     runWorkflow,
+    cancelWorkflow,
     renderWorkflowJob,
   };
 }

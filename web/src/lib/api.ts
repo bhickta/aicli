@@ -30,7 +30,7 @@ export async function pollJob(jobID: string, onJob: (job: Job) => void): Promise
     await sleep(900);
     const job = await api<Job>(`/api/jobs/${encodeURIComponent(jobID)}`);
     onJob(job);
-    if (job.status === "completed" || job.status === "failed") return job;
+    if (job.status === "completed" || job.status === "failed" || job.status === "cancelled") return job;
   }
 }
 

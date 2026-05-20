@@ -15,7 +15,17 @@ import { workflowCategories } from "../workflows/definitions";
 
 const browserField = shallowRef<WorkflowFieldType | null>(null);
 const { values, providerModel, nonProviderFields, hasProviderModel, updateField, collectValues } = useWorkflowForm(activeWorkflow);
-const { status, result, markdownPreview, sourcePreview, progress, running, runWorkflow: runActiveWorkflow } = useWorkflowRunner();
+const {
+  status,
+  result,
+  markdownPreview,
+  sourcePreview,
+  progress,
+  running,
+  currentJob,
+  runWorkflow: runActiveWorkflow,
+  cancelWorkflow,
+} = useWorkflowRunner();
 const { handleDrop } = useWorkflowDrop({ activeWorkflow, updateField, chooseWorkflow, status, result, sourcePreview });
 const resourceHint = computed(() => {
   const defaults = appState.systemResources?.defaults;
@@ -63,6 +73,10 @@ async function pickSystemDirectory(field: WorkflowFieldType) {
 
 async function runWorkflow() {
   await runActiveWorkflow(activeWorkflow.value, collectValues());
+}
+
+function cancelButtonLabel() {
+  return activeWorkflow.value?.id === "whatsapp-schedule" ? "Cancel schedule" : "Cancel workflow";
 }
 
 function handleBrowserSelect(id: string, path: string) {
@@ -117,6 +131,7 @@ function handleBrowserSelect(id: string, path: string) {
     </div>
     <div class="field">
       <button id="workflow-run" type="button" :disabled="running" @click="runWorkflow">Run workflow</button>
+      <button v-if="running && currentJob" type="button" @click="cancelWorkflow">{{ cancelButtonLabel() }}</button>
     </div>
     <WorkflowResult
       :status="status"

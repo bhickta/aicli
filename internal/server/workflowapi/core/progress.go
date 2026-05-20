@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -19,12 +20,16 @@ func (r *Runtime) StartWorkflow(w http.ResponseWriter, req *http.Request, job st
 	WriteJSON(w, http.StatusAccepted, map[string]any{"job": job})
 
 	go func() {
-		ctx := context.Background()
-		r.updateJobProgress(ctx, &job, "started", 1, 4)
-		result, err := run(ctx, func(stage string, currentStep, totalSteps int) {
-			r.updateJobProgress(ctx, &job, stage, currentStep, totalSteps)
+		storeCtx := context.Background()
+		runCtx, cancel := context.WithCancel(context.Background())
+		r.registerCancel(job.ID, cancel)
+		defer r.unregisterCancel(job.ID)
+		defer cancel()
+		r.updateJobProgress(storeCtx, &job, "started", 1, 4)
+		result, err := run(runCtx, func(stage string, currentStep, totalSteps int) {
+			r.updateJobProgress(storeCtx, &job, stage, currentStep, totalSteps)
 		})
-		r.finishJobStore(ctx, job, result, err)
+		r.finishJobStore(storeCtx, job, result, err)
 	}()
 }
 
@@ -62,6 +67,16 @@ func (r *Runtime) finishJobStore(ctx context.Context, job storage.Job, result an
 	job.FinishedAt = time.Now().UTC()
 	job.ETASeconds = 0
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			job.Status = "cancelled"
+			job.Stage = "cancelled"
+			job.Error = "cancelled"
+			_ = r.store.UpdateJob(ctx, job)
+			if r.logger != nil {
+				r.logger.Info("workflow cancelled", "job", job.ID, "type", job.Type)
+			}
+			return
+		}
 		job.Status = "failed"
 		job.Stage = "failed"
 		job.Error = err.Error()

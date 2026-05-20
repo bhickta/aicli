@@ -26,6 +26,7 @@ func New(deps Dependencies) *Handler {
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/jobs/{id}/cancel", h.cancelJob)
 	studyapi.New(h.runtime).Register(mux)
 	codexapi.New(h.runtime).Register(mux)
 	imageapi.New(h.runtime).Register(mux)
@@ -35,4 +36,13 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	audioapi.New(h.runtime).Register(mux)
 	whatsappapi.New(h.runtime).Register(mux)
 	zettelapi.New(h.runtime).Register(mux)
+}
+
+func (h *Handler) cancelJob(w http.ResponseWriter, r *http.Request) {
+	job, err := h.runtime.CancelJob(r.Context(), r.PathValue("id"))
+	if err != nil {
+		core.WriteError(w, http.StatusBadRequest, err)
+		return
+	}
+	core.WriteJSON(w, http.StatusOK, job)
 }
