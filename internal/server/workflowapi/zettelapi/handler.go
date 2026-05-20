@@ -26,6 +26,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workflows/zettel/propose", h.propose)
 	mux.HandleFunc("POST /api/workflows/zettel/apply", h.apply)
 	mux.HandleFunc("POST /api/workflows/zettel/rollback", h.rollback)
+	mux.HandleFunc("POST /api/workflows/zettel/inbox-merge", h.inboxMerge)
 }
 
 func (h *Handler) notes(w http.ResponseWriter, r *http.Request) {
@@ -113,6 +114,21 @@ func (h *Handler) rollback(w http.ResponseWriter, r *http.Request) {
 	}
 	h.runtime.StartJob(w, r, "zettel-rollback", req.JobID, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		return service.Rollback(ctx, req, progress)
+	})
+}
+
+func (h *Handler) inboxMerge(w http.ResponseWriter, r *http.Request) {
+	req, ok := core.DecodeJSON[zettel.InboxMergeRequest](w, r)
+	if !ok {
+		return
+	}
+	service, err := h.service(req.Options)
+	if err != nil {
+		core.WriteError(w, http.StatusNotFound, err)
+		return
+	}
+	h.runtime.StartJob(w, r, "zettel-inbox-merge", req.InboxFolder, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+		return service.InboxMerge(ctx, req, progress)
 	})
 }
 

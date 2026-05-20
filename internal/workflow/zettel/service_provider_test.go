@@ -14,6 +14,7 @@ type fakeZettelProvider struct {
 	embeddingCalls int
 	chatCalls      []provider.ChatRequest
 	chatResponse   string
+	chatResponses  []string
 }
 
 func (f *fakeZettelProvider) ID() string {
@@ -31,6 +32,11 @@ func (f *fakeZettelProvider) ListModels(context.Context) ([]provider.Model, erro
 
 func (f *fakeZettelProvider) Chat(_ context.Context, req provider.ChatRequest) (provider.ChatResponse, error) {
 	f.chatCalls = append(f.chatCalls, req)
+	if len(f.chatResponses) > 0 {
+		next := f.chatResponses[0]
+		f.chatResponses = f.chatResponses[1:]
+		return provider.ChatResponse{Content: next}, nil
+	}
 	if f.chatResponse == "" {
 		return provider.ChatResponse{}, errors.New("chat should not be called")
 	}

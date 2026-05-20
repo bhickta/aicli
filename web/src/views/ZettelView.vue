@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, shallowRef, watch } from "vue";
+import ZettelInboxReport from "../components/zettel/ZettelInboxReport.vue";
 import ZettelMergeDiff from "../components/zettel/ZettelMergeDiff.vue";
 import ZettelNotePicker from "../components/zettel/ZettelNotePicker.vue";
 import ZettelProviderSettings from "../components/zettel/ZettelProviderSettings.vue";
 import { api, parseJobOutput, pollJob } from "../lib/api";
 import { readNumberValue, stringify } from "../lib/format";
 import { describeJobProgress, progressBarWidth } from "../lib/jobProgress";
-import type { Job, ProgressMode } from "../types";
+import type { InboxMergeReport, Job, ProgressMode } from "../types";
 
 interface LineRange {
   start_line: number;
@@ -41,7 +42,9 @@ const config = reactive({
   vaultPath: localStorage.getItem("aicli.zettel.vaultPath") || "",
   activePath: localStorage.getItem("aicli.zettel.activePath") || "",
   rootFolder: localStorage.getItem("aicli.zettel.rootFolder") || "zettelkasten",
+  inboxFolder: localStorage.getItem("aicli.zettel.inboxFolder") || "inbox-to-merge",
   dataFolder: localStorage.getItem("aicli.zettel.dataFolder") || ".aicli-zettel-merge",
+  shorthandPromptPath: localStorage.getItem("aicli.zettel.shorthandPromptPath") || "example_prompts.md",
   providerId: legacyProviderId,
   candidateProviderId: localStorage.getItem("aicli.zettel.candidateProviderId") || legacyProviderId,
   mergeProviderId: localStorage.getItem("aicli.zettel.mergeProviderId") || legacyProviderId,
@@ -61,6 +64,7 @@ const candidates = shallowRef<Candidate[]>([]);
 const notes = shallowRef<string[]>([]);
 const selectedPaths = shallowRef<string[]>([]);
 const proposal = shallowRef<Proposal | null>(null);
+const inboxReport = shallowRef<InboxMergeReport | null>(null);
 const status = shallowRef("Ready");
 const notesStatus = shallowRef("Load notes after selecting a vault.");
 const result = shallowRef("");
@@ -102,7 +106,9 @@ watch(config, () => {
   localStorage.setItem("aicli.zettel.vaultPath", config.vaultPath);
   localStorage.setItem("aicli.zettel.activePath", config.activePath);
   localStorage.setItem("aicli.zettel.rootFolder", config.rootFolder);
+  localStorage.setItem("aicli.zettel.inboxFolder", config.inboxFolder);
   localStorage.setItem("aicli.zettel.dataFolder", config.dataFolder);
+  localStorage.setItem("aicli.zettel.shorthandPromptPath", config.shorthandPromptPath);
   localStorage.setItem("aicli.zettel.providerId", config.providerId);
   localStorage.setItem("aicli.zettel.candidateProviderId", config.candidateProviderId);
   localStorage.setItem("aicli.zettel.mergeProviderId", config.mergeProviderId);
@@ -138,7 +144,9 @@ function basePayload() {
   return {
     vault_path: config.vaultPath,
     root_folder: config.rootFolder,
+    inbox_folder: config.inboxFolder,
     data_folder: config.dataFolder,
+    shorthand_prompt_path: config.shorthandPromptPath,
     provider_id: config.candidateProviderId,
     candidate_provider_id: config.candidateProviderId,
     merge_provider_id: config.mergeProviderId,
@@ -244,6 +252,16 @@ async function rollback() {
   });
 }
 
+async function runInboxMerge() {
+  await runWorkflow("Running inbox merge", "/api/workflows/zettel/inbox-merge", basePayload(), (output) => {
+    const response = output as InboxMergeReport;
+    inboxReport.value = response;
+    rollbackJobID.value = response.run_id || "";
+    status.value = `Inbox merge completed: ${response.processed_count} processed, ${response.pending_count} pending, ${response.failed_count} failed`;
+    result.value = stringify(output);
+  });
+}
+
 async function runWorkflow(label: string, endpoint: string, payload: Record<string, unknown>, onDone: (output: unknown) => void) {
   await run(label, async () => {
     const response = await api<{ job?: Job }>(endpoint, {
@@ -331,8 +349,16 @@ function formatRanges(ranges: LineRange[]) {
             <input id="zettel-root" v-model="config.rootFolder" type="text">
           </div>
           <div class="field">
+            <label for="zettel-inbox">Inbox/source folder</label>
+            <input id="zettel-inbox" v-model="config.inboxFolder" type="text">
+          </div>
+          <div class="field">
             <label for="zettel-data">Data folder</label>
             <input id="zettel-data" v-model="config.dataFolder" type="text">
+          </div>
+          <div class="field">
+            <label for="zettel-shorthand-prompt">Shorthand prompt path</label>
+            <input id="zettel-shorthand-prompt" v-model="config.shorthandPromptPath" type="text">
           </div>
         </div>
       </div>
@@ -361,6 +387,7 @@ function formatRanges(ranges: LineRange[]) {
       <button type="button" :disabled="busy" @click="suggest">Suggest</button>
       <button type="button" :disabled="!canPreview" @click="previewMerge">Preview Merge</button>
       <button type="button" class="mod-cta" :disabled="!canApply" @click="applyMerge">Apply</button>
+      <button type="button" class="mod-cta" :disabled="busy" @click="runInboxMerge">Run Inbox Merge</button>
       <button type="button" :disabled="busy" @click="rollback">Rollback</button>
     </div>
 
@@ -410,6 +437,8 @@ function formatRanges(ranges: LineRange[]) {
         <p v-else class="muted">Select candidates and run Preview Merge. Nothing is written until Apply succeeds.</p>
       </div>
     </div>
+
+    <ZettelInboxReport :report="inboxReport" />
 
     <div class="field">
       <h3>Raw result</h3>

@@ -18,6 +18,8 @@ const (
 	DefaultMaxMergeInputChars   = 120000
 	DefaultMaxMergeRetries      = 2
 	DefaultEmbeddingBatchSize   = 64
+	DefaultInboxFolder          = "inbox-to-merge"
+	DefaultShorthandPromptPath  = "example_prompts.md"
 )
 
 type Options struct {
@@ -42,6 +44,8 @@ type Options struct {
 	MaxMergeInputChars   int     `json:"max_merge_input_chars"`
 	MaxMergeRetries      int     `json:"max_merge_retries"`
 	EmbeddingBatchSize   int     `json:"embedding_batch_size"`
+	InboxFolder          string  `json:"inbox_folder"`
+	ShorthandPromptPath  string  `json:"shorthand_prompt_path"`
 }
 
 type IndexRequest struct {
@@ -110,6 +114,57 @@ type RollbackRequest struct {
 
 type RollbackResponse struct {
 	JobID string `json:"job_id"`
+}
+
+type InboxMergeRequest struct {
+	Options
+}
+
+type InboxMergeResponse struct {
+	RunID          string              `json:"run_id"`
+	ArchivePath    string              `json:"archive_path"`
+	Processed      []InboxSourceResult `json:"processed"`
+	Pending        []InboxSourceResult `json:"pending"`
+	Failed         []InboxSourceResult `json:"failed"`
+	ProcessedCount int                 `json:"processed_count"`
+	PendingCount   int                 `json:"pending_count"`
+	FailedCount    int                 `json:"failed_count"`
+}
+
+type InboxSourceResult struct {
+	SourcePath       string                 `json:"source_path"`
+	Status           string                 `json:"status"`
+	ProcessedPath    string                 `json:"processed_path,omitempty"`
+	DestinationPaths []string               `json:"destination_paths,omitempty"`
+	MergedCount      int                    `json:"merged_count"`
+	DedupedCount     int                    `json:"deduped_count"`
+	PendingCount     int                    `json:"pending_count"`
+	Reason           string                 `json:"reason,omitempty"`
+	Claims           []InboxClaim           `json:"claims,omitempty"`
+	Ledger           []InboxClaimLedger     `json:"ledger,omitempty"`
+	Diffs            []InboxDestinationDiff `json:"diffs,omitempty"`
+	Validation       MergeJudge             `json:"validation,omitempty"`
+}
+
+type InboxClaim struct {
+	ID     string `json:"id"`
+	Text   string `json:"text"`
+	Source string `json:"source,omitempty"`
+}
+
+type InboxClaimLedger struct {
+	ClaimID         string `json:"claim_id"`
+	Status          string `json:"status"`
+	DestinationPath string `json:"destination_path,omitempty"`
+	Evidence        string `json:"evidence,omitempty"`
+	Reason          string `json:"reason,omitempty"`
+}
+
+type InboxDestinationDiff struct {
+	Path   string `json:"path"`
+	Before string `json:"before,omitempty"`
+	After  string `json:"after,omitempty"`
+	Diff   string `json:"diff"`
 }
 
 type ListNotesRequest struct {

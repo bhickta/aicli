@@ -118,6 +118,18 @@ Default safety behavior:
 
 Use `Rollback` from the same tab to restore the latest applied merge, or enter a job id before rolling back.
 
+### Autonomous inbox merge
+
+For no-intervention source-note ingestion, put new atomic notes under the configured inbox folder, for example:
+
+```text
+<vault>/inbox-to-merge/**/*.md
+```
+
+Then open the `Zettel` tab and click `Run Inbox Merge`. AICLI treats inbox notes as source notes and destination notes as the configured zettelkasten folder, excluding the inbox and `.aicli-zettel-merge`. For each source note it extracts English claims, finds destination notes through embeddings plus judge model, rewrites affected destination notes into the `example_prompts.md` extreme-shorthand style, and moves fully processed sources into `_processed/YYYY-MM-DD/`.
+
+The run report shows source note -> destination note mappings, merged/deduped/pending claim counts, claim ledger entries, and diffs. If any claim is unsafe, the source note remains unchanged and appears as pending. Rollback with the inbox run id restores rewritten destination notes and moves processed source notes back.
+
 ### Optional Obsidian workflow
 
 The plugin in `obsidian/aicli-zettel-merge` is only a thin UI over the same `aicli` APIs. Use it when you want current-note workflow inside Obsidian:

@@ -40,8 +40,16 @@ func normalizeOptions(options Options) Options {
 	if options.EmbeddingBatchSize <= 0 {
 		options.EmbeddingBatchSize = DefaultEmbeddingBatchSize
 	}
+	if strings.TrimSpace(options.InboxFolder) == "" {
+		options.InboxFolder = DefaultInboxFolder
+	}
+	if strings.TrimSpace(options.ShorthandPromptPath) == "" {
+		options.ShorthandPromptPath = DefaultShorthandPromptPath
+	}
 	options.RootFolder = strings.Trim(strings.TrimSpace(options.RootFolder), "/")
 	options.DataFolder = strings.Trim(strings.TrimSpace(options.DataFolder), "/")
+	options.InboxFolder = strings.Trim(strings.TrimSpace(options.InboxFolder), "/")
+	options.ShorthandPromptPath = strings.TrimSpace(options.ShorthandPromptPath)
 	options.VaultPath = strings.TrimSpace(options.VaultPath)
 	options.ProviderID = strings.TrimSpace(options.ProviderID)
 	options.CandidateProviderID = strings.TrimSpace(options.CandidateProviderID)

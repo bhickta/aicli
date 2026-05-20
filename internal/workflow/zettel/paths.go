@@ -116,14 +116,54 @@ func (v vault) scanNotes(options Options) ([]string, error) {
 	return notes, nil
 }
 
+func (v vault) scanInboxNotes(options Options) ([]string, error) {
+	root, err := v.abs(options.InboxFolder)
+	if err != nil {
+		return nil, err
+	}
+	var notes []string
+	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			name := entry.Name()
+			if strings.HasPrefix(name, ".") && path != root {
+				return filepath.SkipDir
+			}
+			if name == "_processed" || name == "_pending" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !isMarkdown(path) {
+			return nil
+		}
+		rel, err := v.rel(path)
+		if err != nil {
+			return err
+		}
+		notes = append(notes, rel)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scan inbox notes: %w", err)
+	}
+	return notes, nil
+}
+
 func isInScope(rel string, options Options) bool {
 	clean := strings.Trim(filepath.ToSlash(filepath.Clean(rel)), "/")
 	root := strings.Trim(filepath.ToSlash(filepath.Clean(options.RootFolder)), "/")
 	data := strings.Trim(filepath.ToSlash(filepath.Clean(options.DataFolder)), "/")
+	inbox := strings.Trim(filepath.ToSlash(filepath.Clean(options.InboxFolder)), "/")
 	if root == "." || root == "" {
 		return false
 	}
 	if data != "." && data != "" && (clean == data || strings.HasPrefix(clean, data+"/")) {
+		return false
+	}
+	if inbox != "." && inbox != "" && (clean == inbox || strings.HasPrefix(clean, inbox+"/")) {
 		return false
 	}
 	return clean == root || strings.HasPrefix(clean, root+"/")

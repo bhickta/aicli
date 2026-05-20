@@ -124,6 +124,15 @@ func (s archiveStore) MarkApplied(jobID string) error {
 }
 
 func (s archiveStore) Rollback(jobID string) (string, error) {
+	if jobID != "" {
+		restored, err := s.rollbackInboxRun(jobID)
+		if err == nil {
+			return restored, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+	}
 	if jobID == "" {
 		var err error
 		jobID, err = s.latestApplied()

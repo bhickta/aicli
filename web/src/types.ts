@@ -116,6 +116,52 @@ export interface WorkflowDefinition {
   buildPayload: (values: Record<string, unknown>) => Record<string, unknown>;
 }
 
+export interface InboxClaim {
+  id: string;
+  text: string;
+  source?: string;
+}
+
+export interface InboxClaimLedger {
+  claim_id: string;
+  status: string;
+  destination_path?: string;
+  evidence?: string;
+  reason?: string;
+}
+
+export interface InboxDestinationDiff {
+  path: string;
+  before?: string;
+  after?: string;
+  diff: string;
+}
+
+export interface InboxSourceResult {
+  source_path: string;
+  status: string;
+  processed_path?: string;
+  destination_paths?: string[];
+  merged_count: number;
+  deduped_count: number;
+  pending_count: number;
+  reason?: string;
+  claims?: InboxClaim[];
+  ledger?: InboxClaimLedger[];
+  diffs?: InboxDestinationDiff[];
+}
+
+export interface InboxMergeReport {
+  run_id: string;
+  archive_path: string;
+  processed?: InboxSourceResult[];
+  pending?: InboxSourceResult[];
+  failed?: InboxSourceResult[];
+  processed_count: number;
+  pending_count: number;
+  failed_count: number;
+}
+
 export interface BrowserEntry {
   name: string;
   path: string;
