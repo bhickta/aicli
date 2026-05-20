@@ -2,8 +2,6 @@ package codexapi
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/bhickta/aicli/internal/server/workflowapi/core"
@@ -25,22 +23,19 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) runCodex(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := core.DecodeJSON[struct {
 		ProviderID string `json:"provider_id"`
 		codex.Request
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
+	}](w, r)
+	if !ok {
 		return
 	}
-	p, ok := h.runtime.ProviderFor(req.ProviderID)
+	p, ok := h.runtime.ProviderOrError(w, req.ProviderID)
 	if !ok {
-		core.WriteError(w, http.StatusNotFound, errors.New("provider not found"))
 		return
 	}
 
-	job := core.NewJob("codex", req.Task)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	h.runtime.StartJob(w, r, "codex", req.Task, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress("running Codex coding workflow", 2, 4)
 		result, err := codex.New(p).Run(ctx, req.Request)
 		progress("saving Codex response", 3, 4)
@@ -49,14 +44,12 @@ func (h *Handler) runCodex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) runCodexCLI(w http.ResponseWriter, r *http.Request) {
-	var req codex.CLIRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
+	req, ok := core.DecodeJSON[codex.CLIRequest](w, r)
+	if !ok {
 		return
 	}
 
-	job := core.NewJob("codex-cli", req.Task)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	h.runtime.StartJob(w, r, "codex-cli", req.Task, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress("running Codex CLI with local ChatGPT auth", 2, 4)
 		result, err := codex.NewCLI(h.runtime.Settings().Tools, tool.ExecRunner{}).Run(ctx, req)
 		progress("saving Codex CLI response", 3, 4)

@@ -2,7 +2,6 @@ package zettelapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -29,9 +28,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
-	var req zettel.IndexRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
+	req, ok := core.DecodeJSON[zettel.IndexRequest](w, r)
+	if !ok {
 		return
 	}
 	service, err := h.service(req.Options)
@@ -39,16 +37,14 @@ func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusNotFound, err)
 		return
 	}
-	job := core.NewJob("zettel-index", req.VaultPath)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	h.runtime.StartJob(w, r, "zettel-index", req.VaultPath, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		return service.Index(ctx, req, progress)
 	})
 }
 
 func (h *Handler) suggest(w http.ResponseWriter, r *http.Request) {
-	var req zettel.SuggestRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
+	req, ok := core.DecodeJSON[zettel.SuggestRequest](w, r)
+	if !ok {
 		return
 	}
 	service, err := h.service(req.Options)
@@ -56,16 +52,14 @@ func (h *Handler) suggest(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusNotFound, err)
 		return
 	}
-	job := core.NewJob("zettel-suggest", req.ActivePath)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	h.runtime.StartJob(w, r, "zettel-suggest", req.ActivePath, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		return service.Suggest(ctx, req, progress)
 	})
 }
 
 func (h *Handler) propose(w http.ResponseWriter, r *http.Request) {
-	var req zettel.ProposeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
+	req, ok := core.DecodeJSON[zettel.ProposeRequest](w, r)
+	if !ok {
 		return
 	}
 	service, err := h.service(req.Options)
@@ -73,16 +67,14 @@ func (h *Handler) propose(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusNotFound, err)
 		return
 	}
-	job := core.NewJob("zettel-propose", req.ActivePath)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	h.runtime.StartJob(w, r, "zettel-propose", req.ActivePath, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		return service.Propose(ctx, req, progress)
 	})
 }
 
 func (h *Handler) apply(w http.ResponseWriter, r *http.Request) {
-	var req zettel.ApplyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
+	req, ok := core.DecodeJSON[zettel.ApplyRequest](w, r)
+	if !ok {
 		return
 	}
 	service, err := h.service(req.Options)
@@ -90,16 +82,14 @@ func (h *Handler) apply(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusNotFound, err)
 		return
 	}
-	job := core.NewJob("zettel-apply", req.Proposal.ActivePath)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	h.runtime.StartJob(w, r, "zettel-apply", req.Proposal.ActivePath, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		return service.Apply(ctx, req, progress)
 	})
 }
 
 func (h *Handler) rollback(w http.ResponseWriter, r *http.Request) {
-	var req zettel.RollbackRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
+	req, ok := core.DecodeJSON[zettel.RollbackRequest](w, r)
+	if !ok {
 		return
 	}
 	service, err := h.service(req.Options)
@@ -107,8 +97,7 @@ func (h *Handler) rollback(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusNotFound, err)
 		return
 	}
-	job := core.NewJob("zettel-rollback", req.JobID)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	h.runtime.StartJob(w, r, "zettel-rollback", req.JobID, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		return service.Rollback(ctx, req, progress)
 	})
 }

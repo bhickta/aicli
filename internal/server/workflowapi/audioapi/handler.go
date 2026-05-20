@@ -2,8 +2,6 @@ package audioapi
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/bhickta/aicli/internal/server/workflowapi/core"
@@ -25,13 +23,11 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) runAudioTranscribe(w http.ResponseWriter, r *http.Request) {
-	var req audio.TranscribeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
+	req, ok := core.DecodeJSON[audio.TranscribeRequest](w, r)
+	if !ok {
 		return
 	}
-	job := core.NewJob("audio-transcribe", req.Path)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	h.runtime.StartJob(w, r, "audio-transcribe", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress("transcribing audio", 2, 4)
 		result, err := audio.New(h.runtime.Settings().Tools, tool.ExecRunner{}).Transcribe(ctx, req)
 		progress("saving transcript", 3, 4)
@@ -40,21 +36,18 @@ func (h *Handler) runAudioTranscribe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) runAudioAnalyze(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := core.DecodeJSON[struct {
 		ProviderID string `json:"provider_id"`
 		audio.AnalyzeRequest
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
-		return
-	}
-	p, ok := h.runtime.ProviderFor(req.ProviderID)
+	}](w, r)
 	if !ok {
-		core.WriteError(w, http.StatusNotFound, errors.New("provider not found"))
 		return
 	}
-	job := core.NewJob("audio-analyze", "")
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	p, ok := h.runtime.ProviderOrError(w, req.ProviderID)
+	if !ok {
+		return
+	}
+	h.runtime.StartJob(w, r, "audio-analyze", "", func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress("analyzing audio text", 2, 4)
 		result, err := audio.New(h.runtime.Settings().Tools, tool.ExecRunner{}, p).Analyze(ctx, req.AnalyzeRequest)
 		progress("saving analysis", 3, 4)

@@ -28,6 +28,10 @@ func (r *Runtime) StartWorkflow(w http.ResponseWriter, req *http.Request, job st
 	}()
 }
 
+func (r *Runtime) StartJob(w http.ResponseWriter, req *http.Request, jobType string, input string, run func(context.Context, ProgressFunc) (any, error)) {
+	r.StartWorkflow(w, req, NewJob(jobType, input), run)
+}
+
 func (r *Runtime) updateJobProgress(ctx context.Context, job *storage.Job, stage string, currentStep, totalSteps int) {
 	if totalSteps <= 0 {
 		totalSteps = job.TotalSteps

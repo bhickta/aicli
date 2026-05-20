@@ -2,8 +2,6 @@ package documentapi
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -28,21 +26,18 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) runOCR(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := core.DecodeJSON[struct {
 		ProviderID string `json:"provider_id"`
 		ocr.Request
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
-		return
-	}
-	p, ok := h.runtime.ProviderFor(req.ProviderID)
+	}](w, r)
 	if !ok {
-		core.WriteError(w, http.StatusNotFound, errors.New("provider not found"))
 		return
 	}
-	job := core.NewJob("ocr", req.Path)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	p, ok := h.runtime.ProviderOrError(w, req.ProviderID)
+	if !ok {
+		return
+	}
+	h.runtime.StartJob(w, r, "ocr", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress("extracting images from ZIP", 2, 5)
 		progress("OCR pages in parallel", 3, 5)
 		result, err := ocr.New(p).Run(ctx, req.Request)
@@ -52,21 +47,18 @@ func (h *Handler) runOCR(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) runPDFOCR(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := core.DecodeJSON[struct {
 		ProviderID string `json:"provider_id"`
 		ocr.Request
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
-		return
-	}
-	p, ok := h.runtime.ProviderFor(req.ProviderID)
+	}](w, r)
 	if !ok {
-		core.WriteError(w, http.StatusNotFound, errors.New("provider not found"))
 		return
 	}
-	job := core.NewJob("pdf-ocr", req.Path)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	p, ok := h.runtime.ProviderOrError(w, req.ProviderID)
+	if !ok {
+		return
+	}
+	h.runtime.StartJob(w, r, "pdf-ocr", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress(fmt.Sprintf("rendering PDF pages with %d worker(s)", req.RenderWorkers), 2, 5)
 		result, err := ocr.New(
 			p,
@@ -79,21 +71,18 @@ func (h *Handler) runPDFOCR(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := core.DecodeJSON[struct {
 		ProviderID string `json:"provider_id"`
 		analyze.Request
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
-		return
-	}
-	p, ok := h.runtime.ProviderFor(req.ProviderID)
+	}](w, r)
 	if !ok {
-		core.WriteError(w, http.StatusNotFound, errors.New("provider not found"))
 		return
 	}
-	job := core.NewJob("analyze", req.Path)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	p, ok := h.runtime.ProviderOrError(w, req.ProviderID)
+	if !ok {
+		return
+	}
+	h.runtime.StartJob(w, r, "analyze", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress("rendering and reading PDF", 2, 5)
 		progress("analyzing OCR text", 3, 5)
 		result, err := analyze.New(h.runtime.Settings().Tools, tool.ExecRunner{}, p).Run(ctx, req.Request)

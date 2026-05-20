@@ -2,8 +2,6 @@ package videoapi
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -30,13 +28,11 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) runVideoInfo(w http.ResponseWriter, r *http.Request) {
-	var req video.InfoRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
+	req, ok := core.DecodeJSON[video.InfoRequest](w, r)
+	if !ok {
 		return
 	}
-	job := core.NewJob("video-info", req.Path)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	h.runtime.StartJob(w, r, "video-info", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress("probing media metadata", 2, 4)
 		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}).Info(ctx, req)
 		progress("saving result", 3, 4)
@@ -45,13 +41,11 @@ func (h *Handler) runVideoInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) runVideoCompress(w http.ResponseWriter, r *http.Request) {
-	var req video.CompressRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
+	req, ok := core.DecodeJSON[video.CompressRequest](w, r)
+	if !ok {
 		return
 	}
-	job := core.NewJob("video-compress", req.Path)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	h.runtime.StartJob(w, r, "video-compress", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress("compressing video", 2, 4)
 		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}).Compress(ctx, req)
 		progress("saving result", 3, 4)
@@ -60,13 +54,11 @@ func (h *Handler) runVideoCompress(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) runVideoCourse(w http.ResponseWriter, r *http.Request) {
-	var req video.CourseRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
+	req, ok := core.DecodeJSON[video.CourseRequest](w, r)
+	if !ok {
 		return
 	}
-	job := core.NewJob("video-course", req.Path)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	h.runtime.StartJob(w, r, "video-course", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress(fmt.Sprintf("processing course with Whisper model %s on %s using up to %d worker(s)", displayValue(req.WhisperModel, "large-v3"), displayValue(req.WhisperDevice, "cuda"), video.EffectiveCourseWorkers(req.Workers, 6)), 2, 5)
 		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}).CourseWithProgress(ctx, req, progress)
 		return result, err
@@ -81,13 +73,11 @@ func displayValue(value string, fallback string) string {
 }
 
 func (h *Handler) runVideoMetadataBackup(w http.ResponseWriter, r *http.Request) {
-	var req video.MetadataRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
+	req, ok := core.DecodeJSON[video.MetadataRequest](w, r)
+	if !ok {
 		return
 	}
-	job := core.NewJob("video-metadata-backup", req.Path)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	h.runtime.StartJob(w, r, "video-metadata-backup", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress("backing up metadata", 2, 4)
 		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}).BackupMetadata(ctx, req)
 		progress("saving result", 3, 4)
@@ -96,13 +86,11 @@ func (h *Handler) runVideoMetadataBackup(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *Handler) runVideoMetadataRestore(w http.ResponseWriter, r *http.Request) {
-	var req video.MetadataRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
+	req, ok := core.DecodeJSON[video.MetadataRequest](w, r)
+	if !ok {
 		return
 	}
-	job := core.NewJob("video-metadata-restore", req.Path)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	h.runtime.StartJob(w, r, "video-metadata-restore", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress("restoring metadata", 2, 4)
 		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}).RestoreMetadata(ctx, req)
 		progress("saving result", 3, 4)
@@ -111,21 +99,18 @@ func (h *Handler) runVideoMetadataRestore(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) runVideoGenerate(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := core.DecodeJSON[struct {
 		ProviderID string `json:"provider_id"`
 		video.LLMRequest
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
-		return
-	}
-	p, ok := h.runtime.ProviderFor(req.ProviderID)
+	}](w, r)
 	if !ok {
-		core.WriteError(w, http.StatusNotFound, errors.New("provider not found"))
 		return
 	}
-	job := core.NewJob("video-"+req.Mode, req.Title)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	p, ok := h.runtime.ProviderOrError(w, req.ProviderID)
+	if !ok {
+		return
+	}
+	h.runtime.StartJob(w, r, "video-"+req.Mode, req.Title, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress("generating video workflow text", 2, 4)
 		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}, p).Generate(ctx, req.LLMRequest)
 		progress("saving result", 3, 4)

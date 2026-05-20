@@ -2,8 +2,6 @@ package studyapi
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/bhickta/aicli/internal/server/workflowapi/core"
@@ -23,23 +21,20 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) runRecall(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := core.DecodeJSON[struct {
 		ProviderID string `json:"provider_id"`
 		Model      string `json:"model"`
 		Notes      string `json:"notes"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		core.WriteError(w, http.StatusBadRequest, err)
+	}](w, r)
+	if !ok {
 		return
 	}
-	p, ok := h.runtime.ProviderFor(req.ProviderID)
+	p, ok := h.runtime.ProviderOrError(w, req.ProviderID)
 	if !ok {
-		core.WriteError(w, http.StatusNotFound, errors.New("provider not found"))
 		return
 	}
 
-	job := core.NewJob("recall", req.Notes)
-	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	h.runtime.StartJob(w, r, "recall", req.Notes, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress("generating recall triggers", 2, 4)
 		result, err := recall.New(p).Generate(ctx, recall.Request{Model: req.Model, Notes: req.Notes})
 		progress("saving triggers", 3, 4)
