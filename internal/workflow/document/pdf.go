@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/bhickta/aicli/internal/config"
+	"github.com/bhickta/aicli/internal/systemresources"
 	"github.com/bhickta/aicli/internal/tool"
 )
 
@@ -152,7 +153,7 @@ func normalizeWorkers(workers int, jobs int) int {
 		return 1
 	}
 	if workers < 1 {
-		return 1
+		return systemresources.DefaultPDFRenderWorkers(jobs, systemresources.Snapshot{})
 	}
 	if workers > jobs {
 		return jobs

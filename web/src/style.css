@@ -125,6 +125,54 @@ header {
   margin-bottom: 24px;
 }
 
+.header-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.system-usage {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 8px;
+  min-width: min(560px, 60vw);
+}
+
+.usage-item {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid #2b313b;
+  border-radius: 6px;
+  background: #161a21;
+}
+
+.usage-item span,
+.usage-item small {
+  color: #9aa4b2;
+  font-size: 12px;
+}
+
+.usage-item strong {
+  font-size: 15px;
+}
+
+.usage-bar {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #0d1015;
+}
+
+.usage-bar div {
+  height: 100%;
+  border-radius: inherit;
+  background: #6ea8fe;
+  transition: width 180ms ease;
+}
+
 h1 {
   margin: 0;
   font-size: 24px;
@@ -259,6 +307,10 @@ h3 {
   padding: 8px 10px;
   background: #10141b;
   color: #cbd5e1;
+}
+
+.status-line.compact {
+  margin: 0;
 }
 
 .progress {
@@ -449,6 +501,18 @@ output {
     align-items: flex-start;
     flex-direction: column;
     margin-bottom: 16px;
+  }
+
+  .header-status {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .system-usage {
+    grid-template-columns: 1fr;
+    min-width: 0;
+    width: 100%;
   }
 
   .panel {

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/bhickta/aicli/internal/workflow/whisper"
@@ -55,7 +56,7 @@ func (s *Service) prepareTranscriptFiles(ctx context.Context, videoPath, cacheDi
 	return cacheSRT, cacheText, didTranscribe, nil
 }
 
-func (s *Service) prepareMissingTranscriptsWithFasterWhisper(ctx context.Context, files []string, cacheDir string, req CourseRequest) (map[string]bool, bool, error) {
+func (s *Service) prepareMissingTranscriptsWithFasterWhisper(ctx context.Context, files []string, cacheDir string, req CourseRequest, progress CourseProgressFunc, totalSteps int) (map[string]bool, bool, error) {
 	transcribed := map[string]bool{}
 	if !whisper.CanRunFasterBatch(s.runner) {
 		return transcribed, false, nil
@@ -93,7 +94,12 @@ func (s *Service) prepareMissingTranscriptsWithFasterWhisper(ctx context.Context
 	if model == "" {
 		model = "large-v3"
 	}
-	out, err := whisper.RunFasterBatch(ctx, s.runner, whisper.FasterBatchRequest{
+	var completed atomic.Int64
+	missingByBase := make(map[string]string, len(missing))
+	for _, file := range missing {
+		missingByBase[filepath.Base(file)] = file
+	}
+	out, err := whisper.RunFasterBatchStreaming(ctx, s.runner, whisper.FasterBatchRequest{
 		AudioPaths: missing,
 		OutputDir:  cacheDir,
 		Model:      model,
@@ -101,6 +107,13 @@ func (s *Service) prepareMissingTranscriptsWithFasterWhisper(ctx context.Context
 		Workers:    normalizedCourseWorkers(courseTranscriptWorkers(req), len(missing)),
 		BatchSize:  24,
 		BeamSize:   1,
+	}, func(line string) {
+		file := transcribedLinePath(line, missingByBase)
+		if file == "" {
+			return
+		}
+		current := int(completed.Add(1))
+		reportCourseProgress(progress, fmt.Sprintf("transcribed %d/%d video(s): %s", current, len(missing), filepath.Base(file)), current, totalSteps)
 	})
 	if err != nil {
 		if whisper.FasterBatchUnavailable(out, err) {
@@ -121,6 +134,21 @@ func (s *Service) prepareMissingTranscriptsWithFasterWhisper(ctx context.Context
 		transcribed[file] = true
 	}
 	return transcribed, true, nil
+}
+
+func transcribedLinePath(line string, byBase map[string]string) string {
+	const prefix = "transcribed "
+	if !strings.HasPrefix(line, prefix) {
+		return ""
+	}
+	raw := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+	if raw == "" {
+		return ""
+	}
+	if file, ok := byBase[filepath.Base(raw)]; ok {
+		return file
+	}
+	return raw
 }
 
 func transcriptPaths(videoPath, cacheDir string) (string, string, string) {

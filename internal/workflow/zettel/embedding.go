@@ -9,9 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/bhickta/aicli/internal/provider"
+	"github.com/bhickta/aicli/internal/systemresources"
 )
 
 type embeddingCache struct {
@@ -31,6 +33,15 @@ type scoredCandidate struct {
 	Path       string
 	Content    string
 	Similarity float64
+}
+
+type preparedEmbeddingSource struct {
+	index  int
+	path   string
+	source string
+	hash   string
+	reused bool
+	err    error
 }
 
 type embeddingIndex struct {
@@ -53,10 +64,16 @@ func (idx *embeddingIndex) Build(ctx context.Context, progress ProgressFunc) (In
 		return IndexResponse{}, err
 	}
 	resp := IndexResponse{Scanned: len(notes)}
+	prepared, reused, err := idx.prepareEmbeddingSources(ctx, notes, cache, progress)
+	if err != nil {
+		return IndexResponse{}, err
+	}
+	resp.Reused = reused
 	batch := make([]string, 0, idx.options.EmbeddingBatchSize)
 	batchPaths := make([]string, 0, idx.options.EmbeddingBatchSize)
 	batchHashes := make([]string, 0, idx.options.EmbeddingBatchSize)
-	flush := func() error {
+	flushes := 0
+	flush := func(forceSave bool) error {
 		if len(batch) == 0 {
 			return nil
 		}
@@ -75,36 +92,29 @@ func (idx *embeddingIndex) Build(ctx context.Context, progress ProgressFunc) (In
 		batch = batch[:0]
 		batchPaths = batchPaths[:0]
 		batchHashes = batchHashes[:0]
-		return idx.save(cache)
+		flushes++
+		if forceSave || flushes%4 == 0 {
+			return idx.save(cache)
+		}
+		return nil
 	}
-	for i, rel := range notes {
+	for i, item := range prepared {
 		if progress != nil && i%250 == 0 {
 			progress(fmt.Sprintf("indexing zettelkasten embeddings (%d/%d)", i, len(notes)), 2, 4)
 		}
-		abs, err := idx.vault.notePath(rel, idx.options)
-		if err != nil {
-			return IndexResponse{}, err
-		}
-		content, err := os.ReadFile(abs)
-		if err != nil {
-			return IndexResponse{}, fmt.Errorf("read note %s: %w", rel, err)
-		}
-		source := compactNote(rel, string(content), idx.options.EmbeddingSourceChars)
-		hash := hashText(idx.options.EmbeddingModel + "\n" + source)
-		if item, ok := cache.Items[rel]; ok && item.Hash == hash && len(item.Embedding) > 0 {
-			resp.Reused++
+		if item.reused {
 			continue
 		}
-		batch = append(batch, source)
-		batchPaths = append(batchPaths, rel)
-		batchHashes = append(batchHashes, hash)
+		batch = append(batch, item.source)
+		batchPaths = append(batchPaths, item.path)
+		batchHashes = append(batchHashes, item.hash)
 		if len(batch) >= idx.options.EmbeddingBatchSize {
-			if err := flush(); err != nil {
+			if err := flush(false); err != nil {
 				return IndexResponse{}, err
 			}
 		}
 	}
-	if err := flush(); err != nil {
+	if err := flush(true); err != nil {
 		return IndexResponse{}, err
 	}
 	cache.FullIndex = map[string]any{
@@ -117,6 +127,89 @@ func (idx *embeddingIndex) Build(ctx context.Context, progress ProgressFunc) (In
 		return IndexResponse{}, err
 	}
 	return resp, nil
+}
+
+func (idx *embeddingIndex) prepareEmbeddingSources(ctx context.Context, notes []string, cache embeddingCache, progress ProgressFunc) ([]preparedEmbeddingSource, int, error) {
+	workers := systemresources.DefaultZettelReadWorkers(systemresources.Snapshot{})
+	if workers > len(notes) {
+		workers = len(notes)
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	jobs := make(chan int)
+	results := make(chan preparedEmbeddingSource, len(notes))
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for index := range jobs {
+				select {
+				case <-ctx.Done():
+					results <- preparedEmbeddingSource{index: index, err: ctx.Err()}
+					continue
+				default:
+				}
+				results <- idx.prepareEmbeddingSource(notes[index], index, cache)
+			}
+		}()
+	}
+	go func() {
+		defer close(jobs)
+		for i := range notes {
+			select {
+			case <-ctx.Done():
+				return
+			case jobs <- i:
+			}
+		}
+	}()
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	prepared := make([]preparedEmbeddingSource, len(notes))
+	reused := 0
+	seen := 0
+	for result := range results {
+		if result.err != nil {
+			return nil, 0, result.err
+		}
+		prepared[result.index] = result
+		if result.reused {
+			reused++
+		}
+		seen++
+		if progress != nil && seen%500 == 0 {
+			progress(fmt.Sprintf("reading zettelkasten notes (%d/%d)", seen, len(notes)), 1, 4)
+		}
+	}
+	if seen != len(notes) {
+		if err := ctx.Err(); err != nil {
+			return nil, 0, err
+		}
+		return nil, 0, errors.New("zettel index stopped before all notes were read")
+	}
+	return prepared, reused, nil
+}
+
+func (idx *embeddingIndex) prepareEmbeddingSource(rel string, index int, cache embeddingCache) preparedEmbeddingSource {
+	abs, err := idx.vault.notePath(rel, idx.options)
+	if err != nil {
+		return preparedEmbeddingSource{index: index, err: err}
+	}
+	content, err := os.ReadFile(abs)
+	if err != nil {
+		return preparedEmbeddingSource{index: index, err: fmt.Errorf("read note %s: %w", rel, err)}
+	}
+	source := compactNote(rel, string(content), idx.options.EmbeddingSourceChars)
+	hash := hashText(idx.options.EmbeddingModel + "\n" + source)
+	if item, ok := cache.Items[rel]; ok && item.Hash == hash && len(item.Embedding) > 0 {
+		return preparedEmbeddingSource{index: index, path: rel, reused: true}
+	}
+	return preparedEmbeddingSource{index: index, path: rel, source: source, hash: hash}
 }
 
 func (idx *embeddingIndex) Similar(ctx context.Context, activePath string, activeContent string) ([]scoredCandidate, error) {
@@ -133,25 +226,7 @@ func (idx *embeddingIndex) Similar(ctx context.Context, activePath string, activ
 		return nil, err
 	}
 	activeVector := activeVectors[0]
-	scored := make([]scoredCandidate, 0, len(cache.Items))
-	for path, item := range cache.Items {
-		if path == activePath || !isInScope(path, idx.options) || len(item.Embedding) == 0 {
-			continue
-		}
-		abs, err := idx.vault.notePath(path, idx.options)
-		if err != nil {
-			continue
-		}
-		content, err := os.ReadFile(abs)
-		if err != nil {
-			continue
-		}
-		scored = append(scored, scoredCandidate{
-			Path:       path,
-			Content:    string(content),
-			Similarity: cosineSimilarity(activeVector, item.Embedding),
-		})
-	}
+	scored := idx.scoreCandidates(ctx, activePath, activeVector, cache)
 	sort.Slice(scored, func(i, j int) bool {
 		return scored[i].Similarity > scored[j].Similarity
 	})
@@ -159,6 +234,75 @@ func (idx *embeddingIndex) Similar(ctx context.Context, activePath string, activ
 		scored = scored[:idx.options.CandidateLimit]
 	}
 	return scored, nil
+}
+
+func (idx *embeddingIndex) scoreCandidates(ctx context.Context, activePath string, activeVector []float64, cache embeddingCache) []scoredCandidate {
+	type candidateItem struct {
+		path string
+		item embeddingItem
+	}
+	candidates := make([]candidateItem, 0, len(cache.Items))
+	for path, item := range cache.Items {
+		if path == activePath || !isInScope(path, idx.options) || len(item.Embedding) == 0 {
+			continue
+		}
+		candidates = append(candidates, candidateItem{path: path, item: item})
+	}
+	workers := systemresources.DefaultZettelReadWorkers(systemresources.Snapshot{})
+	if workers > len(candidates) {
+		workers = len(candidates)
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	jobs := make(chan candidateItem)
+	results := make(chan scoredCandidate, len(candidates))
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for candidate := range jobs {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+				abs, err := idx.vault.notePath(candidate.path, idx.options)
+				if err != nil {
+					continue
+				}
+				content, err := os.ReadFile(abs)
+				if err != nil {
+					continue
+				}
+				results <- scoredCandidate{
+					Path:       candidate.path,
+					Content:    string(content),
+					Similarity: cosineSimilarity(activeVector, candidate.item.Embedding),
+				}
+			}
+		}()
+	}
+	go func() {
+		defer close(jobs)
+		for _, candidate := range candidates {
+			select {
+			case <-ctx.Done():
+				return
+			case jobs <- candidate:
+			}
+		}
+	}()
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	scored := make([]scoredCandidate, 0, len(candidates))
+	for item := range results {
+		scored = append(scored, item)
+	}
+	return scored
 }
 
 func (idx *embeddingIndex) load() (embeddingCache, error) {

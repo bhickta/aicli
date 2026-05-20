@@ -265,17 +265,17 @@ func TestCourseWithProgressReportsPerVideoCompletion(t *testing.T) {
 	if len(events) < 4 {
 		t.Fatalf("progress events = %#v, want at least 4 events", events)
 	}
-	if events[0].current != 0 || events[0].total != 3 {
-		t.Fatalf("first event = %#v, want 0/3", events[0])
+	if events[0].current != 0 || events[0].total != 5 {
+		t.Fatalf("first event = %#v, want 0/5", events[0])
 	}
-	if events[1].current != 1 || events[1].total != 3 {
-		t.Fatalf("second event = %#v, want 1/3", events[1])
+	if events[1].current != 3 || events[1].total != 5 {
+		t.Fatalf("second event = %#v, want 3/5", events[1])
 	}
-	if events[2].current != 2 || events[2].total != 3 {
-		t.Fatalf("third event = %#v, want 2/3", events[2])
+	if events[2].current != 4 || events[2].total != 5 {
+		t.Fatalf("third event = %#v, want 4/5", events[2])
 	}
-	if !strings.Contains(events[len(events)-1].stage, "merging") || events[len(events)-1].current != 2 {
-		t.Fatalf("last event = %#v, want merge stage at 2/3", events[len(events)-1])
+	if !strings.Contains(events[len(events)-1].stage, "merging") || events[len(events)-1].current != 4 {
+		t.Fatalf("last event = %#v, want merge stage at 4/5", events[len(events)-1])
 	}
 }
 

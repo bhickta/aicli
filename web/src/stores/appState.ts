@@ -1,11 +1,12 @@
 import { computed, reactive } from "vue";
-import type { Model, Settings, ViewName } from "../types";
+import type { Model, Settings, SystemResources, ViewName } from "../types";
 import { workflowDefinitions } from "../workflows/definitions";
 
 export const appState = reactive({
   view: "chat" as ViewName,
   health: "checking",
   settings: null as Settings | null,
+  systemResources: null as SystemResources | null,
   models: {} as Record<string, Model[]>,
   browserPath: "",
   workflow: {

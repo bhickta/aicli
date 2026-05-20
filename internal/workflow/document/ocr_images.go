@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/bhickta/aicli/internal/provider"
+	"github.com/bhickta/aicli/internal/systemresources"
 )
 
 func OCRImages(
@@ -21,7 +22,7 @@ func OCRImages(
 	if vision == nil {
 		return nil, errors.New("provider is required")
 	}
-	workers = normalizeWorkers(workers, len(inputs))
+	workers = normalizeOCRWorkers(workers, len(inputs))
 	pages := make([]OCRPage, len(inputs))
 	jobs := make(chan int)
 	errCh := make(chan pageError, len(inputs))
@@ -51,6 +52,19 @@ func OCRImages(
 		return pages, pageErrors(failures)
 	}
 	return pages, nil
+}
+
+func normalizeOCRWorkers(workers int, jobs int) int {
+	if jobs <= 1 {
+		return 1
+	}
+	if workers < 1 {
+		return systemresources.DefaultOCRWorkers(jobs, systemresources.Snapshot{})
+	}
+	if workers > jobs {
+		return jobs
+	}
+	return workers
 }
 
 func ocrImageWorker(

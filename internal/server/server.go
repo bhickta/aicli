@@ -38,6 +38,7 @@ func New(deps Dependencies) http.Handler {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/health", s.health)
+	s.mux.HandleFunc("GET /api/system/resources", s.systemResources)
 	s.mux.HandleFunc("GET /api/settings", s.getSettings)
 	s.mux.HandleFunc("PUT /api/settings", s.updateSettings)
 	s.mux.HandleFunc("GET /api/providers", s.listProviders)

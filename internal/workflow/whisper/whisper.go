@@ -1,14 +1,18 @@
 package whisper
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/bhickta/aicli/internal/tool"
 )
@@ -61,6 +65,54 @@ func RunFasterBatch(ctx context.Context, runner tool.Runner, req FasterBatchRequ
 		}
 	}
 	return runner.CombinedOutput(ctx, command, fasterBatchArgs(req)...)
+}
+
+func RunFasterBatchStreaming(ctx context.Context, runner tool.Runner, req FasterBatchRequest, onLine func(string)) ([]byte, error) {
+	command := strings.TrimSpace(req.PythonCommand)
+	if command == "" {
+		command = "python3"
+	}
+	if _, ok := runner.(tool.ExecRunner); !ok {
+		return RunFasterBatch(ctx, runner, req)
+	}
+	if _, err := exec.LookPath(command); err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, command, fasterBatchArgs(req)...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	var out bytes.Buffer
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	consume := func(reader io.Reader) {
+		defer wg.Done()
+		scanner := bufio.NewScanner(reader)
+		for scanner.Scan() {
+			line := scanner.Text()
+			mu.Lock()
+			out.WriteString(line)
+			out.WriteByte('\n')
+			mu.Unlock()
+			if onLine != nil {
+				onLine(line)
+			}
+		}
+	}
+	wg.Add(2)
+	go consume(stdout)
+	go consume(stderr)
+	wg.Wait()
+	err = cmd.Wait()
+	return out.Bytes(), err
 }
 
 func FasterBatchUnavailable(out []byte, err error) bool {

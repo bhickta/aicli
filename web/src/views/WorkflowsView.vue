@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { shallowRef } from "vue";
+import { computed, shallowRef } from "vue";
 import ProviderModelControl from "../components/ProviderModelControl.vue";
 import DropZone from "../components/workflows/DropZone.vue";
 import FileBrowser from "../components/workflows/FileBrowser.vue";
@@ -17,6 +17,20 @@ const browserField = shallowRef<WorkflowFieldType | null>(null);
 const { values, providerModel, nonProviderFields, hasProviderModel, updateField, collectValues } = useWorkflowForm(activeWorkflow);
 const { status, result, markdownPreview, sourcePreview, progress, running, runWorkflow: runActiveWorkflow } = useWorkflowRunner();
 const { handleDrop } = useWorkflowDrop({ activeWorkflow, updateField, chooseWorkflow, status, result, sourcePreview });
+const resourceHint = computed(() => {
+  const defaults = appState.systemResources?.defaults;
+  if (!defaults) return "";
+  if (appState.workflow.category === "Video" && activeWorkflow.value?.id === "video-course") {
+    return `Auto workers: ${defaults.video_transcript_workers} transcribe, ${defaults.video_compression_workers} compress`;
+  }
+  if (appState.workflow.category === "Documents") {
+    return `Auto workers: ${defaults.pdf_render_workers} render, ${defaults.ocr_workers} OCR`;
+  }
+  if (appState.workflow.category === "Zettel") {
+    return `Auto workers: ${defaults.zettel_read_workers} note readers`;
+  }
+  return "";
+});
 
 function chooseWorkflow(id: string) {
   appState.workflow.workflowId = id;
@@ -84,6 +98,7 @@ function handleBrowserSelect(id: string, path: string) {
     </div>
     <DropZone @upload="handleDrop" />
     <p class="muted">Workflow controls are shown only for the selected workflow. Recall is included in the <strong>Study</strong> workflow set.</p>
+    <p v-if="resourceHint" class="status-line compact">{{ resourceHint }}</p>
     <div id="workflow-fields" class="grid">
       <ProviderModelControl
         v-if="hasProviderModel"

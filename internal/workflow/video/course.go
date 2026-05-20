@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/bhickta/aicli/internal/systemresources"
 )
 
 func (s *Service) Course(ctx context.Context, req CourseRequest) (CourseResponse, error) {
@@ -44,10 +46,12 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 	if len(files) == 0 {
 		return CourseResponse{}, errors.New("no readable video files found")
 	}
-	totalSteps := len(files) + 1
+	resources := systemresources.Collect(ctx)
+	req = withCourseWorkerDefaults(req, len(files), resources)
+	totalSteps := len(files)*2 + 1
 	reportCourseProgress(progress, courseStartStage(len(files), len(skipped)), 0, totalSteps)
 
-	batchTranscribed, batchAttempted, err := s.prepareMissingTranscriptsWithFasterWhisper(ctx, files, cacheDir, req)
+	batchTranscribed, batchAttempted, err := s.prepareMissingTranscriptsWithFasterWhisper(ctx, files, cacheDir, req, progress, totalSteps)
 	if err != nil {
 		return CourseResponse{}, err
 	}
@@ -62,8 +66,18 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 	if len(batchTranscribed) > 0 {
 		transcribed = mergeBatchTranscribedItems(items, transcribed, batchTranscribed)
 	}
-	reportCourseProgress(progress, "merging course video, subtitles, and transcript", len(files), totalSteps)
+	reportCourseProgress(progress, "merging course video, subtitles, and transcript", len(files)*2, totalSteps)
 	return s.exportCourseParts(ctx, targetDir, courseDir, items, transcribed, skipped, req.MaxMergeHours)
+}
+
+func withCourseWorkerDefaults(req CourseRequest, jobs int, resources systemresources.Snapshot) CourseRequest {
+	if req.TranscriptWorkers <= 0 && req.Workers <= 0 {
+		req.TranscriptWorkers = systemresources.DefaultTranscriptWorkers(req.WhisperModel, jobs, resources)
+	}
+	if req.CompressionWorkers <= 0 && req.Workers <= 0 {
+		req.CompressionWorkers = systemresources.DefaultCompressionWorkers(jobs, resources)
+	}
+	return req
 }
 
 func (s *Service) readableCourseFiles(ctx context.Context, files []string, skipUnreadable bool) ([]string, []string, error) {

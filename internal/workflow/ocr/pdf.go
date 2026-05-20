@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/bhickta/aicli/internal/systemresources"
 	"github.com/bhickta/aicli/internal/workflow/document"
 )
 
@@ -45,7 +46,7 @@ func normalizedWorkerCount(workers int, jobs int) int {
 		return 1
 	}
 	if workers < 1 {
-		return 1
+		return systemresources.DefaultOCRWorkers(jobs, systemresources.Snapshot{})
 	}
 	if workers > jobs {
 		return jobs

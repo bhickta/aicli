@@ -33,7 +33,7 @@ func (s *Service) prepareCourseItemsSequential(ctx context.Context, files []stri
 			transcribed = append(transcribed, CourseItem{Source: item.Source, SRTPath: item.SRTPath, TextPath: item.TextPath, TargetName: item.TargetName})
 		}
 		items = append(items, item)
-		reportCourseProgress(progress, fmt.Sprintf("processed %d/%d video(s)", i+1, len(files)), i+1, totalSteps)
+		reportCourseProgress(progress, fmt.Sprintf("compressed %d/%d video(s)", i+1, len(files)), len(files)+i+1, totalSteps)
 	}
 	return items, transcribed, skipped, nil
 }
@@ -97,7 +97,7 @@ func (s *Service) prepareCourseItemsParallel(ctx context.Context, files []string
 		items[res.index] = res.item
 		transcribedByIndex[res.index] = res.didTranscribe
 		completed++
-		reportCourseProgress(progress, fmt.Sprintf("processed %d/%d video(s) with %d worker(s)", completed, len(files), workers), completed, totalSteps)
+		reportCourseProgress(progress, fmt.Sprintf("compressed %d/%d video(s) with %d worker(s)", completed, len(files), workers), len(files)+completed, totalSteps)
 	}
 	if firstErr != nil {
 		return nil, nil, nil, firstErr

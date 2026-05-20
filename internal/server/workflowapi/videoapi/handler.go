@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/bhickta/aicli/internal/server/workflowapi/core"
+	"github.com/bhickta/aicli/internal/systemresources"
 	"github.com/bhickta/aicli/internal/tool"
 	"github.com/bhickta/aicli/internal/workflow/video"
 )
@@ -59,7 +60,22 @@ func (h *Handler) runVideoCourse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.runtime.StartJob(w, r, "video-course", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress(fmt.Sprintf("processing course with Whisper model %s on %s using up to %d worker(s)", displayValue(req.WhisperModel, "large-v3"), displayValue(req.WhisperDevice, "cuda"), video.EffectiveCourseWorkers(req.Workers, 6)), 2, 5)
+		resources := systemresources.Collect(ctx)
+		transcriptWorkers := req.TranscriptWorkers
+		compressionWorkers := req.CompressionWorkers
+		if transcriptWorkers <= 0 && req.Workers > 0 {
+			transcriptWorkers = req.Workers
+		}
+		if compressionWorkers <= 0 && req.Workers > 0 {
+			compressionWorkers = req.Workers
+		}
+		if transcriptWorkers <= 0 {
+			transcriptWorkers = systemresources.DefaultTranscriptWorkers(req.WhisperModel, 6, resources)
+		}
+		if compressionWorkers <= 0 {
+			compressionWorkers = systemresources.DefaultCompressionWorkers(6, resources)
+		}
+		progress(fmt.Sprintf("processing course with Whisper model %s on %s using %d transcribe/%d compress worker(s)", displayValue(req.WhisperModel, "large-v3"), displayValue(req.WhisperDevice, "cuda"), transcriptWorkers, compressionWorkers), 2, 5)
 		result, err := video.New(h.runtime.Settings().Tools, tool.ExecRunner{}).CourseWithProgress(ctx, req, progress)
 		return result, err
 	})

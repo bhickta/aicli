@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, onUnmounted } from "vue";
 import { api, loadSettings } from "../lib/api";
 import { appState } from "../stores/appState";
-import type { ViewName } from "../types";
+import type { SystemResources, ViewName } from "../types";
+import SystemUsage from "./SystemUsage.vue";
 import ChatView from "../views/ChatView.vue";
 import JobsView from "../views/JobsView.vue";
 import ProvidersView from "../views/ProvidersView.vue";
@@ -40,8 +41,15 @@ const activeComponent = computed(() => {
   }
 });
 
+let resourceTimer = 0;
+
 onMounted(async () => {
-  await Promise.all([refreshSettings(), refreshHealth()]);
+  await Promise.all([refreshSettings(), refreshHealth(), refreshResources()]);
+  resourceTimer = window.setInterval(refreshResources, 2000);
+});
+
+onUnmounted(() => {
+  window.clearInterval(resourceTimer);
 });
 
 async function refreshSettings() {
@@ -54,6 +62,14 @@ async function refreshHealth() {
     appState.health = result.status;
   } catch {
     appState.health = "offline";
+  }
+}
+
+async function refreshResources() {
+  try {
+    appState.systemResources = await api<SystemResources>("/api/system/resources");
+  } catch {
+    appState.systemResources = null;
   }
 }
 </script>
@@ -82,7 +98,10 @@ async function refreshHealth() {
   <section>
     <header>
       <h1>Local AI Control Center</h1>
-      <span id="health">{{ appState.health }}</span>
+      <div class="header-status">
+        <SystemUsage :resources="appState.systemResources" />
+        <span id="health">{{ appState.health }}</span>
+      </div>
     </header>
     <component :is="activeComponent" v-if="appState.settings" id="view" />
     <div v-else id="view" class="panel grid">

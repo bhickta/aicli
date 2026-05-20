@@ -21,6 +21,39 @@ export interface Settings {
   tools: Record<string, string>;
 }
 
+export interface SystemResources {
+  collected_at: string;
+  cpu: {
+    logical_cores: number;
+    usage_percent: number;
+    load_1: number;
+    load_5: number;
+    load_15: number;
+  };
+  ram: {
+    total_bytes: number;
+    available_bytes: number;
+    used_bytes: number;
+    usage_percent: number;
+  };
+  gpus: Array<{
+    name: string;
+    memory_total_mb: number;
+    memory_used_mb: number;
+    memory_free_mb: number;
+    utilization_percent: number;
+    memory_utilization_percent: number;
+  }>;
+  defaults: {
+    video_transcript_workers: number;
+    video_compression_workers: number;
+    pdf_render_workers: number;
+    ocr_workers: number;
+    zettel_read_workers: number;
+    embedding_batch_size: number;
+  };
+}
+
 export interface Model {
   id: string;
   name: string;
