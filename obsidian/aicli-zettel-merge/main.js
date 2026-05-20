@@ -6,6 +6,7 @@ const DEFAULT_SETTINGS = {
   rootFolder: "zettelkasten",
   dataFolder: ".aicli-zettel-merge",
   providerId: "lms",
+  embeddingProviderId: "lms",
   judgeModel: "deepseek-reasoner",
   mergeModel: "deepseek-reasoner",
   embeddingModel: "text-embedding-nomic-embed-text-v1.5",
@@ -62,6 +63,7 @@ module.exports = class AICLIZettelMergePlugin extends Plugin {
       root_folder: this.settings.rootFolder,
       data_folder: this.settings.dataFolder,
       provider_id: this.settings.providerId,
+      embedding_provider_id: this.settings.embeddingProviderId,
       judge_model: this.settings.judgeModel,
       merge_model: this.settings.mergeModel,
       embedding_model: this.settings.embeddingModel,
@@ -328,9 +330,10 @@ class AICLIZettelMergeSettingTab extends PluginSettingTab {
     this.text("Vault path", "Leave empty to use the current desktop vault path.", "vaultPath");
     this.text("Zettelkasten folder", "Vault-relative folder scanned by the Go engine.", "rootFolder");
     this.text("Data folder", "Vault-relative archive/cache folder used by aicli.", "dataFolder");
-    this.text("Provider ID", "AICLI provider id, usually lms or ollama.", "providerId");
-    this.text("DeepSeek judge model", "Model used to choose mergeable exact line ranges.", "judgeModel");
-    this.text("DeepSeek merge model", "Model used to write scoped insertion proposals.", "mergeModel");
+    this.text("LLM provider ID", "AICLI provider id used for judging and merging, for example codex-cli.", "providerId");
+    this.text("Judge model", "Model used to choose mergeable exact line ranges.", "judgeModel");
+    this.text("Merge model", "Model used to write scoped insertion proposals.", "mergeModel");
+    this.text("Embedding provider ID", "AICLI provider id used for note similarity embeddings, usually lms or ollama.", "embeddingProviderId");
     this.text("Embedding model", "Model used for note similarity search.", "embeddingModel");
     this.number("Candidate limit", "Top matching notes sent to the judge.", "candidateLimit");
     this.number("Review threshold", "Candidates below this confidence stay hidden.", "reviewThreshold");

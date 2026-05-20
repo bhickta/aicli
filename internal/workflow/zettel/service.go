@@ -12,11 +12,16 @@ import (
 )
 
 type Service struct {
-	provider provider.Provider
+	provider          provider.Provider
+	embeddingProvider provider.Provider
 }
 
 func New(p provider.Provider) *Service {
-	return &Service{provider: p}
+	return NewWithEmbedding(p, p)
+}
+
+func NewWithEmbedding(p provider.Provider, embeddingProvider provider.Provider) *Service {
+	return &Service{provider: p, embeddingProvider: embeddingProvider}
 }
 
 func (s *Service) Index(ctx context.Context, req IndexRequest, progress ProgressFunc) (IndexResponse, error) {
@@ -25,7 +30,7 @@ func (s *Service) Index(ctx context.Context, req IndexRequest, progress Progress
 	if err != nil {
 		return IndexResponse{}, err
 	}
-	return newEmbeddingIndex(v, options, s.provider).Build(ctx, progress)
+	return newEmbeddingIndex(v, options, s.embeddingProvider).Build(ctx, progress)
 }
 
 func (s *Service) Suggest(ctx context.Context, req SuggestRequest, progress ProgressFunc) (SuggestResponse, error) {
@@ -37,7 +42,7 @@ func (s *Service) Suggest(ctx context.Context, req SuggestRequest, progress Prog
 	if progress != nil {
 		progress("finding similar zettelkasten notes", 2, 5)
 	}
-	similar, err := newEmbeddingIndex(v, options, s.provider).Similar(ctx, activePath, activeContent)
+	similar, err := newEmbeddingIndex(v, options, s.embeddingProvider).Similar(ctx, activePath, activeContent)
 	if err != nil {
 		return SuggestResponse{}, err
 	}

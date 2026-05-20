@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, shallowRef, watch } from "vue";
-import ProviderModelControl from "../components/ProviderModelControl.vue";
+import ZettelProviderSettings from "../components/zettel/ZettelProviderSettings.vue";
 import { api, parseJobOutput, pollJob } from "../lib/api";
 import { elapsedSeconds, formatDuration, readNumberValue, stringify } from "../lib/format";
 import type { Job } from "../types";
@@ -35,6 +35,7 @@ const config = reactive({
   rootFolder: localStorage.getItem("aicli.zettel.rootFolder") || "zettelkasten",
   dataFolder: localStorage.getItem("aicli.zettel.dataFolder") || ".aicli-zettel-merge",
   providerId: localStorage.getItem("aicli.zettel.providerId") || "lms",
+  embeddingProviderId: localStorage.getItem("aicli.zettel.embeddingProviderId") || "lms",
   judgeModel: localStorage.getItem("aicli.zettel.judgeModel") || "deepseek-reasoner",
   mergeModel: localStorage.getItem("aicli.zettel.mergeModel") || "deepseek-reasoner",
   embeddingModel: localStorage.getItem("aicli.zettel.embeddingModel") || "text-embedding-nomic-embed-text-v1.5",
@@ -43,7 +44,6 @@ const config = reactive({
   validationThreshold: Number(localStorage.getItem("aicli.zettel.validationThreshold") || 0.98),
 });
 
-const providerSelection = reactive({ provider_id: config.providerId, model: config.judgeModel });
 const candidates = shallowRef<Candidate[]>([]);
 const selectedPaths = shallowRef<string[]>([]);
 const proposal = shallowRef<Proposal | null>(null);
@@ -73,6 +73,7 @@ watch(config, () => {
   localStorage.setItem("aicli.zettel.rootFolder", config.rootFolder);
   localStorage.setItem("aicli.zettel.dataFolder", config.dataFolder);
   localStorage.setItem("aicli.zettel.providerId", config.providerId);
+  localStorage.setItem("aicli.zettel.embeddingProviderId", config.embeddingProviderId);
   localStorage.setItem("aicli.zettel.judgeModel", config.judgeModel);
   localStorage.setItem("aicli.zettel.mergeModel", config.mergeModel);
   localStorage.setItem("aicli.zettel.embeddingModel", config.embeddingModel);
@@ -81,14 +82,8 @@ watch(config, () => {
   localStorage.setItem("aicli.zettel.validationThreshold", String(config.validationThreshold));
 });
 
-function updateProvider(value: { provider_id: string; model: string }) {
-  config.providerId = value.provider_id;
-  providerSelection.provider_id = value.provider_id;
-  providerSelection.model = value.model;
-  if (value.model) {
-    config.judgeModel = value.model;
-    config.mergeModel = value.model;
-  }
+function updateProviderSettings(value: Partial<Pick<typeof config, "providerId" | "judgeModel" | "mergeModel" | "embeddingProviderId" | "embeddingModel">>) {
+  Object.assign(config, value);
 }
 
 function basePayload() {
@@ -97,6 +92,7 @@ function basePayload() {
     root_folder: config.rootFolder,
     data_folder: config.dataFolder,
     provider_id: config.providerId,
+    embedding_provider_id: config.embeddingProviderId,
     judge_model: config.judgeModel,
     merge_model: config.mergeModel,
     embedding_model: config.embeddingModel,
@@ -264,21 +260,7 @@ function formatRanges(ranges: LineRange[]) {
       </div>
 
       <div class="grid">
-        <ProviderModelControl :provider-id="config.providerId" :model="config.judgeModel" @change="updateProvider" />
-        <div class="field-row">
-          <div class="field">
-            <label for="zettel-judge">DeepSeek judge model</label>
-            <input id="zettel-judge" v-model="config.judgeModel" type="text">
-          </div>
-          <div class="field">
-            <label for="zettel-merge">DeepSeek merge model</label>
-            <input id="zettel-merge" v-model="config.mergeModel" type="text">
-          </div>
-        </div>
-        <div class="field">
-          <label for="zettel-embed">Embedding model</label>
-          <input id="zettel-embed" v-model="config.embeddingModel" type="text">
-        </div>
+        <ZettelProviderSettings :settings="config" @update="updateProviderSettings" />
         <div class="field-row">
           <div class="field">
             <label for="zettel-limit">Candidate limit</label>

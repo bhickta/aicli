@@ -219,7 +219,7 @@ func (idx *embeddingIndex) cachePath(legacy bool) (string, error) {
 func (idx *embeddingIndex) embed(ctx context.Context, inputs []string) ([][]float64, error) {
 	embedder, ok := idx.provider.(embedder)
 	if !ok {
-		return nil, errors.New("selected provider does not support embeddings")
+		return nil, errors.New("selected embedding provider does not support embeddings")
 	}
 	resp, err := embedder.Embeddings(ctx, provider.EmbeddingRequest{
 		Model:  idx.options.EmbeddingModel,

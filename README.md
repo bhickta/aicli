@@ -16,7 +16,7 @@
 - Audio workflows for transcription and LLM-assisted analysis.
 - Video workflows for info, compression, metadata backup/restore, and notes/tags/course generation.
 - News workflow for JSON/XLSX import, dedupe, merge, similarity grouping, and optional LLM cleanup.
-- Zettelkasten merge workflow with local embeddings, DeepSeek-compatible judging, exact line clipping, archive, and rollback.
+- Zettelkasten merge workflow with local embeddings, provider-selectable judging/merging, exact line clipping, archive, and rollback.
 - Job history with status, stage, progress, elapsed time, and ETA in the UI.
 
 ## Requirements
@@ -85,7 +85,7 @@ Uploaded files are copied into:
 
 ## Zettelkasten Merge
 
-The merge engine lives in `aicli`, not Obsidian. It scans a vault folder, builds or imports embeddings, finds similar notes, asks a local DeepSeek-compatible model to select exact source line ranges, generates a merge preview, validates it, then applies only after approval.
+The merge engine lives in `aicli`, not Obsidian. It scans a vault folder, builds or imports embeddings, finds similar notes, asks the selected LLM provider to select exact source line ranges, generates a merge preview, validates it, then applies only after approval.
 
 Default safety behavior:
 
@@ -105,8 +105,9 @@ Default safety behavior:
    - Vault folder, for example `/home/bhickta/development/upsc`
    - Active note path, for example `zettelkasten/.../Note.md`
    - Zettelkasten folder, usually `zettelkasten`
-   - Provider ID, usually `lms`
-   - DeepSeek judge/merge model
+   - Merge provider, for example `codex-cli` for Codex CLI / Pro
+   - Judge/merge model, for example `gpt-5.3-codex-spark`
+   - Embedding provider, usually `lms` or `ollama`
    - Embedding model, usually `text-embedding-nomic-embed-text-v1.5`
 5. Click `Build Index` once, or when notes/model changed.
 6. Click `Suggest`.

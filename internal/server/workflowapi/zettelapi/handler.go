@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
+	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/server/workflowapi/core"
 	"github.com/bhickta/aicli/internal/workflow/zettel"
 )
@@ -32,14 +34,14 @@ func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
-	p, ok := h.runtime.ProviderFor(req.ProviderID)
-	if !ok {
-		core.WriteError(w, http.StatusNotFound, errors.New("provider not found"))
+	service, err := h.service(req.Options)
+	if err != nil {
+		core.WriteError(w, http.StatusNotFound, err)
 		return
 	}
 	job := core.NewJob("zettel-index", req.VaultPath)
 	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		return zettel.New(p).Index(ctx, req, progress)
+		return service.Index(ctx, req, progress)
 	})
 }
 
@@ -49,14 +51,14 @@ func (h *Handler) suggest(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
-	p, ok := h.runtime.ProviderFor(req.ProviderID)
-	if !ok {
-		core.WriteError(w, http.StatusNotFound, errors.New("provider not found"))
+	service, err := h.service(req.Options)
+	if err != nil {
+		core.WriteError(w, http.StatusNotFound, err)
 		return
 	}
 	job := core.NewJob("zettel-suggest", req.ActivePath)
 	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		return zettel.New(p).Suggest(ctx, req, progress)
+		return service.Suggest(ctx, req, progress)
 	})
 }
 
@@ -66,14 +68,14 @@ func (h *Handler) propose(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
-	p, ok := h.runtime.ProviderFor(req.ProviderID)
-	if !ok {
-		core.WriteError(w, http.StatusNotFound, errors.New("provider not found"))
+	service, err := h.service(req.Options)
+	if err != nil {
+		core.WriteError(w, http.StatusNotFound, err)
 		return
 	}
 	job := core.NewJob("zettel-propose", req.ActivePath)
 	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		return zettel.New(p).Propose(ctx, req, progress)
+		return service.Propose(ctx, req, progress)
 	})
 }
 
@@ -83,14 +85,14 @@ func (h *Handler) apply(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
-	p, ok := h.runtime.ProviderFor(req.ProviderID)
-	if !ok {
-		core.WriteError(w, http.StatusNotFound, errors.New("provider not found"))
+	service, err := h.service(req.Options)
+	if err != nil {
+		core.WriteError(w, http.StatusNotFound, err)
 		return
 	}
 	job := core.NewJob("zettel-apply", req.Proposal.ActivePath)
 	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		return zettel.New(p).Apply(ctx, req, progress)
+		return service.Apply(ctx, req, progress)
 	})
 }
 
@@ -100,13 +102,42 @@ func (h *Handler) rollback(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
-	p, ok := h.runtime.ProviderFor(req.ProviderID)
-	if !ok {
-		core.WriteError(w, http.StatusNotFound, errors.New("provider not found"))
+	service, err := h.service(req.Options)
+	if err != nil {
+		core.WriteError(w, http.StatusNotFound, err)
 		return
 	}
 	job := core.NewJob("zettel-rollback", req.JobID)
 	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		return zettel.New(p).Rollback(ctx, req, progress)
+		return service.Rollback(ctx, req, progress)
 	})
+}
+
+func (h *Handler) service(options zettel.Options) (*zettel.Service, error) {
+	requestedEmbeddingProviderID := strings.TrimSpace(options.EmbeddingProviderID)
+	options = zettel.NormalizeOptions(options)
+	p, ok := h.runtime.ProviderFor(options.ProviderID)
+	if !ok {
+		return nil, errors.New("provider not found")
+	}
+	embeddingProviderID := options.EmbeddingProviderID
+	if requestedEmbeddingProviderID == "" && !supportsEmbeddings(p) {
+		if fallback := strings.TrimSpace(h.runtime.Settings().DefaultProvider); fallback != "" {
+			embeddingProviderID = fallback
+		}
+	}
+	embeddingProvider, ok := h.runtime.ProviderFor(embeddingProviderID)
+	if !ok {
+		return nil, errors.New("embedding provider not found")
+	}
+	return zettel.NewWithEmbedding(p, embeddingProvider), nil
+}
+
+type embeddingProvider interface {
+	Embeddings(context.Context, provider.EmbeddingRequest) (provider.EmbeddingResponse, error)
+}
+
+func supportsEmbeddings(p provider.Provider) bool {
+	_, ok := p.(embeddingProvider)
+	return ok
 }

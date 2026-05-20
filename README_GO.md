@@ -39,7 +39,7 @@ External tools are detected at runtime. On this machine, FFmpeg, FFprobe, and Po
 - News similarity clustering.
 - Image safe rename and stale reference pruning.
 - Vue 3 web UI served from the embedded Go binary.
-- AICLI-owned Zettelkasten merge workflow with exact line clipping, validation, archive, and rollback.
+- AICLI-owned Zettelkasten merge workflow with separate LLM and embedding providers, exact line clipping, validation, archive, and rollback.
 
 ## Remaining Polish
 

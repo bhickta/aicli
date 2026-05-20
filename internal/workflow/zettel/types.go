@@ -21,6 +21,7 @@ type Options struct {
 	RootFolder           string  `json:"root_folder"`
 	DataFolder           string  `json:"data_folder"`
 	ProviderID           string  `json:"provider_id"`
+	EmbeddingProviderID  string  `json:"embedding_provider_id"`
 	JudgeModel           string  `json:"judge_model"`
 	MergeModel           string  `json:"merge_model"`
 	EmbeddingModel       string  `json:"embedding_model"`

@@ -2,6 +2,10 @@ package zettel
 
 import "strings"
 
+func NormalizeOptions(options Options) Options {
+	return normalizeOptions(options)
+}
+
 func normalizeOptions(options Options) Options {
 	if strings.TrimSpace(options.RootFolder) == "" {
 		options.RootFolder = DefaultRootFolder
@@ -40,6 +44,10 @@ func normalizeOptions(options Options) Options {
 	options.DataFolder = strings.Trim(strings.TrimSpace(options.DataFolder), "/")
 	options.VaultPath = strings.TrimSpace(options.VaultPath)
 	options.ProviderID = strings.TrimSpace(options.ProviderID)
+	options.EmbeddingProviderID = strings.TrimSpace(options.EmbeddingProviderID)
+	if options.EmbeddingProviderID == "" {
+		options.EmbeddingProviderID = options.ProviderID
+	}
 	options.JudgeModel = strings.TrimSpace(options.JudgeModel)
 	options.MergeModel = strings.TrimSpace(options.MergeModel)
 	options.EmbeddingModel = strings.TrimSpace(options.EmbeddingModel)
