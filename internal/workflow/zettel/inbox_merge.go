@@ -54,6 +54,9 @@ func (s *Service) InboxMerge(ctx context.Context, req InboxMergeRequest, progres
 	if len(sourceNotes) == 0 {
 		return response, nil
 	}
+	if err := s.preflightInboxMerge(ctx, v, options); err != nil {
+		return response, err
+	}
 
 	shorthandPrompt := loadShorthandPrompt(options)
 	for i, sourcePath := range sourceNotes {
@@ -88,6 +91,21 @@ func (s *Service) InboxMerge(ctx context.Context, req InboxMergeRequest, progres
 	response.PendingCount = len(response.Pending)
 	response.FailedCount = len(response.Failed)
 	return response, nil
+}
+
+func (s *Service) preflightInboxMerge(ctx context.Context, v vault, options Options) error {
+	index := newEmbeddingIndex(v, options, s.embeddingProvider)
+	cache, err := index.load()
+	if err != nil {
+		return fmt.Errorf("load zettelkasten embedding index: %w", err)
+	}
+	if len(cache.Items) == 0 {
+		return errors.New("zettelkasten embedding index is empty; run Build Index after selecting the destination notes folder")
+	}
+	if _, err := index.embed(ctx, []string{"zettelkasten inbox merge embedding preflight"}); err != nil {
+		return fmt.Errorf("embedding provider unavailable for inbox merge: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) processInboxSource(ctx context.Context, v vault, archive archiveStore, runID string, options Options, sourcePath string, shorthandPrompt string) (InboxSourceResult, error) {

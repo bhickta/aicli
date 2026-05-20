@@ -2,6 +2,7 @@ package zettel
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -128,13 +129,14 @@ func TestServiceInboxMergeRespectsInboxLimit(t *testing.T) {
 	t.Parallel()
 
 	vaultDir := t.TempDir()
+	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "destination.md"), "destination\n")
 	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "001.md"), "first\n")
 	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "002.md"), "second\n")
 	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "003.md"), "third\n")
 
 	provider := &fakeZettelProvider{}
 	service := NewWithProviders(provider, provider, provider, provider)
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: Options{
+	options := Options{
 		VaultPath:            vaultDir,
 		RootFolder:           "zettelkasten",
 		DataFolder:           ".aicli-zettel-merge",
@@ -148,7 +150,11 @@ func TestServiceInboxMergeRespectsInboxLimit(t *testing.T) {
 		MergeModel:           "merge-model",
 		ValidationModel:      "validation-model",
 		EmbeddingModel:       "embedding-model",
-	}}, nil)
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
 	if err != nil {
 		t.Fatalf("InboxMerge() error = %v", err)
 	}
@@ -163,5 +169,48 @@ func TestServiceInboxMergeRespectsInboxLimit(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(vaultDir, "inbox-to-merge", "003.md")); err != nil {
 		t.Fatalf("limited-out source changed: %v", err)
+	}
+}
+
+func TestServiceInboxMergeFailsFastWhenEmbeddingProviderUnavailable(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "destination.md"), "destination\n")
+	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "001.md"), "first\n")
+
+	indexProvider := &fakeZettelProvider{}
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "inbox-to-merge",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := NewWithProviders(indexProvider, indexProvider, indexProvider, indexProvider).Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	embeddingProvider := &fakeZettelProvider{embeddingErr: errors.New("dial tcp 127.0.0.1:1234: connect: connection refused")}
+	chatProvider := &fakeZettelProvider{}
+	resp, err := NewWithProviders(chatProvider, chatProvider, chatProvider, embeddingProvider).InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err == nil {
+		t.Fatalf("InboxMerge() error = nil, want embedding preflight error")
+	}
+	if !strings.Contains(err.Error(), "embedding provider unavailable for inbox merge") {
+		t.Fatalf("InboxMerge() error = %v, want embedding preflight context", err)
+	}
+	if len(chatProvider.chatCalls) != 0 {
+		t.Fatalf("chat calls = %d, want fail before claim extraction", len(chatProvider.chatCalls))
+	}
+	if resp.SelectedCount != 1 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() response = %#v, want selected count without per-note failure", resp)
 	}
 }

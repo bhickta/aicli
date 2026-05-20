@@ -13,6 +13,7 @@ import (
 type fakeZettelProvider struct {
 	id             string
 	embeddingCalls int
+	embeddingErr   error
 	chatCalls      []provider.ChatRequest
 	chatResponse   string
 	chatResponses  []string
@@ -54,6 +55,9 @@ func (f *fakeZettelProvider) Vision(context.Context, provider.VisionRequest) (pr
 
 func (f *fakeZettelProvider) Embeddings(_ context.Context, req provider.EmbeddingRequest) (provider.EmbeddingResponse, error) {
 	f.embeddingCalls++
+	if f.embeddingErr != nil {
+		return provider.EmbeddingResponse{}, f.embeddingErr
+	}
 	vectors := make([][]float64, len(req.Inputs))
 	for i := range req.Inputs {
 		vectors[i] = []float64{1, float64(i + 1)}
