@@ -81,3 +81,24 @@ func TestNormalizeRequestRequiresPhoneNumber(t *testing.T) {
 		t.Fatal("expected phone number validation error")
 	}
 }
+
+func TestNormalizeRequestParsesLocalTimeAsIST(t *testing.T) {
+	t.Parallel()
+
+	ist := istLocation()
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, ist)
+	req, err := normalizeRequest(ScheduleRequest{
+		RecipientPhone: "+91 98765 43210",
+		Message:        "hello",
+		ScheduledAt:    "2026-05-20T18:30",
+	}, now)
+	if err != nil {
+		t.Fatalf("normalizeRequest() error = %v", err)
+	}
+	if req.scheduledAt.Location().String() != ist.String() {
+		t.Fatalf("location = %q, want %q", req.scheduledAt.Location(), ist)
+	}
+	if got := req.scheduledAt.Format(time.RFC3339); got != "2026-05-20T18:30:00+05:30" {
+		t.Fatalf("scheduled_at = %q, want IST time", got)
+	}
+}

@@ -9,7 +9,7 @@ export const whatsappWorkflowDefinitions: WorkflowDefinition[] = [
     fields: [
       { type: "whatsappContact", id: "contact", label: "Contact" },
       { type: "textarea", id: "message", label: "Message", rows: 8, placeholder: "Message text" },
-      { type: "text", id: "scheduled_at", label: "Send at", placeholder: "2026-05-20T18:30:00+05:30" },
+      { type: "datetime", id: "scheduled_at", label: "Send at (IST)", placeholder: "2026-05-20T18:30" },
       { type: "checkbox", id: "auto_send", label: "Auto-send from WhatsApp Web", checked: false },
       { type: "number", id: "wait_seconds", label: "WhatsApp load wait seconds", min: 3, max: 120, default: 12 },
     ],

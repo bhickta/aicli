@@ -29,6 +29,12 @@ function hydrateFromValue() {
 
 function selectContact(id: string) {
   selectedID.value = id;
+  if (!id) {
+    draftName.value = "";
+    draftPhone.value = "";
+    updateDraft();
+    return;
+  }
   const contact = contacts.value.find((item) => item.id === id);
   if (!contact) return;
   draftName.value = contact.name;
@@ -84,9 +90,10 @@ function newContactID() {
     <label :for="`wf-${field.id}-select`">{{ field.label }}</label>
     <div class="field-row">
       <div class="field">
-        <label :for="`wf-${field.id}-select`">Saved contact</label>
+        <label :for="`wf-${field.id}-select`">Select saved contact</label>
         <select :id="`wf-${field.id}-select`" :value="selectedID" @change="selectContact(($event.target as HTMLSelectElement).value)">
           <option value="">New contact</option>
+          <option v-if="!contacts.length" value="" disabled>No saved contacts yet</option>
           <option v-for="contact in contacts" :key="contact.id" :value="contact.id">
             {{ contact.name }} · {{ contact.phone }}
           </option>

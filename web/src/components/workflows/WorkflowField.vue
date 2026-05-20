@@ -20,12 +20,23 @@ function update(value: unknown) {
 function forwardUpdate(id: string, value: unknown) {
   emit("update", id, value);
 }
+
+function datetimeLocalValue(value: unknown) {
+  const text = String(value ?? props.field.value ?? "");
+  const match = text.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::\d{2})?(?:[+-]\d{2}:\d{2}|Z)?$/);
+  return match?.[1] || text;
+}
 </script>
 
 <template>
   <div v-if="field.id && field.type === 'text'" class="field">
     <label :for="`wf-${field.id}`">{{ field.label }}</label>
     <input :id="`wf-${field.id}`" type="text" :value="String(value ?? field.value ?? '')" :placeholder="field.placeholder || ''" @input="update(($event.target as HTMLInputElement).value)">
+  </div>
+
+  <div v-else-if="field.id && field.type === 'datetime'" class="field">
+    <label :for="`wf-${field.id}`">{{ field.label }}</label>
+    <input :id="`wf-${field.id}`" type="datetime-local" :value="datetimeLocalValue(value)" :placeholder="field.placeholder || ''" @input="update(($event.target as HTMLInputElement).value)">
   </div>
 
   <div v-else-if="field.id && field.type === 'textarea'" class="field">

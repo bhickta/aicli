@@ -127,7 +127,7 @@ func normalizeRequest(req ScheduleRequest, now time.Time) (normalizedRequest, er
 	if message == "" {
 		return normalizedRequest{}, errors.New("message is required")
 	}
-	scheduledAt, err := parseScheduledAt(req.ScheduledAt, now.Location())
+	scheduledAt, err := parseScheduledAt(req.ScheduledAt, istLocation())
 	if err != nil {
 		return normalizedRequest{}, err
 	}
@@ -199,7 +199,15 @@ func parseScheduledAt(value string, loc *time.Location) (time.Time, error) {
 			return parsed, nil
 		}
 	}
-	return time.Time{}, errors.New("scheduled_at must be RFC3339 or YYYY-MM-DDTHH:MM")
+	return time.Time{}, errors.New("scheduled_at must be RFC3339 or YYYY-MM-DDTHH:MM in IST")
+}
+
+func istLocation() *time.Location {
+	loc, err := time.LoadLocation("Asia/Kolkata")
+	if err == nil {
+		return loc
+	}
+	return time.FixedZone("IST", 5*60*60+30*60)
 }
 
 func waitUntil(ctx context.Context, scheduledAt time.Time, now func() time.Time, progress ProgressFunc) error {
