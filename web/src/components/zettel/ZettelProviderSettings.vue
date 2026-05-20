@@ -35,8 +35,11 @@ function updateProviderModel(
   });
 }
 
-function updateField(key: keyof ProviderSettings, value: string) {
-  emit("update", { [key]: value });
+function updateEmbeddingProviderModel(value: { provider_id: string; model: string }) {
+  emit("update", {
+    embeddingProviderId: value.provider_id,
+    embeddingModel: value.model,
+  });
 }
 </script>
 
@@ -71,20 +74,12 @@ function updateField(key: keyof ProviderSettings, value: string) {
 
     <section class="provider-section">
       <h3>Embedding provider</h3>
-      <div class="field-row">
-        <div class="field">
-          <label for="zettel-embed-provider">Provider</label>
-          <select id="zettel-embed-provider" :value="settings.embeddingProviderId" @change="updateField('embeddingProviderId', ($event.target as HTMLSelectElement).value)">
-            <option v-for="provider in embeddingProviders" :key="provider.id" :value="provider.id">
-              {{ provider.name || provider.id }}
-            </option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="zettel-embed">Embedding model</label>
-          <input id="zettel-embed" :value="settings.embeddingModel" type="text" @input="updateField('embeddingModel', ($event.target as HTMLInputElement).value)">
-        </div>
-      </div>
+      <ProviderModelControl
+        :provider-id="settings.embeddingProviderId"
+        :model="settings.embeddingModel"
+        :provider-options="embeddingProviders"
+        @change="updateEmbeddingProviderModel"
+      />
     </section>
   </div>
 </template>

@@ -33,18 +33,12 @@ function updateActivePath(path: string) {
 
 <template>
   <div class="zettel-note-picker">
-    <div class="field">
-      <label for="zettel-active">Active note path</label>
-      <div class="path-control">
-        <input
-          id="zettel-active"
-          :value="activePath"
-          type="text"
-          placeholder="zettelkasten/.../Note.md"
-          @input="updateActivePath(($event.target as HTMLInputElement).value)"
-        >
-        <button type="button" :disabled="busy" @click="emit('load')">Load notes</button>
+    <div class="selected-note">
+      <div>
+        <span>Active note</span>
+        <strong>{{ activePath || "Choose from loaded notes" }}</strong>
       </div>
+      <button type="button" :disabled="busy" @click="emit('load')">Load notes</button>
     </div>
 
     <div class="note-picker-panel">
@@ -81,6 +75,32 @@ function updateActivePath(path: string) {
   gap: 8px;
 }
 
+.selected-note {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #2b313b;
+  border-radius: 6px;
+  background: #10141b;
+}
+
+.selected-note div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.selected-note span {
+  color: #9aa4b2;
+  font-size: 12px;
+}
+
+.selected-note strong {
+  overflow-wrap: anywhere;
+}
+
 .note-picker-list {
   display: grid;
   gap: 4px;
@@ -98,5 +118,11 @@ function updateActivePath(path: string) {
 .note-picker-item.selected {
   border-color: #6ea8fe;
   color: #eceff4;
+}
+
+@media (max-width: 640px) {
+  .selected-note {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

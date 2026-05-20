@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, shallowRef, watch } from "vue";
+import ZettelBadges from "../components/zettel/ZettelBadges.vue";
+import ZettelFolderChooser from "../components/zettel/ZettelFolderChooser.vue";
 import ZettelInboxReport from "../components/zettel/ZettelInboxReport.vue";
 import ZettelMergeDiff from "../components/zettel/ZettelMergeDiff.vue";
 import ZettelNotePicker from "../components/zettel/ZettelNotePicker.vue";
 import ZettelProviderSettings from "../components/zettel/ZettelProviderSettings.vue";
+import ZettelWorkflowTabs from "../components/zettel/ZettelWorkflowTabs.vue";
 import { api, parseJobOutput, pollJob } from "../lib/api";
 import { readNumberValue, stringify } from "../lib/format";
 import { describeJobProgress, progressBarWidth } from "../lib/jobProgress";
 import type { InboxMergeReport, Job, ProgressMode } from "../types";
+import type { ZettelMode } from "../components/zettel/types";
 
 interface LineRange {
   start_line: number;
@@ -35,8 +39,11 @@ interface Proposal {
   judge?: { verdict?: string; score?: number; notes?: string };
 }
 
+type ZettelFolderField = "rootFolder" | "inboxFolder" | "dataFolder";
+
 const legacyProviderId = localStorage.getItem("aicli.zettel.providerId") || "lms";
 const legacyJudgeModel = localStorage.getItem("aicli.zettel.judgeModel") || "deepseek-reasoner";
+const storedMode = localStorage.getItem("aicli.zettel.mode");
 
 const config = reactive({
   vaultPath: localStorage.getItem("aicli.zettel.vaultPath") || "",
@@ -73,14 +80,36 @@ const progressMode = shallowRef<ProgressMode>("determinate");
 const progressVisible = shallowRef(false);
 const busy = shallowRef(false);
 const rollbackJobID = shallowRef("");
+const mode = shallowRef<ZettelMode>(storedMode === "manual" || storedMode === "settings" ? storedMode : "inbox");
+
+const candidateLimitOptions = [6, 12, 20, 30, 50];
+const thresholdOptions = [
+  { value: 0.75, label: "Broad" },
+  { value: 0.85, label: "Balanced" },
+  { value: 0.9, label: "Strict" },
+  { value: 0.98, label: "Lossless" },
+];
+const validationThresholdOptions = [
+  { value: 0.9, label: "Strict" },
+  { value: 0.98, label: "Lossless" },
+  { value: 1, label: "Exact" },
+];
+const promptOptions = [
+  { value: "example_prompts.md", label: "Extreme shorthand" },
+  { value: "builtin", label: "Built-in fallback" },
+];
 
 const selectedCandidates = computed(() => {
   const selected = new Set(selectedPaths.value);
   return candidates.value.filter((candidate) => selected.has(candidate.path));
 });
 
+const canSuggest = computed(() => Boolean(config.vaultPath.trim() && config.activePath.trim()) && !busy.value);
 const canPreview = computed(() => selectedCandidates.value.length > 0 && !busy.value);
 const canApply = computed(() => Boolean(proposal.value) && !busy.value);
+const canRunInboxMerge = computed(() => Boolean(config.vaultPath.trim()) && !busy.value);
+const canUseVaultFolders = computed(() => Boolean(config.vaultPath.trim()) && !busy.value);
+const rawResultSummary = computed(() => result.value ? "Raw result" : "");
 const proposalQuality = computed(() => {
   if (!proposal.value) return "";
   const coverage = formatScore(proposal.value.coverage?.score);
@@ -122,6 +151,10 @@ watch(config, () => {
   localStorage.setItem("aicli.zettel.candidateLimit", String(config.candidateLimit));
   localStorage.setItem("aicli.zettel.reviewThreshold", String(config.reviewThreshold));
   localStorage.setItem("aicli.zettel.validationThreshold", String(config.validationThreshold));
+});
+
+watch(mode, () => {
+  localStorage.setItem("aicli.zettel.mode", mode.value);
 });
 
 function updateProviderSettings(value: Partial<Pick<
@@ -171,6 +204,20 @@ async function pickVault() {
     status.value = "Vault selected";
     result.value = picked.path;
     await refreshNotes();
+  });
+}
+
+async function pickZettelFolder(field: ZettelFolderField, label: string) {
+  await run(`Choosing ${label}`, async () => {
+    if (!config.vaultPath.trim()) throw new Error("Select a vault first");
+    const startPath = folderPickerStartPath(field);
+    const query = startPath ? `?path=${encodeURIComponent(startPath)}` : "";
+    const picked = await api<{ path: string }>(`/api/fs/pick-directory${query}`);
+    const relative = relativeToVault(picked.path);
+    if (!relative) throw new Error(`${label} must be inside the selected vault`);
+    config[field] = relative;
+    status.value = `${label} selected`;
+    result.value = `${label}: ${relative}`;
   });
 }
 
@@ -320,129 +367,343 @@ function formatRanges(ranges: LineRange[]) {
   if (!ranges.length) return "none";
   return ranges.map((range) => range.start_line === range.end_line ? String(range.start_line) : `${range.start_line}-${range.end_line}`).join(", ");
 }
+
+function candidateBadges(candidate: Candidate) {
+  return [
+    `sim ${formatScore(candidate.similarity)}`,
+    `conf ${formatScore(candidate.confidence)}`,
+    candidate.relationship,
+    candidate.risk,
+  ].filter(Boolean);
+}
+
+function normalizePath(value: string) {
+  return value.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+function folderPickerStartPath(field: ZettelFolderField) {
+  const vaultPath = normalizePath(config.vaultPath);
+  const current = normalizePath(String(config[field] || ""));
+  if (!vaultPath) return "";
+  if (!current) return vaultPath;
+  if (current.startsWith("/")) return current;
+  return `${vaultPath}/${current.replace(/^\/+/, "")}`;
+}
+
+function relativeToVault(path: string) {
+  const vaultPath = normalizePath(config.vaultPath);
+  const pickedPath = normalizePath(path);
+  if (!vaultPath || !pickedPath || pickedPath === vaultPath) return "";
+  if (!pickedPath.startsWith(`${vaultPath}/`)) return "";
+  return pickedPath.slice(vaultPath.length + 1);
+}
 </script>
 
 <template>
   <div class="panel grid zettel-panel">
-    <h2>Zettelkasten Merge</h2>
+    <div class="zettel-title-row">
+      <div>
+        <h2>Zettelkasten</h2>
+        <p class="muted">Inbox merge by default. Manual review and provider setup are separate.</p>
+      </div>
+      <ZettelWorkflowTabs v-model="mode" />
+    </div>
 
-    <div class="zettel-grid">
-      <div class="grid">
-        <div class="field">
-          <label for="zettel-vault">Vault folder</label>
-          <div class="path-control">
-            <input id="zettel-vault" v-model="config.vaultPath" type="text" placeholder="/home/bhickta/development/upsc">
-            <button type="button" :disabled="busy" @click="pickVault">Browse vault</button>
-          </div>
+    <section class="zettel-section">
+      <div class="zettel-section-header">
+        <div>
+          <h3>Vault</h3>
+          <p class="muted">{{ config.vaultPath || "No vault selected" }}</p>
         </div>
-        <ZettelNotePicker
-          :active-path="config.activePath"
-          :notes="notes"
-          :status="notesStatus"
-          :busy="busy"
-          @update-active-path="config.activePath = $event"
-          @load="loadNotes"
+        <button type="button" :disabled="busy" @click="pickVault">Browse vault</button>
+      </div>
+    </section>
+
+    <section v-if="mode === 'inbox'" class="zettel-section">
+      <div class="zettel-section-header">
+        <div>
+          <h3>Inbox merge</h3>
+          <p class="muted">Choose source and destination folders, then run the lossless audit workflow.</p>
+        </div>
+        <button type="button" class="mod-cta" :disabled="!canRunInboxMerge" @click="runInboxMerge">Run Inbox Merge</button>
+      </div>
+
+      <div class="zettel-folder-grid">
+        <ZettelFolderChooser
+          label="Source inbox"
+          :value="config.inboxFolder"
+          description="New atomic notes waiting to be merged"
+          :disabled="!canUseVaultFolders"
+          @choose="pickZettelFolder('inboxFolder', 'source inbox')"
         />
-        <div class="field-row">
-          <div class="field">
-            <label for="zettel-root">Zettelkasten folder</label>
-            <input id="zettel-root" v-model="config.rootFolder" type="text">
-          </div>
-          <div class="field">
-            <label for="zettel-inbox">Inbox/source folder</label>
-            <input id="zettel-inbox" v-model="config.inboxFolder" type="text">
-          </div>
-          <div class="field">
-            <label for="zettel-data">Data folder</label>
-            <input id="zettel-data" v-model="config.dataFolder" type="text">
-          </div>
-          <div class="field">
-            <label for="zettel-shorthand-prompt">Shorthand prompt path</label>
-            <input id="zettel-shorthand-prompt" v-model="config.shorthandPromptPath" type="text">
-          </div>
+        <ZettelFolderChooser
+          label="Destination notes"
+          :value="config.rootFolder"
+          description="Existing zettelkasten tree that receives merged claims"
+          :disabled="!canUseVaultFolders"
+          @choose="pickZettelFolder('rootFolder', 'destination notes')"
+        />
+      </div>
+
+      <div class="zettel-inline-actions">
+        <button type="button" :disabled="busy || !config.vaultPath" @click="buildIndex">Build Index</button>
+      </div>
+
+      <ZettelInboxReport :report="inboxReport" />
+      <p v-if="!inboxReport" class="muted">Run report, changed files, pending notes, and rollback id appear here.</p>
+    </section>
+
+    <section v-if="mode === 'manual'" class="zettel-section">
+      <div class="zettel-section-header">
+        <div>
+          <h3>Manual review</h3>
+          <p class="muted">Select one existing note, inspect candidates, preview the diff, then apply.</p>
+        </div>
+        <div class="zettel-inline-actions">
+          <button type="button" :disabled="!canSuggest" @click="suggest">Suggest</button>
+          <button type="button" :disabled="!canPreview" @click="previewMerge">Preview</button>
+          <button type="button" class="mod-cta" :disabled="!canApply" @click="applyMerge">Apply</button>
         </div>
       </div>
 
-      <div class="grid">
+      <ZettelNotePicker
+        :active-path="config.activePath"
+        :notes="notes"
+        :status="notesStatus"
+        :busy="busy"
+        @update-active-path="config.activePath = $event"
+        @load="loadNotes"
+      />
+
+      <div class="zettel-review-grid">
+        <div class="zettel-candidates">
+          <h3>Candidates</h3>
+          <p v-if="!candidates.length" class="muted">Run Suggest after selecting a vault and active note.</p>
+          <article v-for="candidate in candidates" :key="candidate.path" class="zettel-card">
+            <label class="zettel-card-header">
+              <input type="checkbox" :checked="selectedPaths.includes(candidate.path)" @change="toggleCandidate(candidate.path, ($event.target as HTMLInputElement).checked)">
+              <span>{{ candidate.path }}</span>
+            </label>
+            <ZettelBadges :items="candidateBadges(candidate)" />
+            <p class="muted">{{ candidate.reason || "No reason returned." }}</p>
+            <p class="muted">Lines: {{ formatRanges(candidate.source_line_ranges) }}</p>
+            <pre>{{ candidate.extracted_markdown }}</pre>
+          </article>
+        </div>
+
+        <div class="zettel-preview">
+          <h3>Merge Preview</h3>
+          <p v-if="proposal" class="status-line">{{ proposalQuality }}</p>
+          <template v-if="proposal">
+            <ZettelMergeDiff
+              :original-markdown="proposal.active_markdown || ''"
+              :final-markdown="proposal.final_markdown"
+              :insertions="proposal.merge_plan?.insertions || []"
+            />
+            <details class="zettel-final-markdown">
+              <summary>Final markdown</summary>
+              <textarea :value="proposal.final_markdown" readonly />
+            </details>
+          </template>
+          <p v-else class="muted">Select candidates and run Preview. Nothing is written until Apply succeeds.</p>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="mode === 'settings'" class="zettel-section">
+      <div class="zettel-section-header">
+        <div>
+          <h3>Settings</h3>
+          <p class="muted">All choices are saved locally and reused on the next run.</p>
+        </div>
+      </div>
+
+      <div class="zettel-settings-grid">
         <ZettelProviderSettings :settings="config" @update="updateProviderSettings" />
-        <div class="field-row">
-          <div class="field">
-            <label for="zettel-limit">Candidate limit</label>
-            <input id="zettel-limit" v-model.number="config.candidateLimit" type="number" min="1" max="50">
-          </div>
-          <div class="field">
-            <label for="zettel-review">Review threshold</label>
-            <input id="zettel-review" v-model.number="config.reviewThreshold" type="number" min="0" max="1" step="0.01">
-          </div>
-          <div class="field">
-            <label for="zettel-validation">Validation threshold</label>
-            <input id="zettel-validation" v-model.number="config.validationThreshold" type="number" min="0" max="1" step="0.01">
+        <div class="grid">
+          <ZettelFolderChooser
+            label="Index and audit data"
+            :value="config.dataFolder"
+            description="Cache, embeddings, reports, and rollback snapshots"
+            :disabled="!canUseVaultFolders"
+            @choose="pickZettelFolder('dataFolder', 'index and audit data')"
+          />
+          <div class="field-row">
+            <div class="field">
+              <label for="zettel-limit">Candidate limit</label>
+              <select id="zettel-limit" v-model.number="config.candidateLimit">
+                <option v-for="value in candidateLimitOptions" :key="value" :value="value">{{ value }} notes</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="zettel-review">Review threshold</label>
+              <select id="zettel-review" v-model.number="config.reviewThreshold">
+                <option v-for="option in thresholdOptions" :key="option.value" :value="option.value">
+                  {{ option.label }} ({{ option.value }})
+                </option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="zettel-validation">Validation threshold</label>
+              <select id="zettel-validation" v-model.number="config.validationThreshold">
+                <option v-for="option in validationThresholdOptions" :key="option.value" :value="option.value">
+                  {{ option.label }} ({{ option.value }})
+                </option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="zettel-shorthand-prompt">Prompt mode</label>
+              <select id="zettel-shorthand-prompt" v-model="config.shorthandPromptPath">
+                <option v-for="option in promptOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="zettel-actions">
-      <button type="button" :disabled="busy" @click="buildIndex">Build Index</button>
-      <button type="button" :disabled="busy" @click="suggest">Suggest</button>
-      <button type="button" :disabled="!canPreview" @click="previewMerge">Preview Merge</button>
-      <button type="button" class="mod-cta" :disabled="!canApply" @click="applyMerge">Apply</button>
-      <button type="button" class="mod-cta" :disabled="busy" @click="runInboxMerge">Run Inbox Merge</button>
-      <button type="button" :disabled="busy" @click="rollback">Rollback</button>
-    </div>
-
-    <div class="field">
-      <h3>Status</h3>
-      <p class="status-line" role="status" aria-live="polite">{{ status }}</p>
-    </div>
-    <div class="progress" :class="progressClass">
-      <div :style="progressStyle" />
-    </div>
-
-    <div class="zettel-review-grid">
-      <div class="zettel-candidates">
-        <h3>Candidates</h3>
-        <p v-if="!candidates.length" class="muted">Run Suggest after selecting a vault and active note.</p>
-        <article v-for="candidate in candidates" :key="candidate.path" class="zettel-card">
-          <label class="zettel-card-header">
-            <input type="checkbox" :checked="selectedPaths.includes(candidate.path)" @change="toggleCandidate(candidate.path, ($event.target as HTMLInputElement).checked)">
-            <span>{{ candidate.path }}</span>
-          </label>
-          <div class="zettel-badges">
-            <span>sim {{ formatScore(candidate.similarity) }}</span>
-            <span>conf {{ formatScore(candidate.confidence) }}</span>
-            <span>{{ candidate.relationship }}</span>
-            <span>{{ candidate.risk }}</span>
-          </div>
-          <p class="muted">{{ candidate.reason || "No reason returned." }}</p>
-          <p class="muted">Lines: {{ formatRanges(candidate.source_line_ranges) }}</p>
-          <pre>{{ candidate.extracted_markdown }}</pre>
-        </article>
+    <section class="zettel-section">
+      <div class="zettel-section-header">
+        <div>
+          <h3>Status</h3>
+          <p class="status-line" role="status" aria-live="polite">{{ status }}</p>
+        </div>
+        <button type="button" :disabled="busy" @click="rollback">Rollback</button>
       </div>
-
-      <div class="zettel-preview">
-        <h3>Merge Preview</h3>
-        <p v-if="proposal" class="status-line">{{ proposalQuality }}</p>
-        <template v-if="proposal">
-          <ZettelMergeDiff
-            :original-markdown="proposal.active_markdown || ''"
-            :final-markdown="proposal.final_markdown"
-            :insertions="proposal.merge_plan?.insertions || []"
-          />
-          <details class="zettel-final-markdown">
-            <summary>Final markdown</summary>
-            <textarea :value="proposal.final_markdown" readonly />
-          </details>
-        </template>
-        <p v-else class="muted">Select candidates and run Preview Merge. Nothing is written until Apply succeeds.</p>
+      <div class="progress" :class="progressClass">
+        <div :style="progressStyle" />
       </div>
-    </div>
-
-    <ZettelInboxReport :report="inboxReport" />
-
-    <div class="field">
-      <h3>Raw result</h3>
-      <pre role="status" aria-live="polite">{{ result }}</pre>
-    </div>
+      <details v-if="rawResultSummary" class="zettel-raw-result">
+        <summary>{{ rawResultSummary }}</summary>
+        <pre role="status" aria-live="polite">{{ result }}</pre>
+      </details>
+    </section>
   </div>
 </template>
+
+<style scoped>
+.zettel-panel {
+  max-width: 1280px;
+}
+
+.zettel-title-row,
+.zettel-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.zettel-title-row p,
+.zettel-section-header p {
+  margin: 6px 0 0;
+}
+
+.zettel-section {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  overflow: visible;
+  border: 1px solid #242b35;
+  border-radius: 8px;
+  background: #141922;
+}
+
+.zettel-section-header button,
+.zettel-inline-actions button,
+.zettel-folder-grid button {
+  text-align: center;
+}
+
+.zettel-folder-grid,
+.zettel-settings-grid,
+.zettel-review-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.zettel-folder-grid,
+.zettel-settings-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.zettel-review-grid {
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+}
+
+.zettel-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.zettel-inline-actions .mod-cta,
+.zettel-section-header .mod-cta {
+  border-color: #6ea8fe;
+  background: #2d405e;
+}
+
+.zettel-candidates,
+.zettel-preview {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.zettel-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #2b313b;
+  border-radius: 8px;
+  background: #10141b;
+}
+
+.zettel-card-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.zettel-card pre {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.zettel-preview textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 520px;
+  resize: vertical;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.zettel-final-markdown,
+.zettel-raw-result {
+  display: grid;
+  gap: 8px;
+}
+
+.zettel-final-markdown summary,
+.zettel-raw-result summary {
+  cursor: pointer;
+  color: #d6deea;
+}
+
+@media (max-width: 760px) {
+  .zettel-title-row,
+  .zettel-section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .zettel-review-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

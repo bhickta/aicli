@@ -23,6 +23,9 @@ const fallbackShorthandPrompt = `**ROLE & GOAL**
 * English only.`
 
 func loadShorthandPrompt(options Options) string {
+	if strings.EqualFold(strings.TrimSpace(options.ShorthandPromptPath), "builtin") {
+		return fallbackShorthandPrompt
+	}
 	content, err := readShorthandPrompt(options.ShorthandPromptPath)
 	if err != nil {
 		return fallbackShorthandPrompt

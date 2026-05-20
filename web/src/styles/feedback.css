@@ -1,0 +1,39 @@
+.status-line {
+  border-left: 3px solid #6ea8fe;
+  padding: 8px 10px;
+  background: #10141b;
+  color: #cbd5e1;
+}
+
+.status-line.compact {
+  margin: 0;
+}
+
+.progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #0d1015;
+}
+
+.progress div {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: #6ea8fe;
+  transition: width 180ms ease;
+}
+
+.progress.indeterminate div {
+  background: linear-gradient(90deg, #6ea8fe, #8bd5ca);
+  animation: progress-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes progress-indeterminate {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}

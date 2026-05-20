@@ -1,0 +1,89 @@
+@media (max-width: 760px) {
+  #app {
+    grid-template-columns: 1fr;
+  }
+
+  aside {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid #2b313b;
+  }
+
+  #primary-tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    flex: 1;
+    min-width: 0;
+  }
+
+  #primary-tabs [role="tab"] {
+    width: auto;
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+
+  section {
+    padding: 14px;
+  }
+
+  header {
+    align-items: flex-start;
+    flex-direction: column;
+    margin-bottom: 16px;
+  }
+
+  .header-status {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .system-usage {
+    grid-template-columns: 1fr;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .panel {
+    max-width: none;
+    padding: 12px;
+  }
+
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .browser-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workflow-category-tabs {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .workflow-category-tabs [role="tab"] {
+    white-space: nowrap;
+  }
+
+  .review-pane {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .review-pane iframe,
+  .review-pane textarea {
+    min-height: 420px;
+  }
+
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+}

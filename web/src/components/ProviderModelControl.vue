@@ -2,12 +2,13 @@
 import { computed, shallowRef, watch } from "vue";
 import { api } from "../lib/api";
 import { appState, defaultModel, defaultProviderId, providers } from "../stores/appState";
-import type { Model } from "../types";
+import type { Model, ProviderConfig } from "../types";
 
 const props = withDefaults(defineProps<{
   providerId?: string;
   model?: string;
   includeRefresh?: boolean;
+  providerOptions?: ProviderConfig[];
 }>(), {
   providerId: "",
   model: "",
@@ -19,7 +20,8 @@ const emit = defineEmits<{
 }>();
 
 const selectedProvider = shallowRef(props.providerId || defaultProviderId.value);
-const selectedProviderConfig = computed(() => providers.value.find((provider) => provider.id === selectedProvider.value));
+const availableProviders = computed(() => props.providerOptions?.length ? props.providerOptions : providers.value);
+const selectedProviderConfig = computed(() => availableProviders.value.find((provider) => provider.id === selectedProvider.value));
 const providerDefaultModel = computed(() => selectedProviderConfig.value?.model || defaultModel.value || "");
 const selectedModel = shallowRef(props.model || providerDefaultModel.value);
 const status = shallowRef("");
@@ -35,6 +37,17 @@ watch(() => props.providerId, (providerId) => {
   const nextProvider = providerId || defaultProviderId.value;
   if (nextProvider && nextProvider !== selectedProvider.value) selectedProvider.value = nextProvider;
 });
+
+watch(availableProviders, (nextProviders) => {
+  if (!nextProviders.length) {
+    selectedProvider.value = "";
+    selectedModel.value = "";
+    return;
+  }
+  if (!nextProviders.some((provider) => provider.id === selectedProvider.value)) {
+    selectedProvider.value = nextProviders[0]?.id || "";
+  }
+}, { immediate: true });
 
 watch(() => props.model, (model) => {
   selectedModel.value = model || providerDefaultModel.value;
@@ -87,8 +100,8 @@ function ensureSelectedModel() {
     <div class="field">
       <label>Provider</label>
       <select v-model="selectedProvider">
-        <option v-if="!providers.length" value="">No providers configured</option>
-        <option v-for="provider in providers" :key="provider.id" :value="provider.id">
+        <option v-if="!availableProviders.length" value="">No providers configured</option>
+        <option v-for="provider in availableProviders" :key="provider.id" :value="provider.id">
           {{ provider.name || provider.id }}
         </option>
       </select>

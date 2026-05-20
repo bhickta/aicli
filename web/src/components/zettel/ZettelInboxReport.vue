@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import type { InboxMergeReport } from "../../types";
+import ZettelBadges from "./ZettelBadges.vue";
 
 const props = defineProps<{
   report: InboxMergeReport | null;
@@ -16,6 +17,14 @@ const rows = computed(() => {
   ];
 });
 const selected = computed(() => rows.value.find((row) => row.source_path === selectedSource.value) || rows.value[0] || null);
+const reportBadges = computed(() => {
+  if (!props.report) return [];
+  return [
+    `${props.report.processed_count} processed`,
+    `${props.report.pending_count} pending`,
+    `${props.report.failed_count} failed`,
+  ];
+});
 
 function selectRow(path: string) {
   selectedSource.value = path;
@@ -29,11 +38,7 @@ function selectRow(path: string) {
         <h3>Inbox Merge Audit</h3>
         <p class="muted">{{ report.run_id }}</p>
       </div>
-      <div class="zettel-badges">
-        <span>{{ report.processed_count }} processed</span>
-        <span>{{ report.pending_count }} pending</span>
-        <span>{{ report.failed_count }} failed</span>
-      </div>
+      <ZettelBadges :items="reportBadges" />
     </header>
 
     <div class="inbox-report-grid">

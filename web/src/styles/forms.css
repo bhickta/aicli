@@ -1,0 +1,102 @@
+button,
+input,
+select,
+textarea,
+output,
+pre,
+code {
+  border: 1px solid #343b46;
+  border-radius: 6px;
+  background: #202630;
+  color: #eceff4;
+}
+
+button,
+input,
+select,
+textarea,
+output,
+code,
+pre {
+  padding: 9px 10px;
+}
+
+button {
+  cursor: pointer;
+  text-align: left;
+}
+
+button:disabled {
+  cursor: progress;
+  opacity: 0.55;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+output:focus-visible {
+  outline: 2px solid #6ea8fe;
+  outline-offset: 2px;
+  border-color: #6ea8fe;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.panel {
+  max-width: 980px;
+  border: 1px solid #2b313b;
+  border-radius: 8px;
+  background: #161a21;
+  padding: 16px;
+}
+
+.muted {
+  color: #9aa4b2;
+}
+
+.grid {
+  display: grid;
+  gap: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field label {
+  font-size: 14px;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.path-control {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.path-control output {
+  min-height: 40px;
+  word-break: break-word;
+}
+
+.path-control button {
+  white-space: nowrap;
+}
