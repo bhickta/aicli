@@ -103,6 +103,28 @@ func TestNormalizeRequestParsesLocalTimeAsIST(t *testing.T) {
 	}
 }
 
+func TestNormalizeRequestBoundsTimingControls(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
+	req, err := normalizeRequest(ScheduleRequest{
+		RecipientPhone: "+91 98765 43210",
+		Message:        "hello",
+		ScheduledAt:    "2026-05-20T12:00:00Z",
+		WaitSeconds:    1,
+		SendRetries:    99,
+	}, now)
+	if err != nil {
+		t.Fatalf("normalizeRequest() error = %v", err)
+	}
+	if req.waitSeconds != minWaitSeconds {
+		t.Fatalf("waitSeconds = %d, want %d", req.waitSeconds, minWaitSeconds)
+	}
+	if req.sendRetries != maxSendRetries {
+		t.Fatalf("sendRetries = %d, want %d", req.sendRetries, maxSendRetries)
+	}
+}
+
 func TestActivateAndSendUsesActiveWindowEnter(t *testing.T) {
 	t.Parallel()
 

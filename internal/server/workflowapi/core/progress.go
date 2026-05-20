@@ -2,10 +2,7 @@ package core
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net/http"
-	"time"
 
 	"github.com/bhickta/aicli/internal/storage"
 )
@@ -61,67 +58,4 @@ func (r *Runtime) updateJobProgress(ctx context.Context, job *storage.Job, stage
 	if r.logger != nil {
 		r.logger.Info("workflow progress", "job", job.ID, "type", job.Type, "stage", stage, "step", currentStep, "total", totalSteps, "eta_seconds", job.ETASeconds)
 	}
-}
-
-func (r *Runtime) finishJobStore(ctx context.Context, job storage.Job, result any, err error) {
-	job.FinishedAt = time.Now().UTC()
-	job.ETASeconds = 0
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			job.Status = storage.JobStatusCancelled
-			job.Stage = storage.JobStatusCancelled
-			job.Error = storage.JobStatusCancelled
-			_ = r.store.UpdateJob(ctx, job)
-			if r.logger != nil {
-				r.logger.Info("workflow cancelled", "job", job.ID, "type", job.Type)
-			}
-			return
-		}
-		job.Status = storage.JobStatusFailed
-		job.Stage = storage.JobStatusFailed
-		job.Error = err.Error()
-		_ = r.store.UpdateJob(ctx, job)
-		if r.logger != nil {
-			r.logger.Error("workflow failed", "job", job.ID, "type", job.Type, "error", err)
-		}
-		return
-	}
-	output, marshalErr := json.Marshal(result)
-	if marshalErr != nil {
-		job.Status = storage.JobStatusFailed
-		job.Stage = storage.JobStatusFailed
-		job.Error = marshalErr.Error()
-		_ = r.store.UpdateJob(ctx, job)
-		if r.logger != nil {
-			r.logger.Error("workflow result marshal failed", "job", job.ID, "type", job.Type, "error", marshalErr)
-		}
-		return
-	}
-	job.Status = storage.JobStatusCompleted
-	job.Stage = storage.JobStatusCompleted
-	job.Progress = 1
-	job.CurrentStep = job.TotalSteps
-	job.Output = string(output)
-	if err := r.store.UpdateJob(ctx, job); err != nil && r.logger != nil {
-		r.logger.Error("workflow completion update failed", "job", job.ID, "type", job.Type, "error", err)
-	}
-	if r.logger != nil {
-		r.logger.Info("workflow completed", "job", job.ID, "type", job.Type)
-	}
-}
-
-func estimateETA(job storage.Job) int {
-	if job.Progress <= 0 || job.Progress >= 1 || job.CreatedAt.IsZero() {
-		return 0
-	}
-	elapsed := time.Since(job.CreatedAt)
-	if elapsed < 30*time.Second || job.CurrentStep < 1 || job.Progress < 0.05 {
-		return 0
-	}
-	total := time.Duration(float64(elapsed) / job.Progress)
-	remaining := total - elapsed
-	if remaining <= 0 {
-		return 0
-	}
-	return int(remaining.Round(time.Second).Seconds())
 }
