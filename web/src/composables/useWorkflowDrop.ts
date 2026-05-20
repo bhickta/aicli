@@ -14,6 +14,11 @@ interface WorkflowDropOptions {
 
 export function useWorkflowDrop(options: WorkflowDropOptions) {
   async function handleDrop(entries: DropEntry[]) {
+    if (!entries.length) {
+      options.status.value = "No files selected";
+      options.result.value = "";
+      return;
+    }
     if (entries.some((entry) => entry.relativePath.includes("/"))) {
       selectWorkflowCategory("Video");
       options.chooseWorkflow("video-course");
