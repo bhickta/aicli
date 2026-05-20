@@ -31,6 +31,7 @@
   - `pdftoppm` for PDF OCR and PDF analysis.
   - `ffmpeg` and `ffprobe` for video/audio workflows.
   - `whisper-cli` for local audio transcription.
+  - `codex` CLI for ChatGPT/Codex Pro plan workflows.
 
 ## Run
 
@@ -130,7 +131,14 @@ The older heavy `zettel-merge-ai` Obsidian plugin is no longer the target archit
 
 ## Codex Workflow
 
-The default settings include an `OpenAI Codex` provider:
+There are two Codex workflows:
+
+- `Coding task (Codex CLI / Pro)` runs `codex exec` locally and uses the official Codex CLI authentication. If `codex doctor` shows `stored auth mode chatgpt`, this path uses your ChatGPT/Codex plan instead of `OPENAI_API_KEY`.
+- `Coding task (API key)` calls the OpenAI API directly and uses API project billing/quota.
+
+The CLI workflow defaults to `read-only` sandbox and `never` approval because it runs non-interactively from the web app. Switch sandbox to `workspace-write` only when you want Codex CLI to edit the selected workspace folder.
+
+The default settings also include an `OpenAI Codex` API provider:
 
 - Provider id: `codex`
 - Provider type: `openai-responses`
@@ -138,7 +146,7 @@ The default settings include an `OpenAI Codex` provider:
 - API key source: `OPENAI_API_KEY`
 - Model filter: `codex`
 
-Use it from `Workflows` -> `Codex` -> `Coding task`. The model list is loaded from the provider and filtered to Codex models, so newer Codex model names can appear without a frontend change. Set `OPENAI_API_KEY` before starting `aicli`, or paste an `api_key` into the provider entry from `Settings`.
+Use API-key mode from `Workflows` -> `Codex` -> `Coding task (API key)`. The model list is loaded from the provider and filtered to Codex models, so newer Codex model names can appear without a frontend change. Set `OPENAI_API_KEY` before starting `aicli`, or paste an `api_key` into the provider entry from `Settings`.
 
 ## Configuration
 
@@ -177,6 +185,14 @@ Typical provider entries:
   "model_filter": "codex",
   "reasoning_effort": "medium",
   "text_verbosity": "medium"
+}
+```
+
+Tool config includes:
+
+```json
+{
+  "codex_cli": "codex"
 }
 ```
 

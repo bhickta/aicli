@@ -68,6 +68,18 @@ func TestDefaultCodexProviderUsesAPIKeyEnv(t *testing.T) {
 	if codex.ModelFilter != "codex" {
 		t.Fatalf("codex ModelFilter = %q, want codex", codex.ModelFilter)
 	}
+	if settings.Tools.CodexCLI != "codex" {
+		t.Fatalf("CodexCLI = %q, want codex", settings.Tools.CodexCLI)
+	}
+}
+
+func TestNormalizeDefaultsCodexCLI(t *testing.T) {
+	t.Parallel()
+
+	settings := Normalize(Settings{Tools: ToolConfig{FFmpeg: "ffmpeg"}})
+	if settings.Tools.CodexCLI != "codex" {
+		t.Fatalf("CodexCLI = %q, want codex", settings.Tools.CodexCLI)
+	}
 }
 
 func TestLoadRejectsInvalidJSON(t *testing.T) {

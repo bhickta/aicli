@@ -1,0 +1,95 @@
+import type { WorkflowDefinition } from "../types";
+
+export const codexWorkflowDefinitions: WorkflowDefinition[] = [
+  {
+    id: "codex-cli-task",
+    category: "Codex",
+    label: "Coding task (Codex CLI / Pro)",
+    endpoint: "/api/workflows/codex/cli",
+    fields: [
+      { type: "text", id: "model", label: "Model override (optional)", value: "", placeholder: "Leave empty for Codex CLI default" },
+      { type: "text", id: "profile", label: "Codex profile (optional)", value: "", placeholder: "Optional config.toml profile" },
+      { type: "path", id: "workdir", label: "Workspace folder (optional)", picker: "directory" },
+      {
+        type: "select",
+        id: "sandbox",
+        label: "Sandbox",
+        default: "read-only",
+        options: [
+          { value: "read-only", label: "Read only" },
+          { value: "workspace-write", label: "Workspace write" },
+          { value: "danger-full-access", label: "Danger full access" },
+        ],
+      },
+      {
+        type: "select",
+        id: "approval_policy",
+        label: "Approval policy",
+        default: "never",
+        options: [
+          { value: "never", label: "Never" },
+          { value: "on-request", label: "On request" },
+          { value: "untrusted", label: "Untrusted commands" },
+        ],
+      },
+      { type: "checkbox", id: "skip_git_repo_check", label: "Allow non-git folder", checked: true },
+      { type: "checkbox", id: "search", label: "Enable web search", checked: false },
+      { type: "textarea", id: "task", label: "Coding task", rows: 8, placeholder: "Describe the code change, review question, or debugging task..." },
+      { type: "textarea", id: "context", label: "Context (optional)", rows: 6, placeholder: "Paste relevant file paths, logs, constraints, or acceptance criteria..." },
+    ],
+    buildPayload: (values) => ({
+      model: values.model || "",
+      profile: values.profile || "",
+      workdir: values.workdir || "",
+      sandbox: values.sandbox || "read-only",
+      approval_policy: values.approval_policy || "never",
+      skip_git_repo_check: Boolean(values.skip_git_repo_check),
+      search: Boolean(values.search),
+      task: values.task,
+      context: values.context,
+    }),
+  },
+  {
+    id: "codex-task",
+    category: "Codex",
+    label: "Coding task (API key)",
+    endpoint: "/api/workflows/codex/run",
+    preferredProviderId: "codex",
+    fields: [
+      { type: "providerModel" },
+      {
+        type: "select",
+        id: "reasoning_effort",
+        label: "Reasoning effort",
+        default: "medium",
+        options: [
+          { value: "low", label: "Low" },
+          { value: "medium", label: "Medium" },
+          { value: "high", label: "High" },
+          { value: "xhigh", label: "Extra high" },
+        ],
+      },
+      {
+        type: "select",
+        id: "text_verbosity",
+        label: "Response verbosity",
+        default: "medium",
+        options: [
+          { value: "low", label: "Low" },
+          { value: "medium", label: "Medium" },
+          { value: "high", label: "High" },
+        ],
+      },
+      { type: "textarea", id: "task", label: "Coding task", rows: 8, placeholder: "Describe the code change, review question, or debugging task..." },
+      { type: "textarea", id: "context", label: "Context (optional)", rows: 6, placeholder: "Paste relevant file paths, logs, constraints, or acceptance criteria..." },
+    ],
+    buildPayload: (values) => ({
+      provider_id: values.provider_id,
+      model: values.model,
+      reasoning_effort: values.reasoning_effort || "medium",
+      text_verbosity: values.text_verbosity || "medium",
+      task: values.task,
+      context: values.context,
+    }),
+  },
+];

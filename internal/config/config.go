@@ -34,6 +34,7 @@ type ToolConfig struct {
 	FFprobe    string `json:"ffprobe"`
 	PDFToPPM   string `json:"pdftoppm"`
 	WhisperCLI string `json:"whisper_cli"`
+	CodexCLI   string `json:"codex_cli"`
 }
 
 func DefaultDataDir() (string, error) {
@@ -85,6 +86,7 @@ func DefaultSettings() Settings {
 			FFprobe:    "ffprobe",
 			PDFToPPM:   "pdftoppm",
 			WhisperCLI: "whisper",
+			CodexCLI:   "codex",
 		},
 	}
 }
@@ -149,6 +151,9 @@ func withDefaults(settings Settings) Settings {
 	}
 	if settings.Tools.WhisperCLI == "" {
 		settings.Tools.WhisperCLI = defaults.Tools.WhisperCLI
+	}
+	if settings.Tools.CodexCLI == "" {
+		settings.Tools.CodexCLI = defaults.Tools.CodexCLI
 	}
 	if settings.Tools.WhisperCLI == "whisper-cli" {
 		if _, err := exec.LookPath("whisper-cli"); err != nil {
