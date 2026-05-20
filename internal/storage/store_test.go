@@ -4,9 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"path/filepath"
 	"testing"
-
-	_ "modernc.org/sqlite"
 )
 
 func TestSQLiteStoreJobLifecycle(t *testing.T) {
@@ -67,5 +66,33 @@ func TestSQLiteStoreGetJobNotFound(t *testing.T) {
 	_, err = store.GetJob(context.Background(), "missing")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("GetJob() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestOpenSQLiteConfiguresLockResistantConnection(t *testing.T) {
+	t.Parallel()
+
+	db, err := OpenSQLite(filepath.Join(t.TempDir(), "aicli.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if got := db.Stats().MaxOpenConnections; got != 1 {
+		t.Fatalf("max open connections = %d, want 1", got)
+	}
+	var busyTimeout int
+	if err := db.QueryRow("PRAGMA busy_timeout").Scan(&busyTimeout); err != nil {
+		t.Fatalf("read busy_timeout: %v", err)
+	}
+	if busyTimeout != 10000 {
+		t.Fatalf("busy_timeout = %d, want 10000", busyTimeout)
+	}
+	var journalMode string
+	if err := db.QueryRow("PRAGMA journal_mode").Scan(&journalMode); err != nil {
+		t.Fatalf("read journal_mode: %v", err)
+	}
+	if journalMode != "wal" {
+		t.Fatalf("journal_mode = %q, want wal", journalMode)
 	}
 }

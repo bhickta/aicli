@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "modernc.org/sqlite"
-
 	"github.com/bhickta/aicli/internal/config"
 	"github.com/bhickta/aicli/internal/provider/registry"
 	"github.com/bhickta/aicli/internal/server"
@@ -38,7 +36,7 @@ func New(opts Options, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
-	db, err := sql.Open("sqlite", filepath.Join(opts.DataDir, "aicli.db"))
+	db, err := storage.OpenSQLite(filepath.Join(opts.DataDir, "aicli.db"))
 	if err != nil {
 		return nil, err
 	}
