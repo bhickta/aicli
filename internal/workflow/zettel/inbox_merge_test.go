@@ -123,3 +123,45 @@ func TestServiceInboxMergeKeepsPendingSourceUnchanged(t *testing.T) {
 		t.Fatalf("pending reason = %q, want judge reason", resp.Pending[0].Reason)
 	}
 }
+
+func TestServiceInboxMergeRespectsInboxLimit(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "001.md"), "first\n")
+	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "002.md"), "second\n")
+	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "003.md"), "third\n")
+
+	provider := &fakeZettelProvider{}
+	service := NewWithProviders(provider, provider, provider, provider)
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "inbox-to-merge",
+		InboxLimit:           2,
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.SourceCount != 3 || resp.SelectedCount != 2 || resp.SkippedCount != 1 || resp.Limit != 2 {
+		t.Fatalf("InboxMerge() = %#v, want two selected out of three", resp)
+	}
+	if resp.FailedCount != 2 {
+		t.Fatalf("failed count = %d, want only selected notes attempted", resp.FailedCount)
+	}
+	if len(resp.Failed) != 2 || resp.Failed[0].SourcePath != "inbox-to-merge/001.md" || resp.Failed[1].SourcePath != "inbox-to-merge/002.md" {
+		t.Fatalf("failed paths = %#v, want sorted first two notes only", resp.Failed)
+	}
+	if _, err := os.Stat(filepath.Join(vaultDir, "inbox-to-merge", "003.md")); err != nil {
+		t.Fatalf("limited-out source changed: %v", err)
+	}
+}

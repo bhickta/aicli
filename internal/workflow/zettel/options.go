@@ -43,6 +43,9 @@ func normalizeOptions(options Options) Options {
 	if strings.TrimSpace(options.InboxFolder) == "" {
 		options.InboxFolder = DefaultInboxFolder
 	}
+	if options.InboxLimit < 0 {
+		options.InboxLimit = 0
+	}
 	if strings.TrimSpace(options.ShorthandPromptPath) == "" {
 		options.ShorthandPromptPath = DefaultShorthandPromptPath
 	}

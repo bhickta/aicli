@@ -62,6 +62,7 @@ func (idx *embeddingIndex) Build(ctx context.Context, progress ProgressFunc) (In
 		return IndexResponse{}, err
 	}
 	resp := IndexResponse{Scanned: len(notes)}
+	resp.Pruned = pruneMissingCacheItems(&cache, notes)
 	prepared, reused, err := idx.prepareEmbeddingSources(ctx, notes, cache, progress)
 	if err != nil {
 		return IndexResponse{}, err
@@ -136,6 +137,25 @@ func (idx *embeddingIndex) Build(ctx context.Context, progress ProgressFunc) (In
 		return IndexResponse{}, err
 	}
 	return resp, nil
+}
+
+func pruneMissingCacheItems(cache *embeddingCache, notes []string) int {
+	if len(cache.Items) == 0 {
+		return 0
+	}
+	current := make(map[string]struct{}, len(notes))
+	for _, note := range notes {
+		current[note] = struct{}{}
+	}
+	pruned := 0
+	for path := range cache.Items {
+		if _, ok := current[path]; ok {
+			continue
+		}
+		delete(cache.Items, path)
+		pruned++
+	}
+	return pruned
 }
 
 func (idx *embeddingIndex) prepareEmbeddingSources(ctx context.Context, notes []string, cache embeddingCache, progress ProgressFunc) ([]preparedEmbeddingSource, int, error) {

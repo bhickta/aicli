@@ -20,6 +20,9 @@ const selected = computed(() => rows.value.find((row) => row.source_path === sel
 const reportBadges = computed(() => {
   if (!props.report) return [];
   return [
+    `${props.report.selected_count ?? props.report.processed_count + props.report.pending_count + props.report.failed_count} selected`,
+    `${props.report.source_count ?? 0} in inbox`,
+    `${props.report.skipped_count ?? 0} skipped`,
     `${props.report.processed_count} processed`,
     `${props.report.pending_count} pending`,
     `${props.report.failed_count} failed`,

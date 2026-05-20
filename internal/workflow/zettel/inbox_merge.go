@@ -33,13 +33,24 @@ func (s *Service) InboxMerge(ctx context.Context, req InboxMergeRequest, progres
 		return InboxMergeResponse{}, err
 	}
 	sort.Strings(sourceNotes)
+	sourceCount := len(sourceNotes)
+	if options.InboxLimit > 0 && options.InboxLimit < len(sourceNotes) {
+		sourceNotes = sourceNotes[:options.InboxLimit]
+	}
 	runID := fmt.Sprintf("zettel-inbox-%d", time.Now().UTC().UnixNano())
 	archive := newArchiveStore(v, options)
 	archivePath, err := archive.inboxRunPath(runID)
 	if err != nil {
 		return InboxMergeResponse{}, err
 	}
-	response := InboxMergeResponse{RunID: runID, ArchivePath: archivePath}
+	response := InboxMergeResponse{
+		RunID:         runID,
+		ArchivePath:   archivePath,
+		SourceCount:   sourceCount,
+		SelectedCount: len(sourceNotes),
+		SkippedCount:  sourceCount - len(sourceNotes),
+		Limit:         options.InboxLimit,
+	}
 	if len(sourceNotes) == 0 {
 		return response, nil
 	}

@@ -54,3 +54,12 @@ func TestNormalizeOptionsKeepsExplicitStepChoices(t *testing.T) {
 		t.Fatalf("models = %#v, want explicit step models", options)
 	}
 }
+
+func TestNormalizeOptionsClampsNegativeInboxLimit(t *testing.T) {
+	t.Parallel()
+
+	options := NormalizeOptions(Options{InboxLimit: -5})
+	if options.InboxLimit != 0 {
+		t.Fatalf("inbox limit = %d, want full inbox sentinel", options.InboxLimit)
+	}
+}

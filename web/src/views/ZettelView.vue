@@ -50,6 +50,7 @@ const config = reactive({
   activePath: localStorage.getItem("aicli.zettel.activePath") || "",
   rootFolder: localStorage.getItem("aicli.zettel.rootFolder") || "zettelkasten",
   inboxFolder: localStorage.getItem("aicli.zettel.inboxFolder") || "inbox-to-merge",
+  inboxLimit: Number(localStorage.getItem("aicli.zettel.inboxLimit") || 0),
   dataFolder: localStorage.getItem("aicli.zettel.dataFolder") || ".aicli-zettel-merge",
   shorthandPromptPath: localStorage.getItem("aicli.zettel.shorthandPromptPath") || "example_prompts.md",
   providerId: legacyProviderId,
@@ -83,6 +84,12 @@ const rollbackJobID = shallowRef("");
 const mode = shallowRef<ZettelMode>(storedMode === "manual" || storedMode === "settings" ? storedMode : "inbox");
 
 const candidateLimitOptions = [6, 12, 20, 30, 50];
+const inboxLimitOptions = [
+  { value: 0, label: "All inbox notes" },
+  { value: 5, label: "5 notes" },
+  { value: 10, label: "10 notes" },
+  { value: 25, label: "25 notes" },
+];
 const thresholdOptions = [
   { value: 0.75, label: "Broad" },
   { value: 0.85, label: "Balanced" },
@@ -136,6 +143,7 @@ watch(config, () => {
   localStorage.setItem("aicli.zettel.activePath", config.activePath);
   localStorage.setItem("aicli.zettel.rootFolder", config.rootFolder);
   localStorage.setItem("aicli.zettel.inboxFolder", config.inboxFolder);
+  localStorage.setItem("aicli.zettel.inboxLimit", String(config.inboxLimit));
   localStorage.setItem("aicli.zettel.dataFolder", config.dataFolder);
   localStorage.setItem("aicli.zettel.shorthandPromptPath", config.shorthandPromptPath);
   localStorage.setItem("aicli.zettel.providerId", config.providerId);
@@ -178,6 +186,7 @@ function basePayload() {
     vault_path: config.vaultPath,
     root_folder: config.rootFolder,
     inbox_folder: config.inboxFolder,
+    inbox_limit: readNumberValue(config.inboxLimit, 0, 0),
     data_folder: config.dataFolder,
     shorthand_prompt_path: config.shorthandPromptPath,
     provider_id: config.candidateProviderId,
@@ -443,6 +452,15 @@ function relativeToVault(path: string) {
           :disabled="!canUseVaultFolders"
           @choose="pickZettelFolder('rootFolder', 'destination notes')"
         />
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="zettel-inbox-limit">Run size</label>
+          <select id="zettel-inbox-limit" v-model.number="config.inboxLimit">
+            <option v-for="option in inboxLimitOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+          </select>
+        </div>
       </div>
 
       <div class="zettel-inline-actions">

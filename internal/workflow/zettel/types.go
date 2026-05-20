@@ -45,6 +45,7 @@ type Options struct {
 	MaxMergeRetries      int     `json:"max_merge_retries"`
 	EmbeddingBatchSize   int     `json:"embedding_batch_size"`
 	InboxFolder          string  `json:"inbox_folder"`
+	InboxLimit           int     `json:"inbox_limit"`
 	ShorthandPromptPath  string  `json:"shorthand_prompt_path"`
 }
 
@@ -56,6 +57,7 @@ type IndexResponse struct {
 	Scanned int `json:"scanned"`
 	Updated int `json:"updated"`
 	Reused  int `json:"reused"`
+	Pruned  int `json:"pruned"`
 }
 
 type SuggestRequest struct {
@@ -126,6 +128,10 @@ type InboxMergeResponse struct {
 	Processed      []InboxSourceResult `json:"processed"`
 	Pending        []InboxSourceResult `json:"pending"`
 	Failed         []InboxSourceResult `json:"failed"`
+	SourceCount    int                 `json:"source_count"`
+	SelectedCount  int                 `json:"selected_count"`
+	SkippedCount   int                 `json:"skipped_count"`
+	Limit          int                 `json:"limit,omitempty"`
 	ProcessedCount int                 `json:"processed_count"`
 	PendingCount   int                 `json:"pending_count"`
 	FailedCount    int                 `json:"failed_count"`

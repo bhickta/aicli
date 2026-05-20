@@ -157,6 +157,10 @@ export interface InboxMergeReport {
   processed?: InboxSourceResult[];
   pending?: InboxSourceResult[];
   failed?: InboxSourceResult[];
+  source_count?: number;
+  selected_count?: number;
+  skipped_count?: number;
+  limit?: number;
   processed_count: number;
   pending_count: number;
   failed_count: number;

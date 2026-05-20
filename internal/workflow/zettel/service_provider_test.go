@@ -3,6 +3,7 @@ package zettel
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -83,6 +84,57 @@ func TestServiceIndexUsesSeparateEmbeddingProvider(t *testing.T) {
 	}
 	if resp.Updated != 1 || embeddingProvider.embeddingCalls != 1 {
 		t.Fatalf("Index() = %#v, embedding calls = %d; want one updated note through embedding provider", resp, embeddingProvider.embeddingCalls)
+	}
+}
+
+func TestServiceIndexPrunesDeletedDestinationNotes(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	removedPath := filepath.Join(vaultDir, "zettelkasten", "removed.md")
+	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "kept.md"), "# Kept\n")
+	writeTestFile(t, removedPath, "# Removed\n")
+
+	options := Options{
+		VaultPath:      vaultDir,
+		RootFolder:     "zettelkasten",
+		DataFolder:     ".aicli-zettel-merge",
+		EmbeddingModel: "text-embedding-nomic-embed-text-v1.5",
+	}
+	embeddingProvider := &fakeZettelProvider{}
+	service := NewWithEmbedding(nil, embeddingProvider)
+	first, err := service.Index(context.Background(), IndexRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("Index() first error = %v", err)
+	}
+	if first.Scanned != 2 || first.Updated != 2 || first.Pruned != 0 {
+		t.Fatalf("first Index() = %#v, want two updated notes and no pruning", first)
+	}
+
+	if err := os.Remove(removedPath); err != nil {
+		t.Fatalf("remove indexed note: %v", err)
+	}
+	second, err := service.Index(context.Background(), IndexRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("Index() second error = %v", err)
+	}
+	if second.Scanned != 1 || second.Reused != 1 || second.Updated != 0 || second.Pruned != 1 {
+		t.Fatalf("second Index() = %#v, want one reused note and one pruned note", second)
+	}
+
+	v, err := newVault(vaultDir)
+	if err != nil {
+		t.Fatalf("newVault() error = %v", err)
+	}
+	cache, err := newEmbeddingIndex(v, normalizeOptions(options), embeddingProvider).load()
+	if err != nil {
+		t.Fatalf("load cache: %v", err)
+	}
+	if _, ok := cache.Items["zettelkasten/removed.md"]; ok {
+		t.Fatalf("deleted note remains in cache: %#v", cache.Items)
+	}
+	if _, ok := cache.Items["zettelkasten/kept.md"]; !ok {
+		t.Fatalf("kept note missing from cache: %#v", cache.Items)
 	}
 }
 
