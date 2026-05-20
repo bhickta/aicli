@@ -17,6 +17,9 @@ const (
 	defaultWaitSeconds = 12
 	minWaitSeconds     = 3
 	maxWaitSeconds     = 120
+	defaultSendRetries = 2
+	minSendRetries     = 1
+	maxSendRetries     = 5
 )
 
 type Runner interface {
@@ -25,16 +28,20 @@ type Runner interface {
 }
 
 type Service struct {
-	tools  config.ToolConfig
-	runner Runner
-	now    func() time.Time
+	tools          config.ToolConfig
+	runner         Runner
+	now            func() time.Time
+	sendFocusDelay time.Duration
+	sendRetryDelay time.Duration
 }
 
 func New(tools config.ToolConfig, runner Runner) *Service {
 	return &Service{
-		tools:  tools,
-		runner: runner,
-		now:    time.Now,
+		tools:          tools,
+		runner:         runner,
+		now:            time.Now,
+		sendFocusDelay: 300 * time.Millisecond,
+		sendRetryDelay: 1500 * time.Millisecond,
 	}
 }
 
@@ -88,7 +95,8 @@ func (s *Service) Schedule(ctx context.Context, req ScheduleRequest, progress Pr
 	if err != nil {
 		return ScheduleResponse{}, err
 	}
-	if err := s.activateAndSend(ctx, windowID); err != nil {
+	attempts, err := s.activateAndSend(ctx, windowID, normalized.sendRetries)
+	if err != nil {
 		return ScheduleResponse{}, err
 	}
 	if progress != nil {
@@ -100,7 +108,8 @@ func (s *Service) Schedule(ctx context.Context, req ScheduleRequest, progress Pr
 		ScheduledAt:    normalized.scheduledAt.Format(time.RFC3339),
 		AutoSend:       true,
 		URL:            chatURL,
-		Output:         "send keystroke delivered to WhatsApp Web",
+		Output:         fmt.Sprintf("Enter keystroke delivered to active WhatsApp Web window %d time(s)", attempts),
+		SendAttempts:   attempts,
 	}, nil
 }
 
@@ -111,6 +120,7 @@ type normalizedRequest struct {
 	scheduledAt    time.Time
 	autoSend       bool
 	waitSeconds    int
+	sendRetries    int
 }
 
 func normalizeRequest(req ScheduleRequest, now time.Time) (normalizedRequest, error) {
@@ -144,6 +154,16 @@ func normalizeRequest(req ScheduleRequest, now time.Time) (normalizedRequest, er
 	if waitSeconds > maxWaitSeconds {
 		waitSeconds = maxWaitSeconds
 	}
+	sendRetries := req.SendRetries
+	if sendRetries <= 0 {
+		sendRetries = defaultSendRetries
+	}
+	if sendRetries < minSendRetries {
+		sendRetries = minSendRetries
+	}
+	if sendRetries > maxSendRetries {
+		sendRetries = maxSendRetries
+	}
 	return normalizedRequest{
 		recipientName:  recipientName,
 		recipientPhone: recipientPhone,
@@ -151,6 +171,7 @@ func normalizeRequest(req ScheduleRequest, now time.Time) (normalizedRequest, er
 		scheduledAt:    scheduledAt,
 		autoSend:       req.AutoSend,
 		waitSeconds:    waitSeconds,
+		sendRetries:    sendRetries,
 	}, nil
 }
 
@@ -266,15 +287,33 @@ func (s *Service) findWhatsAppWindow(ctx context.Context) (string, error) {
 	return windowID, nil
 }
 
-func (s *Service) activateAndSend(ctx context.Context, windowID string) error {
+func (s *Service) activateAndSend(ctx context.Context, windowID string, retries int) (int, error) {
+	if retries <= 0 {
+		retries = defaultSendRetries
+	}
+	if retries > maxSendRetries {
+		retries = maxSendRetries
+	}
 	xdotool := toolValue(s.tools.XDoTool, "xdotool")
 	if raw, err := s.runner.CombinedOutput(ctx, xdotool, "windowactivate", "--sync", windowID); err != nil {
-		return fmt.Errorf("activate WhatsApp window: %w: %s", err, strings.TrimSpace(string(raw)))
+		return 0, fmt.Errorf("activate WhatsApp window: %w: %s", err, strings.TrimSpace(string(raw)))
 	}
-	if raw, err := s.runner.CombinedOutput(ctx, xdotool, "key", "--window", windowID, "Return"); err != nil {
-		return fmt.Errorf("send WhatsApp message: %w: %s", err, strings.TrimSpace(string(raw)))
+	if s.sendFocusDelay > 0 {
+		if err := sleepContext(ctx, s.sendFocusDelay); err != nil {
+			return 0, err
+		}
 	}
-	return nil
+	for attempt := 1; attempt <= retries; attempt++ {
+		if raw, err := s.runner.CombinedOutput(ctx, xdotool, "key", "--clearmodifiers", "Return"); err != nil {
+			return attempt - 1, fmt.Errorf("send WhatsApp message: %w: %s", err, strings.TrimSpace(string(raw)))
+		}
+		if attempt < retries && s.sendRetryDelay > 0 {
+			if err := sleepContext(ctx, s.sendRetryDelay); err != nil {
+				return attempt, err
+			}
+		}
+	}
+	return retries, nil
 }
 
 func toolValue(value string, fallback string) string {

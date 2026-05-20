@@ -102,3 +102,32 @@ func TestNormalizeRequestParsesLocalTimeAsIST(t *testing.T) {
 		t.Fatalf("scheduled_at = %q, want IST time", got)
 	}
 }
+
+func TestActivateAndSendUsesActiveWindowEnter(t *testing.T) {
+	t.Parallel()
+
+	runner := &fakeRunner{}
+	service := New(config.ToolConfig{XDoTool: "xdotool-test"}, runner)
+	service.sendFocusDelay = 0
+	service.sendRetryDelay = 0
+
+	attempts, err := service.activateAndSend(context.Background(), "12345", 2)
+	if err != nil {
+		t.Fatalf("activateAndSend() error = %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("xdotool calls = %#v, want activate plus two key calls", runner.calls)
+	}
+	if got := strings.Join(runner.calls[0].args, " "); got != "windowactivate --sync 12345" {
+		t.Fatalf("activate args = %q", got)
+	}
+	for _, call := range runner.calls[1:] {
+		got := strings.Join(call.args, " ")
+		if got != "key --clearmodifiers Return" {
+			t.Fatalf("key args = %q, want active-window Return without --window", got)
+		}
+	}
+}
