@@ -1,0 +1,141 @@
+.aicli-zettel-modal {
+  width: min(1180px, 96vw);
+}
+
+.aicli-zettel-modal h2,
+.aicli-zettel-modal h3 {
+  margin: 0;
+}
+
+.aicli-zettel-subtitle {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 6px 0 14px;
+  overflow-wrap: anywhere;
+}
+
+.aicli-zettel-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.aicli-zettel-status {
+  background: var(--background-secondary);
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 4px;
+  color: var(--text-normal);
+  font-size: 12px;
+  margin-bottom: 12px;
+  min-height: 32px;
+  padding: 8px 10px;
+}
+
+.aicli-zettel-body {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
+  min-height: min(680px, 70vh);
+}
+
+.aicli-zettel-candidates,
+.aicli-zettel-preview {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  min-width: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.aicli-zettel-card {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  margin-top: 10px;
+  padding: 10px;
+}
+
+.aicli-zettel-card-header {
+  align-items: flex-start;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.aicli-zettel-path {
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.aicli-zettel-badges,
+.aicli-zettel-quality {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.aicli-zettel-badge {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 7px;
+}
+
+.aicli-zettel-reason,
+.aicli-zettel-ranges,
+.aicli-zettel-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.aicli-zettel-excerpt {
+  background: var(--background-secondary);
+  border-radius: 6px;
+  font-size: 12px;
+  margin: 8px 0 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px;
+  white-space: pre-wrap;
+}
+
+.aicli-zettel-final {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  box-sizing: border-box;
+  color: var(--text-normal);
+  font-family: var(--font-text);
+  height: calc(70vh - 126px);
+  min-height: 360px;
+  padding: 10px;
+  resize: vertical;
+  width: 100%;
+}
+
+@media (max-width: 820px) {
+  .aicli-zettel-body {
+    grid-template-columns: 1fr;
+  }
+
+  .aicli-zettel-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--background-primary);
+    padding-bottom: 8px;
+  }
+
+  .aicli-zettel-final {
+    height: 50vh;
+    min-height: 260px;
+  }
+}

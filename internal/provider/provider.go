@@ -25,6 +25,15 @@ type ChatResponse struct {
 	Content string `json:"content"`
 }
 
+type EmbeddingRequest struct {
+	Model  string   `json:"model"`
+	Inputs []string `json:"inputs"`
+}
+
+type EmbeddingResponse struct {
+	Vectors [][]float64 `json:"vectors"`
+}
+
 type VisionRequest struct {
 	Model       string  `json:"model"`
 	Prompt      string  `json:"prompt"`

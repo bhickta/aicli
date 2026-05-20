@@ -150,4 +150,13 @@ func TestAPISmokeContracts(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("zettel workflow registered", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/workflows/zettel/suggest", strings.NewReader("{"))
+		res := httptest.NewRecorder()
+		handler.ServeHTTP(res, req)
+		if res.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400, body=%s", res.Code, res.Body.String())
+		}
+	})
 }

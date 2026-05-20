@@ -1,0 +1,9 @@
+{
+  "id": "aicli-zettel-merge",
+  "name": "AICLI Zettel Merge",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Thin Obsidian UI for the AICLI local Zettelkasten merge engine.",
+  "author": "bhickta",
+  "isDesktopOnly": true
+}
