@@ -87,6 +87,7 @@ func (s *Service) Propose(ctx context.Context, req ProposeRequest, progress Prog
 	proposal.DataFolder = options.DataFolder
 	proposal.ActivePath = activePath
 	proposal.ActiveHash = hashText(activeContent)
+	proposal.ActiveMarkdown = activeContent
 	proposal.SourceExtractions = extractions
 	proposal.Models = ProposalModels{
 		Judge:     options.JudgeModel,

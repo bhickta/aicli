@@ -434,6 +434,16 @@ h3 {
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
 
+.zettel-final-markdown {
+  display: grid;
+  gap: 8px;
+}
+
+.zettel-final-markdown summary {
+  cursor: pointer;
+  color: #d6deea;
+}
+
 textarea {
   min-height: 160px;
   resize: vertical;

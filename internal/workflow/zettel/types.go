@@ -111,6 +111,7 @@ type Proposal struct {
 	DataFolder        string             `json:"data_folder"`
 	ActivePath        string             `json:"active_path"`
 	ActiveHash        string             `json:"active_hash"`
+	ActiveMarkdown    string             `json:"active_markdown,omitempty"`
 	FinalMarkdown     string             `json:"final_markdown"`
 	SourceExtractions []SourceExtraction `json:"source_extractions"`
 	MergePlan         MergePlan          `json:"merge_plan"`

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, shallowRef, watch } from "vue";
+import ZettelMergeDiff from "../components/zettel/ZettelMergeDiff.vue";
 import ZettelProviderSettings from "../components/zettel/ZettelProviderSettings.vue";
 import { api, parseJobOutput, pollJob } from "../lib/api";
 import { elapsedSeconds, formatDuration, readNumberValue, stringify } from "../lib/format";
@@ -24,7 +25,9 @@ interface Candidate {
 
 interface Proposal {
   id: string;
+  active_markdown?: string;
   final_markdown: string;
+  merge_plan?: { insertions?: Array<{ after_line: number; markdown: string; reason?: string }> };
   coverage?: { score?: number };
   judge?: { verdict?: string; score?: number; notes?: string };
 }
@@ -318,7 +321,17 @@ function formatRanges(ranges: LineRange[]) {
       <div class="zettel-preview">
         <h3>Merge Preview</h3>
         <p v-if="proposal" class="status-line">{{ proposalQuality }}</p>
-        <textarea v-if="proposal" :value="proposal.final_markdown" readonly />
+        <template v-if="proposal">
+          <ZettelMergeDiff
+            :original-markdown="proposal.active_markdown || ''"
+            :final-markdown="proposal.final_markdown"
+            :insertions="proposal.merge_plan?.insertions || []"
+          />
+          <details class="zettel-final-markdown">
+            <summary>Final markdown</summary>
+            <textarea :value="proposal.final_markdown" readonly />
+          </details>
+        </template>
         <p v-else class="muted">Select candidates and run Preview Merge. Nothing is written until Apply succeeds.</p>
       </div>
     </div>
