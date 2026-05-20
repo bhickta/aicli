@@ -77,6 +77,12 @@ func TestDefaultCodexProviderUsesAPIKeyEnv(t *testing.T) {
 	if settings.Tools.CodexCLI != "codex" {
 		t.Fatalf("CodexCLI = %q, want codex", settings.Tools.CodexCLI)
 	}
+	if settings.Tools.Firefox != "firefox" {
+		t.Fatalf("Firefox = %q, want firefox", settings.Tools.Firefox)
+	}
+	if settings.Tools.XDoTool != "xdotool" {
+		t.Fatalf("XDoTool = %q, want xdotool", settings.Tools.XDoTool)
+	}
 }
 
 func TestDefaultCodexCLIProviderUsesLocalCLI(t *testing.T) {
@@ -107,6 +113,9 @@ func TestNormalizeDefaultsCodexCLI(t *testing.T) {
 	settings := Normalize(Settings{Tools: ToolConfig{FFmpeg: "ffmpeg"}})
 	if settings.Tools.CodexCLI != "codex" {
 		t.Fatalf("CodexCLI = %q, want codex", settings.Tools.CodexCLI)
+	}
+	if settings.Tools.Firefox != "firefox" || settings.Tools.XDoTool != "xdotool" {
+		t.Fatalf("browser automation tools = %#v, want firefox and xdotool defaults", settings.Tools)
 	}
 }
 

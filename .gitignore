@@ -8,3 +8,6 @@ data/
 .tokensave
 bin/
 node_modules/
+web/static/app.js
+web/static/style.css
+web/static/assets/

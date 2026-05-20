@@ -35,6 +35,8 @@ type ToolConfig struct {
 	PDFToPPM   string `json:"pdftoppm"`
 	WhisperCLI string `json:"whisper_cli"`
 	CodexCLI   string `json:"codex_cli"`
+	Firefox    string `json:"firefox"`
+	XDoTool    string `json:"xdotool"`
 }
 
 func DefaultDataDir() (string, error) {
@@ -93,6 +95,8 @@ func DefaultSettings() Settings {
 			PDFToPPM:   "pdftoppm",
 			WhisperCLI: "whisper",
 			CodexCLI:   "codex",
+			Firefox:    "firefox",
+			XDoTool:    "xdotool",
 		},
 	}
 }
@@ -160,6 +164,12 @@ func withDefaults(settings Settings) Settings {
 	}
 	if settings.Tools.CodexCLI == "" {
 		settings.Tools.CodexCLI = defaults.Tools.CodexCLI
+	}
+	if settings.Tools.Firefox == "" {
+		settings.Tools.Firefox = defaults.Tools.Firefox
+	}
+	if settings.Tools.XDoTool == "" {
+		settings.Tools.XDoTool = defaults.Tools.XDoTool
 	}
 	if settings.Tools.WhisperCLI == "whisper-cli" {
 		if _, err := exec.LookPath("whisper-cli"); err != nil {

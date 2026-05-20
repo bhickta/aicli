@@ -54,6 +54,12 @@ export interface SystemResources {
   };
 }
 
+export interface WhatsAppContact {
+  id: string;
+  name: string;
+  phone: string;
+}
+
 export interface Model {
   id: string;
   name: string;
@@ -77,7 +83,7 @@ export interface Job {
 }
 
 export interface WorkflowField {
-  type: "providerModel" | "text" | "textarea" | "select" | "number" | "checkbox" | "path";
+  type: "providerModel" | "text" | "textarea" | "select" | "number" | "checkbox" | "path" | "whatsappContact";
   id?: string;
   label?: string;
   rows?: number;

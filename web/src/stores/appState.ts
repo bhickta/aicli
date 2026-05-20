@@ -1,6 +1,6 @@
 import { computed, reactive, watch } from "vue";
-import { readStoredRecord, readStoredString, writeStoredJSON, writeStoredString } from "../lib/persistence";
-import type { Model, Settings, SystemResources, ViewName } from "../types";
+import { readStoredRecord, readStoredString, readStoredValue, writeStoredJSON, writeStoredString } from "../lib/persistence";
+import type { Model, Settings, SystemResources, ViewName, WhatsAppContact } from "../types";
 import { workflowDefinitions } from "../workflows/definitions";
 
 const storedView = readStoredString("aicli.view", "chat") as ViewName;
@@ -18,6 +18,9 @@ export const appState = reactive({
     category: storedWorkflowCategory,
     workflowId: storedWorkflowID,
     pathValues: readStoredRecord("aicli.workflow.pathValues") as Record<string, string>,
+  },
+  whatsapp: {
+    contacts: readStoredValue<WhatsAppContact[]>("aicli.whatsapp.contacts", []),
   },
 });
 
@@ -47,3 +50,4 @@ watch(() => appState.browserPath, (path) => writeStoredString("aicli.browserPath
 watch(() => appState.workflow.category, (category) => writeStoredString("aicli.workflow.category", category));
 watch(() => appState.workflow.workflowId, (workflowId) => writeStoredString("aicli.workflow.id", workflowId));
 watch(() => appState.workflow.pathValues, (values) => writeStoredJSON("aicli.workflow.pathValues", values), { deep: true });
+watch(() => appState.whatsapp.contacts, (contacts) => writeStoredJSON("aicli.whatsapp.contacts", contacts), { deep: true });

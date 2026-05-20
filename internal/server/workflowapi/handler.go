@@ -11,6 +11,7 @@ import (
 	"github.com/bhickta/aicli/internal/server/workflowapi/newsapi"
 	"github.com/bhickta/aicli/internal/server/workflowapi/studyapi"
 	"github.com/bhickta/aicli/internal/server/workflowapi/videoapi"
+	"github.com/bhickta/aicli/internal/server/workflowapi/whatsappapi"
 	"github.com/bhickta/aicli/internal/server/workflowapi/zettelapi"
 )
 
@@ -32,5 +33,6 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	documentapi.New(h.runtime).Register(mux)
 	videoapi.New(h.runtime).Register(mux)
 	audioapi.New(h.runtime).Register(mux)
+	whatsappapi.New(h.runtime).Register(mux)
 	zettelapi.New(h.runtime).Register(mux)
 }

@@ -26,6 +26,16 @@ export function readStoredRecord(key: string): Record<string, unknown> {
   }
 }
 
+export function readStoredValue<T>(key: string, fallback: T): T {
+  try {
+    const raw = globalThis.localStorage?.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 export function writeStoredJSON(key: string, value: unknown) {
   try {
     globalThis.localStorage?.setItem(key, JSON.stringify(value));

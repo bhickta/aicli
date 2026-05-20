@@ -6,8 +6,9 @@ import { imageWorkflowDefinitions } from "./images";
 import { newsWorkflowDefinitions } from "./news";
 import { studyWorkflowDefinitions } from "./study";
 import { videoWorkflowDefinitions } from "./video";
+import { whatsappWorkflowDefinitions } from "./whatsapp";
 
-export const workflowCategories = ["Study", "Codex", "Documents", "Images", "Audio", "Video", "News"];
+export const workflowCategories = ["Study", "Codex", "Documents", "Images", "Audio", "Video", "WhatsApp", "News"];
 
 export const workflowDefinitions: WorkflowDefinition[] = [
   ...studyWorkflowDefinitions,
@@ -16,5 +17,6 @@ export const workflowDefinitions: WorkflowDefinition[] = [
   ...imageWorkflowDefinitions,
   ...audioWorkflowDefinitions,
   ...videoWorkflowDefinitions,
+  ...whatsappWorkflowDefinitions,
   ...newsWorkflowDefinitions,
 ];

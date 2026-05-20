@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WhatsAppContactField from "./WhatsAppContactField.vue";
 import type { WorkflowField } from "../../types";
 
 const props = defineProps<{
@@ -14,6 +15,10 @@ const emit = defineEmits<{
 function update(value: unknown) {
   if (!props.field.id) return;
   emit("update", props.field.id, value);
+}
+
+function forwardUpdate(id: string, value: unknown) {
+  emit("update", id, value);
 }
 </script>
 
@@ -58,4 +63,11 @@ function update(value: unknown) {
       </button>
     </div>
   </div>
+
+  <WhatsAppContactField
+    v-else-if="field.id && field.type === 'whatsappContact'"
+    :field="field"
+    :value="value"
+    @update="forwardUpdate"
+  />
 </template>
