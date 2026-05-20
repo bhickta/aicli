@@ -21,8 +21,7 @@ func TestServeStaticAssets(t *testing.T) {
 		substring string
 	}{
 		{name: "shell", path: "/", content: "text/html", substring: "<html"},
-		{name: "javascript entrypoint", path: "/app.js", content: "javascript", substring: "./js/core/main.js"},
-		{name: "javascript module", path: "/js/core/main.js", content: "javascript", substring: "export function init"},
+		{name: "javascript entrypoint", path: "/app.js", content: "javascript", substring: "Local AI Control Center"},
 		{name: "css", path: "/style.css", content: "text/css", substring: "body"},
 	}
 
@@ -44,26 +43,20 @@ func TestServeStaticAssets(t *testing.T) {
 	}
 }
 
-func TestWorkflowPathFieldsSubmitSelectedPath(t *testing.T) {
+func TestVueWorkflowPathFieldsRenderPathControls(t *testing.T) {
 	t.Parallel()
 
-	req := httptest.NewRequest(http.MethodGet, "/js/workflows/form.js", nil)
+	req := httptest.NewRequest(http.MethodGet, "/app.js", nil)
 	res := httptest.NewRecorder()
 	testHandler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body=%s", res.Code, res.Body.String())
 	}
 	body := res.Body.String()
-	pathBranch := strings.Index(body, `if (field.type === "path")`)
-	controlLookup := strings.Index(body, `const element = document.querySelector`)
-	if pathBranch < 0 {
-		t.Fatal("path field collection branch is missing")
-	}
-	if controlLookup < 0 {
-		t.Fatal("control lookup is missing")
-	}
-	if pathBranch > controlLookup {
-		t.Fatal("path fields must be collected from the display dataset before looking for a form input")
+	for _, substring := range []string{"path-control", "data-path", "Choose "} {
+		if !strings.Contains(body, substring) {
+			t.Fatalf("Vue bundle does not contain %q", substring)
+		}
 	}
 }
 
