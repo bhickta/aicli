@@ -32,7 +32,8 @@ watch(defaultProviderId, (providerId) => {
 }, { immediate: true });
 
 watch(() => props.providerId, (providerId) => {
-  if (providerId && providerId !== selectedProvider.value) selectedProvider.value = providerId;
+  const nextProvider = providerId || defaultProviderId.value;
+  if (nextProvider && nextProvider !== selectedProvider.value) selectedProvider.value = nextProvider;
 });
 
 watch(() => props.model, (model) => {
