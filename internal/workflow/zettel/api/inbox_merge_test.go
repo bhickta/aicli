@@ -134,6 +134,66 @@ func TestServiceInboxMergeProcessesExactDuplicateWithoutProviders(t *testing.T) 
 	}
 }
 
+func TestServiceInboxMergeDoesNotWriteDedupedOnlyDestination(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "polity.md")
+	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "rote.md")
+	destinationContent := "- **UPSC**: Rote learning fails; independent thinking needed.\n"
+	writeTestFile(t, destinationPath, destinationContent)
+	writeTestFile(t, sourcePath, "Rote learning fails in UPSC.\n")
+
+	provider := &fakeZettelProvider{chatResponses: []string{
+		`{"claims":[{"id":"c1","text":"Rote learning fails in UPSC","source":"Rote learning fails in UPSC."}],"notes":"ok"}`,
+		`{"destinations":[{"path":"zettelkasten/polity.md","claim_ids":["c1"],"confidence":0.99,"reason":"already represented"}],"pending":[],"notes":"ok"}`,
+		`{"final_markdown":"- **UPSC**: BROKEN STYLE REWRITE.\n","ledger":[{"claim_id":"c1","status":"deduped","destination_path":"zettelkasten/polity.md","evidence":"existing rote learning line","reason":"already represented"}],"notes":"deduped"}`,
+		`{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"dedupe verified"}`,
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "inbox-to-merge",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want deduped note processed", resp)
+	}
+	processed := resp.Processed[0]
+	if processed.MergedCount != 0 || processed.DedupedCount != 1 || len(processed.Diffs) != 0 {
+		t.Fatalf("processed result = %#v, want dedupe-only no-write result", processed)
+	}
+	if got := readTestFile(t, destinationPath); got != destinationContent {
+		t.Fatalf("deduped destination changed = %q, want %q", got, destinationContent)
+	}
+	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+		t.Fatalf("source still exists or unexpected stat error: %v", err)
+	}
+	if processed.ProcessedPath == "" || !strings.HasPrefix(processed.ProcessedPath, "inbox-to-merge/_processed/") {
+		t.Fatalf("processed path = %q, want processed folder path", processed.ProcessedPath)
+	}
+	if resp.APICalls.Total != 6 || resp.APICalls.Chat != 4 || resp.APICalls.Embeddings != 2 {
+		t.Fatalf("api calls = %#v, want four chat calls and two embedding calls", resp.APICalls)
+	}
+}
+
 func TestServiceInboxMergeKeepsPendingSourceUnchanged(t *testing.T) {
 	t.Parallel()
 

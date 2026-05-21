@@ -107,7 +107,7 @@ func inboxRewriteMessages(destinationPath string, destinationContent string, sou
 		"source_path":      sourcePath,
 		"claims":           claims,
 		"required_schema": map[string]any{
-			"final_markdown": "entire destination note rewritten in English extreme shorthand",
+			"final_markdown": "destination note with only necessary claim insertions/edits applied",
 			"ledger": []map[string]any{{
 				"claim_id":         "claim id",
 				"status":           "merged, deduped, or pending",
@@ -122,8 +122,11 @@ func inboxRewriteMessages(destinationPath string, destinationContent string, sou
 		{Role: "system", Content: strings.Join([]string{
 			"You merge source claims into one UPSC destination note.",
 			"Return JSON only.",
-			"Rewrite the entire destination note in English extreme shorthand using the style rules below.",
-			"Preserve every existing destination fact and every source claim marked merged or deduped.",
+			"Preserve existing destination wording, symbols, operators, numbers, qualifiers, and order unless a minimal edit is required to insert a merged source claim.",
+			"Do not make style-only rewrites to existing destination content.",
+			"Only change final_markdown when at least one claim is status=merged.",
+			"If every claim is deduped or pending, final_markdown must be byte-for-byte identical to destination_note.",
+			"Preserve every existing destination fact and every source claim marked merged.",
 			"Use status=deduped only when the claim is already represented in the destination note.",
 			"Use status=pending when the claim cannot be safely merged or deduped.",
 			"Do not add external knowledge.",

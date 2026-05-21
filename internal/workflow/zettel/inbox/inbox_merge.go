@@ -141,6 +141,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 	assignments, ledger := normalizeInboxAssignments(decision, claims, options)
 	destinationBefore := map[string]string{}
 	destinationAfter := map[string]string{}
+	destinationWrites := map[string]string{}
 	destinationDiffs := []InboxDestinationDiff{}
 	destinationPaths := make([]string, 0, len(assignments))
 	for destinationPath, claimIDs := range assignments {
@@ -154,9 +155,15 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 			continue
 		}
 		destinationBefore[destinationPath] = before
-		destinationAfter[destinationPath] = after
 		destinationPaths = append(destinationPaths, destinationPath)
-		ledger = append(ledger, normalizeRewriteLedger(plan.Ledger, destinationPath, assignedClaims)...)
+		rewriteLedger := normalizeRewriteLedger(plan.Ledger, destinationPath, assignedClaims)
+		ledger = append(ledger, rewriteLedger...)
+		destinationAfter[destinationPath] = before
+		if !ledgerHasStatus(rewriteLedger, claimStatusMerged) {
+			continue
+		}
+		destinationAfter[destinationPath] = after
+		destinationWrites[destinationPath] = after
 		destinationDiffs = append(destinationDiffs, InboxDestinationDiff{
 			Path:   destinationPath,
 			Before: before,
@@ -170,10 +177,10 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 	result.DestinationPaths = destinationPaths
 	result.Diffs = destinationDiffs
 	result.MergedCount, result.DedupedCount, result.PendingCount = countLedgerStatuses(ledger)
-	if len(destinationAfter) == 0 || result.MergedCount+result.DedupedCount == 0 {
+	if result.MergedCount+result.DedupedCount == 0 {
 		result.Status = inboxStatusPending
 		result.Reason = firstPendingReason(ledger, "one or more claims could not be safely merged or deduped")
-		if _, err := archive.WriteInboxItem(runID, result, sourceContent, destinationBefore, destinationAfter); err != nil {
+		if _, err := archive.WriteInboxItem(runID, result, sourceContent, destinationBefore, destinationWrites); err != nil {
 			return result, err
 		}
 		return result, nil
@@ -193,7 +200,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 	if !mergeJudgePassed(validation, options.ValidationThreshold) {
 		result.Status = inboxStatusPending
 		result.Reason = "validation failed: " + validation.Notes
-		if _, err := archive.WriteInboxItem(runID, result, sourceContent, destinationBefore, destinationAfter); err != nil {
+		if _, err := archive.WriteInboxItem(runID, result, sourceContent, destinationBefore, destinationWrites); err != nil {
 			return result, err
 		}
 		return result, nil
@@ -204,10 +211,10 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		result.Status = inboxStatusPartial
 		result.Reason = "partial merge applied; unresolved claims preserved in pending folder: " + firstPendingReason(ledger, "one or more claims could not be safely merged or deduped")
 	}
-	if _, err := archive.WriteInboxItem(runID, result, sourceContent, destinationBefore, destinationAfter); err != nil {
+	if _, err := archive.WriteInboxItem(runID, result, sourceContent, destinationBefore, destinationWrites); err != nil {
 		return result, err
 	}
-	if err := writeDestinationNotes(v, options, destinationAfter); err != nil {
+	if err := writeDestinationNotes(v, options, destinationWrites); err != nil {
 		return result, err
 	}
 	moveSource := moveInboxSourceToProcessed

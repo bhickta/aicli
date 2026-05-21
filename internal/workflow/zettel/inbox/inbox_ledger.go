@@ -166,6 +166,15 @@ func countLedgerStatuses(ledger []InboxClaimLedger) (int, int, int) {
 	return merged, deduped, pending
 }
 
+func ledgerHasStatus(ledger []InboxClaimLedger, status string) bool {
+	for _, item := range ledger {
+		if item.Status == status {
+			return true
+		}
+	}
+	return false
+}
+
 func firstPendingReason(ledger []InboxClaimLedger, fallback string) string {
 	for _, item := range ledger {
 		if item.Status == claimStatusPending && strings.TrimSpace(item.Reason) != "" {
