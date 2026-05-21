@@ -143,6 +143,16 @@ func (s Store) UpdateInboxItemProcessedPath(runID string, sourcePath string, pro
 	return s.writeInboxManifest(base, manifest)
 }
 
+func (s Store) InboxItemExists(runID string, sourcePath string) bool {
+	manifest := s.readInboxManifestOrEmpty(runID)
+	for _, item := range manifest.Items {
+		if item.SourcePath == sourcePath {
+			return true
+		}
+	}
+	return false
+}
+
 func (s Store) FinalizeInboxRun(runID string, response InboxMergeResponse) error {
 	base, err := s.InboxRunPath(runID)
 	if err != nil {

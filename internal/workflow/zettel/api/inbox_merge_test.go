@@ -19,7 +19,7 @@ func TestServiceInboxMergeProcessesSourceAndRollbackRestores(t *testing.T) {
 	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "batch", "inflation.md"), "Inflation rose to 7% due to oil prices.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Inflation = 7% due to oil prices","source":"Inflation rose to 7% due to oil prices."}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"final_markdown":"- **Inflation**:: 6%\n- **Inflation**:: 7% (Oil prices ^)","ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added 7% oil price line","reason":"new fact"}],"reason":"inflation destination"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
+		`{"claims":[{"id":"c1","text":"Inflation = 7% due to oil prices","source":"Inflation rose to 7% due to oil prices."}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"final_markdown":"- **Inflation**:: 6%\n- **Inflation Spike**:: 7% (Oil prices ^)","ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added 7% oil price line","reason":"new fact"}],"reason":"inflation destination"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -54,7 +54,7 @@ func TestServiceInboxMergeProcessesSourceAndRollbackRestores(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(vaultDir, "inbox-to-merge", "batch", "inflation.md")); !os.IsNotExist(err) {
 		t.Fatalf("source still exists or unexpected stat error: %v", err)
 	}
-	if got := readTestFile(t, filepath.Join(vaultDir, "zettelkasten", "economy.md")); !strings.Contains(got, "7% (Oil prices ^)") {
+	if got := readTestFile(t, filepath.Join(vaultDir, "zettelkasten", "economy.md")); !strings.Contains(got, "Inflation Spike") {
 		t.Fatalf("destination content = %q, want shorthand merged fact", got)
 	}
 	if _, err := os.Stat(filepath.Join(resp.ArchivePath, "manifest.json")); err != nil {
@@ -316,6 +316,116 @@ func TestServiceInboxMergeRejectsDestinationFormattingChurn(t *testing.T) {
 	}
 	if !strings.Contains(resp.Pending[0].Reason, "destination rewrite changed existing content") {
 		t.Fatalf("pending reason = %q, want formatting churn reason", resp.Pending[0].Reason)
+	}
+}
+
+func TestServiceInboxMergeRejectsDuplicateDestinationBulletLabel(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "pds.md")
+	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "pds.md")
+	destinationContent := "- **Public Distribution System (PDS)**: Operated under joint responsibility.\n"
+	writeTestFile(t, destinationPath, destinationContent)
+	writeTestFile(t, sourcePath, "PDS distributes subsidized food grains through ration cards.\n")
+
+	finalMarkdown := strings.Join([]string{
+		"- **Public Distribution System (PDS)**: Operated under joint responsibility.",
+		"- **Public Distribution System (PDS)**: Distributes subsidized food grains through ration cards.",
+		"",
+	}, "\n")
+	provider := &fakeZettelProvider{chatResponses: []string{
+		`{"claims":[{"id":"c1","text":"PDS distributes subsidized food grains through ration cards.","source":"source note"}],"destinations":[{"path":"zettelkasten/pds.md","confidence":0.99,"final_markdown":` + strconv.Quote(finalMarkdown) + `,"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/pds.md","evidence":"PDS food grain line","reason":"same concept"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "inbox-to-merge",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.PendingCount != 1 || resp.ProcessedCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want pending note because destination duplicated a concept label", resp)
+	}
+	if got := readTestFile(t, destinationPath); got != destinationContent {
+		t.Fatalf("destination content = %q, want unchanged %q", got, destinationContent)
+	}
+	if _, err := os.Stat(sourcePath); err != nil {
+		t.Fatalf("source note moved despite duplicate label rejection: %v", err)
+	}
+	if !strings.Contains(resp.Pending[0].Reason, "destination adds duplicate bullet label") {
+		t.Fatalf("pending reason = %q, want duplicate bullet label reason", resp.Pending[0].Reason)
+	}
+}
+
+func TestServiceInboxMergeRejectsNonTelegraphicDestinationInsertion(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "economy.md")
+	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "strategy.md")
+	destinationContent := "- **Economy**: Existing concept.\n"
+	writeTestFile(t, destinationPath, destinationContent)
+	writeTestFile(t, sourcePath, "Economics preparation needs conceptual clarity.\n")
+
+	finalMarkdown := strings.Join([]string{
+		"- **Economy**: Existing concept.",
+		"Economics preparation needs conceptual clarity and cannot be mugged up.",
+		"",
+	}, "\n")
+	provider := &fakeZettelProvider{chatResponses: []string{
+		`{"claims":[{"id":"c1","text":"Economics preparation needs conceptual clarity.","source":"source note"}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"final_markdown":` + strconv.Quote(finalMarkdown) + `,"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added prose line","reason":"same concept"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "inbox-to-merge",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.PendingCount != 1 || resp.ProcessedCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want pending note because destination inserted prose", resp)
+	}
+	if got := readTestFile(t, destinationPath); got != destinationContent {
+		t.Fatalf("destination content = %q, want unchanged %q", got, destinationContent)
+	}
+	if _, err := os.Stat(sourcePath); err != nil {
+		t.Fatalf("source note moved despite non-telegraphic insertion rejection: %v", err)
+	}
+	if !strings.Contains(resp.Pending[0].Reason, "destination inserted non-bullet content") {
+		t.Fatalf("pending reason = %q, want non-bullet insertion reason", resp.Pending[0].Reason)
 	}
 }
 
@@ -611,7 +721,7 @@ func TestServiceInboxMergeAppliesPartialAndPreservesPendingSource(t *testing.T) 
 	writeTestFile(t, sourcePath, "Inflation rose to 7%.\nUnclear prelims range.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Inflation rose to 7%","source":"Inflation rose to 7%."},{"id":"c2","text":"Unclear prelims range","source":"Unclear prelims range."}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"final_markdown":"- **Inflation**:: 6%\n- **Inflation**:: 7%","ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added inflation 7%","reason":"new fact"}],"reason":"inflation destination"}],"pending":[{"claim_id":"c2","status":"pending","reason":"no confident destination"}],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"partial applied facts are represented"},"notes":"partial"}`,
+		`{"claims":[{"id":"c1","text":"Inflation rose to 7%","source":"Inflation rose to 7%."},{"id":"c2","text":"Unclear prelims range","source":"Unclear prelims range."}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"final_markdown":"- **Inflation**:: 6%\n- **Inflation Level**:: 7%","ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added inflation 7%","reason":"new fact"}],"reason":"inflation destination"}],"pending":[{"claim_id":"c2","status":"pending","reason":"no confident destination"}],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"partial applied facts are represented"},"notes":"partial"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -649,7 +759,7 @@ func TestServiceInboxMergeAppliesPartialAndPreservesPendingSource(t *testing.T) 
 	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
 		t.Fatalf("source still exists or unexpected stat error: %v", err)
 	}
-	if got := readTestFile(t, destinationPath); got != "- **Inflation**:: 6%\n- **Inflation**:: 7%\n" {
+	if got := readTestFile(t, destinationPath); got != "- **Inflation**:: 6%\n- **Inflation Level**:: 7%\n" {
 		t.Fatalf("destination content = %q, want partial applied merge", got)
 	}
 	manifest := readInboxRunManifest(t, resp.ArchivePath)
@@ -760,6 +870,18 @@ func TestServiceInboxMergeRespectsInboxLimit(t *testing.T) {
 	if len(resp.Failed) != 2 || resp.Failed[0].SourcePath != "inbox-to-merge/001.md" || resp.Failed[1].SourcePath != "inbox-to-merge/002.md" {
 		t.Fatalf("failed paths = %#v, want sorted first two notes only", resp.Failed)
 	}
+	manifest := readInboxRunManifest(t, resp.ArchivePath)
+	if len(manifest.Items) != 2 {
+		t.Fatalf("manifest items = %#v, want one archived item for each selected failed note", manifest.Items)
+	}
+	for i, item := range manifest.Items {
+		if item.Status != "failed" {
+			t.Fatalf("manifest item %d = %#v, want failed status", i, item)
+		}
+	}
+	if manifest.Items[0].SourcePath != "inbox-to-merge/001.md" || manifest.Items[1].SourcePath != "inbox-to-merge/002.md" {
+		t.Fatalf("manifest item paths = %#v, want selected failed notes in sorted order", manifest.Items)
+	}
 	if _, err := os.Stat(filepath.Join(vaultDir, "inbox-to-merge", "003.md")); err != nil {
 		t.Fatalf("limited-out source changed: %v", err)
 	}
@@ -813,6 +935,11 @@ type testInboxRunManifest struct {
 	ProcessedCount int    `json:"processed_count"`
 	PendingCount   int    `json:"pending_count"`
 	FailedCount    int    `json:"failed_count"`
+	Items          []struct {
+		SourcePath string `json:"source_path"`
+		Status     string `json:"status"`
+		Reason     string `json:"reason"`
+	} `json:"items"`
 }
 
 func readInboxRunManifest(t *testing.T, archivePath string) testInboxRunManifest {

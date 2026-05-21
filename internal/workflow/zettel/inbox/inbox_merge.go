@@ -72,6 +72,11 @@ func (r Runner) InboxMerge(ctx context.Context, req InboxMergeRequest, progress 
 		result, err := r.processInboxSource(ctx, v, archive, runID, options, sourcePath, shorthandPrompt, progress)
 		if err != nil {
 			result = InboxSourceResult{SourcePath: sourcePath, Status: inboxStatusFailed, Reason: err.Error()}
+			if !archive.InboxItemExists(runID, sourcePath) {
+				if archiveErr := archiveFailedInboxSource(v, archive, runID, result); archiveErr != nil {
+					result.Reason = fmt.Sprintf("%s; archive failed: %s", result.Reason, archiveErr.Error())
+				}
+			}
 		}
 		switch result.Status {
 		case inboxStatusProcessed:
@@ -234,6 +239,17 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		return result, err
 	}
 	return result, nil
+}
+
+func archiveFailedInboxSource(v vault, store archivepkg.Store, runID string, result InboxSourceResult) error {
+	sourceContent := ""
+	if sourceAbs, err := v.Abs(result.SourcePath); err == nil {
+		if data, err := os.ReadFile(sourceAbs); err == nil {
+			sourceContent = string(data)
+		}
+	}
+	_, err := store.WriteInboxItem(runID, result, sourceContent, nil, nil)
+	return err
 }
 
 func reportInboxStage(progress ProgressFunc, sourcePath string, stage string, completed int, total int) {

@@ -1,6 +1,7 @@
 package inbox
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/bhickta/aicli/internal/workflow/zettel/notetext"
@@ -129,6 +130,10 @@ func (a *inboxAppliedDecision) applyMergedLedger(path string, finalMarkdown stri
 	after := sanitizeGeneratedDestinationMarkdown(before, finalMarkdown)
 	if !preservesExistingDestinationLines(before, after) {
 		a.ledger = append(a.ledger, pendingLedgerForLedger(merged, "destination rewrite changed existing content")...)
+		return
+	}
+	if reason := validateGeneratedDestinationAdditions(before, after); reason != "" {
+		a.ledger = append(a.ledger, pendingLedgerForLedger(merged, reason)...)
 		return
 	}
 	if after == notetext.EnsureTrailingNewline(before) {
@@ -264,4 +269,87 @@ func preservesExistingDestinationLines(before string, after string) bool {
 		}
 	}
 	return false
+}
+
+func validateGeneratedDestinationAdditions(before string, after string) string {
+	labels := destinationBulletLabels(notetext.SplitLines(before))
+	for _, line := range insertedDestinationLines(notetext.SplitLines(before), notetext.SplitLines(after)) {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if !strings.HasPrefix(trimmed, "- ") {
+			return "destination inserted non-bullet content"
+		}
+		if !strings.Contains(trimmed, "**") {
+			return "destination inserted non-telegraphic bullet"
+		}
+		if len([]rune(trimmed)) > 320 {
+			return "destination inserted overlong bullet"
+		}
+		key, label, ok := destinationBulletLabelKey(line)
+		if !ok {
+			continue
+		}
+		if labels[key] {
+			return "destination adds duplicate bullet label: " + label
+		}
+		labels[key] = true
+	}
+	return ""
+}
+
+func insertedDestinationLines(beforeLines []string, afterLines []string) []string {
+	inserted := []string{}
+	beforeIndex := 0
+	for _, line := range afterLines {
+		if beforeIndex < len(beforeLines) && line == beforeLines[beforeIndex] {
+			beforeIndex++
+			continue
+		}
+		inserted = append(inserted, line)
+	}
+	return inserted
+}
+
+func destinationBulletLabels(lines []string) map[string]bool {
+	labels := map[string]bool{}
+	for _, line := range lines {
+		key, _, ok := destinationBulletLabelKey(line)
+		if ok {
+			labels[key] = true
+		}
+	}
+	return labels
+}
+
+func destinationBulletLabelKey(line string) (string, string, bool) {
+	level, rest := markdownIndentLevel(line)
+	if !strings.HasPrefix(rest, "- **") {
+		return "", "", false
+	}
+	label, _, ok := strings.Cut(strings.TrimPrefix(rest, "- **"), "**")
+	label = strings.TrimSpace(label)
+	if !ok || label == "" {
+		return "", "", false
+	}
+	normalized := strings.Join(strings.Fields(strings.ToLower(label)), " ")
+	return fmt.Sprintf("%d:%s", level, normalized), label, true
+}
+
+func markdownIndentLevel(line string) (int, string) {
+	width := 0
+	for len(line) > 0 {
+		switch line[0] {
+		case '\t':
+			width += 2
+			line = line[1:]
+		case ' ':
+			width++
+			line = line[1:]
+		default:
+			return width / 2, line
+		}
+	}
+	return width / 2, ""
 }

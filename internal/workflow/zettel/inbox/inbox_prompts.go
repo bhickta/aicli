@@ -98,6 +98,8 @@ func inboxDecisionMessages(sourcePath string, sourceContent string, candidates [
 			"If a destination note does not start with YAML frontmatter, final_markdown must not start with ---.",
 			"Every existing destination line must appear byte-for-byte unchanged and in the same order in final_markdown.",
 			"Insert new concept lines around existing lines; do not reindent, rewrap, renumber, normalize bullets, or rewrite existing destination text.",
+			"New lines must be telegraphic markdown bullets with a bold label, e.g. - **Concept**: compact fact.",
+			"Do not add a new bullet whose bold label already exists at the same hierarchy level; merge the detail under the existing concept or mark pending.",
 			"Preserve existing destination wording, symbols, operators, numbers, qualifiers, and order unless a minimal edit is required.",
 			"Do not make style-only rewrites to existing destination content.",
 			"Do not add external knowledge.",
