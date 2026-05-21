@@ -19,6 +19,7 @@ type fakeZettelProvider struct {
 	chatCalls      []provider.ChatRequest
 	chatResponse   string
 	chatResponses  []string
+	onChat         func(provider.ChatRequest)
 }
 
 func (f *fakeZettelProvider) ID() string {
@@ -36,6 +37,9 @@ func (f *fakeZettelProvider) ListModels(context.Context) ([]provider.Model, erro
 
 func (f *fakeZettelProvider) Chat(_ context.Context, req provider.ChatRequest) (provider.ChatResponse, error) {
 	f.chatCalls = append(f.chatCalls, req)
+	if f.onChat != nil {
+		f.onChat(req)
+	}
 	if len(f.chatResponses) > 0 {
 		next := f.chatResponses[0]
 		f.chatResponses = f.chatResponses[1:]

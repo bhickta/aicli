@@ -1,6 +1,8 @@
 package inbox
 
 import (
+	"errors"
+	"os"
 	"strings"
 
 	"github.com/bhickta/aicli/internal/workflow/zettel/notetext"
@@ -58,17 +60,21 @@ func (a *inboxAppliedDecision) materializeDestination(v vault, options Options, 
 	}
 
 	ledger := destinationLedger(destination, path, claims)
-	if hasLedgerStatus(ledger, claimStatusMerged) {
-		a.rewriteAttempted = true
-	}
 	if len(ledger) == 0 {
 		return nil
 	}
 
 	if hasLedgerStatus(ledger, claimStatusMerged) || hasLedgerStatus(ledger, claimStatusDeduped) {
 		if err := a.ensureDestinationLoaded(v, options, path); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				a.addDestinationPending(destination, claimSet, assigned, "destination note is missing")
+				return nil
+			}
 			return err
 		}
+	}
+	if hasLedgerStatus(ledger, claimStatusMerged) {
+		a.rewriteAttempted = true
 	}
 	merged := a.applyImmediateLedger(path, ledger, assigned)
 	a.applyMergedLedger(path, destination, merged, assigned)
@@ -76,9 +82,18 @@ func (a *inboxAppliedDecision) materializeDestination(v vault, options Options, 
 }
 
 func (a *inboxAppliedDecision) addLowConfidencePending(destination inboxDestinationAssignment, claimSet map[string]bool, assigned map[string]bool) {
+	a.addDestinationPending(destination, claimSet, assigned, "destination confidence below threshold")
+}
+
+func (a *inboxAppliedDecision) addDestinationPending(destination inboxDestinationAssignment, claimSet map[string]bool, assigned map[string]bool, reason string) {
 	for _, id := range destinationClaimIDs(destination) {
 		if claimSet[id] && !assigned[id] {
-			a.ledger = append(a.ledger, InboxClaimLedger{ClaimID: id, Status: claimStatusPending, Reason: "destination confidence below threshold"})
+			a.ledger = append(a.ledger, InboxClaimLedger{
+				ClaimID:         id,
+				Status:          claimStatusPending,
+				DestinationPath: strings.TrimSpace(destination.Path),
+				Reason:          reason,
+			})
 		}
 	}
 }

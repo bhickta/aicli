@@ -141,6 +141,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 	if err != nil {
 		return result, err
 	}
+	decision = constrainDecisionToCandidates(decision, similar)
 	claims := decision.Claims
 	result.Claims = claims
 	if len(claims) == 0 {

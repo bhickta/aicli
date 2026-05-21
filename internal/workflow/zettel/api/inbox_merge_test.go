@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bhickta/aicli/internal/provider"
 )
 
 func TestServiceInboxMergeProcessesSourceAndRollbackRestores(t *testing.T) {
@@ -245,6 +247,110 @@ func TestServiceInboxMergeActionDoesNotInventFrontmatterForPlainDestination(t *t
 	}
 	if !strings.Contains(got, "Economics as Exam Domain") {
 		t.Fatalf("destination content = %q, want merged concept", got)
+	}
+}
+
+func TestServiceInboxMergeAdoptsWhenModelSelectsNonCandidateDestination(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "Economy", "existing.md"), "- **Economy**: existing seed.\n")
+	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "002.md")
+	sourceContent := "- **Conceptual Clarity**: Economics = technical + conceptual; rote learning fails.\n"
+	writeTestFile(t, sourcePath, sourceContent)
+
+	provider := &fakeZettelProvider{chatResponses: []string{
+		`{"claims":[{"id":"c1","text":"Economics is technical and conceptual; rote learning fails.","source":"source note"}],"destinations":[{"path":"zettelkasten/Economy/Rajput_Agriculture_Optional/Etymology and Core Definition of Economics.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"append_to_end","lines":["- **Conceptual Clarity**: Economics = technical + conceptual; rote learning fails."],"reason":"same concept"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/Economy/Rajput_Agriculture_Optional/Etymology and Core Definition of Economics.md","evidence":"conceptual clarity line","reason":"same concept"}],"reason":"hallucinated stale destination"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "in",
+		AdoptUnmatchedInbox:  true,
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want stale non-candidate destination adopted without failure", resp)
+	}
+	adoptedPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "Economy Shivin", "002.md")
+	if got := readTestFile(t, adoptedPath); got != sourceContent {
+		t.Fatalf("adopted destination = %q, want source content", got)
+	}
+	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+		t.Fatalf("source still exists or unexpected stat error: %v", err)
+	}
+}
+
+func TestServiceInboxMergeAdoptsWhenCandidateDestinationDisappears(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "existing.md")
+	writeTestFile(t, destinationPath, "- **Economy**: existing seed.\n")
+	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "003.md")
+	sourceContent := "- **Conceptual Clarity**: Economics requires logic.\n"
+	writeTestFile(t, sourcePath, sourceContent)
+
+	provider := &fakeZettelProvider{
+		chatResponses: []string{
+			`{"claims":[{"id":"c1","text":"Economics requires logic.","source":"source note"}],"destinations":[{"path":"zettelkasten/Economy/existing.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"append_to_end","lines":["- **Conceptual Clarity**: Economics requires logic."],"reason":"same concept"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/Economy/existing.md","evidence":"logic line","reason":"same concept"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
+		},
+		onChat: func(provider.ChatRequest) {
+			if err := os.Remove(destinationPath); err != nil {
+				t.Fatalf("remove candidate destination: %v", err)
+			}
+		},
+	}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "in",
+		AdoptUnmatchedInbox:  true,
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want disappeared candidate adopted without failure", resp)
+	}
+	adoptedPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "Economy Shivin", "003.md")
+	if got := readTestFile(t, adoptedPath); got != sourceContent {
+		t.Fatalf("adopted destination = %q, want source content", got)
+	}
+	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+		t.Fatalf("source still exists or unexpected stat error: %v", err)
 	}
 }
 
