@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/bhickta/aicli/internal/provider"
+	"github.com/bhickta/aicli/internal/workflow/zettel/apicalls"
 	"github.com/bhickta/aicli/internal/workflow/zettel/indexer"
 	"github.com/bhickta/aicli/internal/workflow/zettel/vaultfs"
 )
@@ -43,5 +44,23 @@ func (s *Service) Index(ctx context.Context, req IndexRequest, progress Progress
 	if err != nil {
 		return IndexResponse{}, err
 	}
-	return indexer.New(v, options, s.embeddingProvider).Build(ctx, progress)
+	tracker, _, _, _, embeddingProvider := s.trackedProviders()
+	response, err := indexer.New(v, options, embeddingProvider).Build(ctx, progress)
+	response.APICalls = tracker.Snapshot()
+	return response, err
+}
+
+func (s *Service) trackedProviders() (
+	*apicalls.Tracker,
+	provider.Provider,
+	provider.Provider,
+	provider.Provider,
+	provider.Provider,
+) {
+	tracker := apicalls.NewTracker()
+	return tracker,
+		tracker.Wrap(s.candidateProvider),
+		tracker.Wrap(s.mergeProvider),
+		tracker.Wrap(s.validationProvider),
+		tracker.Wrap(s.embeddingProvider)
 }

@@ -5,10 +5,11 @@ type IndexRequest struct {
 }
 
 type IndexResponse struct {
-	Scanned int `json:"scanned"`
-	Updated int `json:"updated"`
-	Reused  int `json:"reused"`
-	Pruned  int `json:"pruned"`
+	Scanned  int          `json:"scanned"`
+	Updated  int          `json:"updated"`
+	Reused   int          `json:"reused"`
+	Pruned   int          `json:"pruned"`
+	APICalls APICallUsage `json:"api_calls"`
 }
 
 type SuggestRequest struct {
@@ -17,9 +18,10 @@ type SuggestRequest struct {
 }
 
 type SuggestResponse struct {
-	ActivePath string      `json:"active_path"`
-	ActiveHash string      `json:"active_hash"`
-	Candidates []Candidate `json:"candidates"`
+	ActivePath string       `json:"active_path"`
+	ActiveHash string       `json:"active_hash"`
+	Candidates []Candidate  `json:"candidates"`
+	APICalls   APICallUsage `json:"api_calls"`
 }
 
 type Candidate struct {

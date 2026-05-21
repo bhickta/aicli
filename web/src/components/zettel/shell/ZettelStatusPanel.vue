@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import type { ApiCallUsage } from "../../../types";
 import ZettelSection from "../common/ZettelSection.vue";
+import ZettelApiUsage from "./ZettelApiUsage.vue";
 
 defineProps<{
   status: string;
   busy: boolean;
   progressClass: Record<string, boolean>;
   progressStyle: Record<string, string>;
+  apiUsage: ApiCallUsage | null;
   rawResultSummary: string;
   result: string;
 }>();
@@ -24,6 +27,7 @@ const emit = defineEmits<{
     <div class="progress" :class="progressClass">
       <div :style="progressStyle" />
     </div>
+    <ZettelApiUsage :usage="apiUsage" />
     <details v-if="rawResultSummary" class="zettel-raw-result">
       <summary>{{ rawResultSummary }}</summary>
       <pre role="status" aria-live="polite">{{ result }}</pre>

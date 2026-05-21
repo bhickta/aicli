@@ -7,11 +7,28 @@ import (
 )
 
 func (s *Service) Suggest(ctx context.Context, req SuggestRequest, progress ProgressFunc) (SuggestResponse, error) {
-	return s.manualRunner().Suggest(ctx, req, progress)
+	tracker, candidateProvider, mergeProvider, validationProvider, embeddingProvider := s.trackedProviders()
+	response, err := manualpkg.New(
+		candidateProvider,
+		mergeProvider,
+		validationProvider,
+		embeddingProvider,
+	).Suggest(ctx, req, progress)
+	response.APICalls = tracker.Snapshot()
+	return response, err
 }
 
 func (s *Service) Propose(ctx context.Context, req ProposeRequest, progress ProgressFunc) (ProposeResponse, error) {
-	return s.manualRunner().Propose(ctx, req, progress)
+	tracker, candidateProvider, mergeProvider, validationProvider, embeddingProvider := s.trackedProviders()
+	response, err := manualpkg.New(
+		candidateProvider,
+		mergeProvider,
+		validationProvider,
+		embeddingProvider,
+	).Propose(ctx, req, progress)
+	response.APICalls = tracker.Snapshot()
+	response.Proposal.APICalls = response.APICalls
+	return response, err
 }
 
 func (s *Service) Apply(ctx context.Context, req ApplyRequest, progress ProgressFunc) (ApplyResponse, error) {

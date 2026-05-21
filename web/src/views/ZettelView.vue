@@ -14,6 +14,7 @@ const {
   selectedPaths,
   proposal,
   inboxReport,
+  apiUsage,
   status,
   result,
   notesStatus,
@@ -113,6 +114,7 @@ const {
       :busy="busy"
       :progress-class="progressClass"
       :progress-style="progressStyle"
+      :api-usage="apiUsage"
       :raw-result-summary="rawResultSummary"
       :result="result"
       @rollback="rollback"

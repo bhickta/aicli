@@ -14,7 +14,8 @@ type Selection struct {
 }
 
 type ProposeResponse struct {
-	Proposal Proposal `json:"proposal"`
+	Proposal Proposal     `json:"proposal"`
+	APICalls APICallUsage `json:"api_calls"`
 }
 
 type ApplyRequest struct {
@@ -23,10 +24,11 @@ type ApplyRequest struct {
 }
 
 type ApplyResponse struct {
-	JobID       string   `json:"job_id"`
-	ActivePath  string   `json:"active_path"`
-	SourcePaths []string `json:"source_paths"`
-	ArchivePath string   `json:"archive_path"`
+	JobID       string       `json:"job_id"`
+	ActivePath  string       `json:"active_path"`
+	SourcePaths []string     `json:"source_paths"`
+	ArchivePath string       `json:"archive_path"`
+	APICalls    APICallUsage `json:"api_calls"`
 }
 
 type RollbackRequest struct {
@@ -35,7 +37,8 @@ type RollbackRequest struct {
 }
 
 type RollbackResponse struct {
-	JobID string `json:"job_id"`
+	JobID    string       `json:"job_id"`
+	APICalls APICallUsage `json:"api_calls"`
 }
 
 type Proposal struct {
@@ -54,6 +57,7 @@ type Proposal struct {
 	Judge             MergeJudge         `json:"judge"`
 	Models            ProposalModels     `json:"models"`
 	Providers         ProposalProviders  `json:"providers"`
+	APICalls          APICallUsage       `json:"api_calls"`
 }
 
 type ProposalModels struct {

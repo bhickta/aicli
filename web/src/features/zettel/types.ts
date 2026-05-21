@@ -1,3 +1,5 @@
+import type { ApiCallUsage } from "../../types";
+
 export type ZettelMode = "inbox" | "manual" | "settings";
 
 export interface ZettelLineRange {
@@ -24,6 +26,7 @@ export interface ZettelProposal {
   merge_plan?: { insertions?: Array<{ after_line: number; markdown: string; reason?: string }> };
   coverage?: { score?: number };
   judge?: { verdict?: string; score?: number; notes?: string };
+  api_calls?: ApiCallUsage;
 }
 
 export type ZettelFolderField = "rootFolder" | "inboxFolder" | "dataFolder";

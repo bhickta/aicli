@@ -1,7 +1,7 @@
 import { computed, onMounted, reactive, shallowRef, watch } from "vue";
 import { api } from "../lib/api";
 import { stringify } from "../lib/format";
-import type { InboxMergeReport } from "../types";
+import type { ApiCallUsage, InboxMergeReport } from "../types";
 import {
   candidateLimitOptions,
   createZettelConfig,
@@ -32,6 +32,7 @@ export function useZettelWorkflow() {
   const selectedPaths = shallowRef<string[]>([]);
   const proposal = shallowRef<ZettelProposal | null>(null);
   const inboxReport = shallowRef<InboxMergeReport | null>(null);
+  const apiUsage = shallowRef<ApiCallUsage | null>(null);
   const notesStatus = shallowRef("Load notes after selecting a vault.");
   const rollbackJobID = shallowRef("");
   const mode = shallowRef<ZettelMode>(readZettelMode());
@@ -83,6 +84,7 @@ export function useZettelWorkflow() {
 
   async function pickVault() {
     await runner.run("Opening vault picker", async () => {
+      apiUsage.value = null;
       const query = config.vaultPath ? `?path=${encodeURIComponent(config.vaultPath)}` : "";
       const picked = await api<{ path: string }>(`/api/fs/pick-directory${query}`);
       config.vaultPath = picked.path;
@@ -94,6 +96,7 @@ export function useZettelWorkflow() {
 
   async function pickZettelFolder(field: ZettelFolderField, label: string) {
     await runner.run(`Choosing ${label}`, async () => {
+      apiUsage.value = null;
       if (!config.vaultPath.trim()) throw new Error("Select a vault first");
       const startPath = folderPickerStartPath(config, field);
       const query = startPath ? `?path=${encodeURIComponent(startPath)}` : "";
@@ -111,6 +114,7 @@ export function useZettelWorkflow() {
   }
 
   async function refreshNotes() {
+    apiUsage.value = null;
     notesStatus.value = "Loading notes...";
     const output = await api<{ notes?: string[]; count?: number }>("/api/workflows/zettel/notes", {
       method: "POST",
@@ -124,17 +128,21 @@ export function useZettelWorkflow() {
   }
 
   async function buildIndex() {
+    apiUsage.value = null;
     await runner.runWorkflow("Building zettel index", "/api/workflows/zettel/index", basePayload(), (output) => {
+      updateApiUsage(output);
       runner.status.value = "Embedding index is ready";
       runner.result.value = stringify(output);
     });
   }
 
   async function suggest() {
+    apiUsage.value = null;
     await runner.runWorkflow("Finding merge candidates", "/api/workflows/zettel/suggest", {
       ...basePayload(),
       active_path: config.activePath,
     }, (output) => {
+      updateApiUsage(output);
       const response = output as { candidates?: ZettelCandidate[] };
       candidates.value = response.candidates || [];
       selectedPaths.value = [];
@@ -145,6 +153,7 @@ export function useZettelWorkflow() {
   }
 
   async function previewMerge() {
+    apiUsage.value = null;
     const selections = selectedCandidates.value.map((candidate) => ({
       path: candidate.path,
       source_line_ranges: candidate.source_line_ranges,
@@ -154,6 +163,7 @@ export function useZettelWorkflow() {
       active_path: config.activePath,
       selections,
     }, (output) => {
+      updateApiUsage(output);
       const response = output as { proposal?: ZettelProposal };
       proposal.value = response.proposal || null;
       runner.status.value = proposal.value ? "Merge preview ready" : "Merge preview returned no proposal";
@@ -163,10 +173,12 @@ export function useZettelWorkflow() {
 
   async function applyMerge() {
     if (!proposal.value) return;
+    apiUsage.value = null;
     await runner.runWorkflow("Applying approved merge", "/api/workflows/zettel/apply", {
       ...basePayload(),
       proposal: proposal.value,
     }, (output) => {
+      updateApiUsage(output);
       const response = output as { job_id?: string };
       rollbackJobID.value = response.job_id || proposal.value?.id || "";
       runner.status.value = `Applied merge ${rollbackJobID.value}`;
@@ -175,17 +187,21 @@ export function useZettelWorkflow() {
   }
 
   async function rollback() {
+    apiUsage.value = null;
     await runner.runWorkflow("Rolling back zettel merge", "/api/workflows/zettel/rollback", {
       ...basePayload(),
       job_id: rollbackJobID.value,
     }, (output) => {
+      updateApiUsage(output);
       runner.status.value = "Rollback completed";
       runner.result.value = stringify(output);
     });
   }
 
   async function runInboxMerge() {
+    apiUsage.value = null;
     await runner.runWorkflow("Running inbox merge", "/api/workflows/zettel/inbox-merge", basePayload(), (output) => {
+      updateApiUsage(output);
       const response = output as InboxMergeReport;
       inboxReport.value = response;
       rollbackJobID.value = response.run_id || "";
@@ -208,6 +224,16 @@ export function useZettelWorkflow() {
     return parsed.toFixed(2);
   }
 
+  function updateApiUsage(output: unknown) {
+    apiUsage.value = extractApiUsage(output);
+  }
+
+  function extractApiUsage(output: unknown): ApiCallUsage | null {
+    if (!output || typeof output !== "object") return null;
+    const root = output as { api_calls?: ApiCallUsage; proposal?: { api_calls?: ApiCallUsage } };
+    return root.api_calls || root.proposal?.api_calls || null;
+  }
+
   return {
     config,
     candidates,
@@ -215,6 +241,7 @@ export function useZettelWorkflow() {
     selectedPaths,
     proposal,
     inboxReport,
+    apiUsage,
     status: runner.status,
     result: runner.result,
     notesStatus,

@@ -17,6 +17,7 @@ type InboxMergeResponse struct {
 	ProcessedCount int                 `json:"processed_count"`
 	PendingCount   int                 `json:"pending_count"`
 	FailedCount    int                 `json:"failed_count"`
+	APICalls       APICallUsage        `json:"api_calls"`
 }
 
 type InboxSourceResult struct {

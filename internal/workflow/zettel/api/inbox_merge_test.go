@@ -223,6 +223,9 @@ func TestServiceInboxMergeAppliesPartialAndPreservesPendingSource(t *testing.T) 
 	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
 		t.Fatalf("InboxMerge() = %#v, want one partial pending note", resp)
 	}
+	if resp.APICalls.Total != 6 || resp.APICalls.Chat != 4 || resp.APICalls.Embeddings != 2 {
+		t.Fatalf("api calls = %#v, want four chat calls and two embedding calls", resp.APICalls)
+	}
 	partial := resp.Pending[0]
 	if partial.Status != "partial" || partial.ProcessedPath == "" || !strings.HasPrefix(partial.ProcessedPath, "inbox-to-merge/_pending/") {
 		t.Fatalf("partial result = %#v, want pending folder path", partial)

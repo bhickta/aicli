@@ -137,6 +137,24 @@ export interface InboxDestinationDiff {
   diff: string;
 }
 
+export interface ProviderApiCallUsage {
+  provider_id: string;
+  total: number;
+  chat: number;
+  embeddings: number;
+  vision: number;
+  stream: number;
+}
+
+export interface ApiCallUsage {
+  total: number;
+  chat: number;
+  embeddings: number;
+  vision: number;
+  stream: number;
+  providers?: ProviderApiCallUsage[];
+}
+
 export interface InboxSourceResult {
   source_path: string;
   status: string;
@@ -164,6 +182,7 @@ export interface InboxMergeReport {
   processed_count: number;
   pending_count: number;
   failed_count: number;
+  api_calls?: ApiCallUsage;
 }
 
 export interface BrowserEntry {

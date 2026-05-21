@@ -49,3 +49,5 @@ type Insertion = model.Insertion
 type CoverageReport = model.CoverageReport
 type MergeJudge = model.MergeJudge
 type ProgressFunc = model.ProgressFunc
+type APICallUsage = model.APICallUsage
+type ProviderAPICallUsage = model.ProviderAPICallUsage

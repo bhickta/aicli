@@ -91,6 +91,9 @@ func TestServiceIndexUsesSeparateEmbeddingProvider(t *testing.T) {
 	if resp.Updated != 1 || embeddingProvider.embeddingCalls != 1 {
 		t.Fatalf("Index() = %#v, embedding calls = %d; want one updated note through embedding provider", resp, embeddingProvider.embeddingCalls)
 	}
+	if resp.APICalls.Total != 1 || resp.APICalls.Embeddings != 1 || resp.APICalls.Chat != 0 {
+		t.Fatalf("api calls = %#v, want one embedding call", resp.APICalls)
+	}
 }
 
 func TestServiceIndexPrunesDeletedDestinationNotes(t *testing.T) {
@@ -207,4 +210,25 @@ func TestServiceProposeUsesSeparateStepProvidersAndModels(t *testing.T) {
 	if proposal.Providers.Merge != "merge" || proposal.Providers.ValidationJudge != "validation" || proposal.Providers.Embedding != "embedding" {
 		t.Fatalf("proposal providers = %#v, want step providers recorded", proposal.Providers)
 	}
+	if resp.APICalls.Total != 2 || resp.APICalls.Chat != 2 || resp.APICalls.Embeddings != 0 {
+		t.Fatalf("api calls = %#v, want two chat calls", resp.APICalls)
+	}
+	if proposal.APICalls.Total != resp.APICalls.Total || proposal.APICalls.Chat != resp.APICalls.Chat {
+		t.Fatalf("proposal api calls = %#v, want response counts %#v", proposal.APICalls, resp.APICalls)
+	}
+	if usageForProvider(resp.APICalls, "merge").Chat != 1 {
+		t.Fatalf("merge provider usage = %#v, want one chat call", usageForProvider(resp.APICalls, "merge"))
+	}
+	if usageForProvider(resp.APICalls, "validation").Chat != 1 {
+		t.Fatalf("validation provider usage = %#v, want one chat call", usageForProvider(resp.APICalls, "validation"))
+	}
+}
+
+func usageForProvider(usage APICallUsage, providerID string) ProviderAPICallUsage {
+	for _, providerUsage := range usage.Providers {
+		if providerUsage.ProviderID == providerID {
+			return providerUsage
+		}
+	}
+	return ProviderAPICallUsage{}
 }
