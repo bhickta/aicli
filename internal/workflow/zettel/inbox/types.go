@@ -4,7 +4,6 @@ import (
 	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/workflow/zettel/indexer"
 	"github.com/bhickta/aicli/internal/workflow/zettel/model"
-	"github.com/bhickta/aicli/internal/workflow/zettel/notetext"
 	"github.com/bhickta/aicli/internal/workflow/zettel/vaultfs"
 )
 
@@ -38,30 +37,16 @@ type vault = vaultfs.Vault
 type scoredCandidate = indexer.ScoredCandidate
 
 type Runner struct {
-	candidateProvider  provider.Provider
-	mergeProvider      provider.Provider
-	validationProvider provider.Provider
-	embeddingProvider  provider.Provider
+	mergeProvider     provider.Provider
+	embeddingProvider provider.Provider
 }
 
 func New(
-	candidateProvider provider.Provider,
 	mergeProvider provider.Provider,
-	validationProvider provider.Provider,
 	embeddingProvider provider.Provider,
 ) Runner {
 	return Runner{
-		candidateProvider:  candidateProvider,
-		mergeProvider:      mergeProvider,
-		validationProvider: validationProvider,
-		embeddingProvider:  embeddingProvider,
+		mergeProvider:     mergeProvider,
+		embeddingProvider: embeddingProvider,
 	}
-}
-
-func normalizeOptions(options Options) Options {
-	return model.NormalizeOptions(options)
-}
-
-func numberedExcerpt(path string, content string, maxChars int) (string, int) {
-	return notetext.NumberedExcerpt(path, content, maxChars)
 }

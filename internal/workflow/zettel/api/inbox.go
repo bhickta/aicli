@@ -7,11 +7,9 @@ import (
 )
 
 func (s *Service) InboxMerge(ctx context.Context, req InboxMergeRequest, progress ProgressFunc) (InboxMergeResponse, error) {
-	tracker, candidateProvider, mergeProvider, validationProvider, embeddingProvider := s.trackedProviders()
+	tracker, _, mergeProvider, _, embeddingProvider := s.trackedProviders()
 	response, err := inboxpkg.New(
-		candidateProvider,
 		mergeProvider,
-		validationProvider,
 		embeddingProvider,
 	).InboxMerge(ctx, req, progress)
 	response.APICalls = tracker.Snapshot()

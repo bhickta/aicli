@@ -1,0 +1,199 @@
+package inbox
+
+import (
+	"strings"
+
+	"github.com/bhickta/aicli/internal/workflow/zettel/notetext"
+)
+
+type inboxAppliedDecision struct {
+	ledger            []InboxClaimLedger
+	destinationBefore map[string]string
+	destinationAfter  map[string]string
+	destinationWrites map[string]string
+	destinationDiffs  []InboxDestinationDiff
+	destinationPaths  []string
+	rewriteAttempted  bool
+}
+
+func materializeInboxDecision(v vault, options Options, decision inboxDestinationDecision, claims []InboxClaim) (inboxAppliedDecision, error) {
+	applied := newInboxAppliedDecision()
+	claimSet := claimIDSet(claims)
+	assigned := map[string]bool{}
+
+	applied.addDecisionPending(decision.Pending, claimSet)
+	for _, destination := range decision.Destinations {
+		if err := applied.materializeDestination(v, options, destination, claims, claimSet, assigned); err != nil {
+			return applied, err
+		}
+	}
+
+	applied.ledger = ensureAllClaimsAccounted(claims, applied.ledger)
+	return applied, nil
+}
+
+func newInboxAppliedDecision() inboxAppliedDecision {
+	return inboxAppliedDecision{
+		destinationBefore: map[string]string{},
+		destinationAfter:  map[string]string{},
+		destinationWrites: map[string]string{},
+	}
+}
+
+func (a *inboxAppliedDecision) addDecisionPending(pendingItems []InboxClaimLedger, claimSet map[string]bool) {
+	for _, pending := range pendingItems {
+		pending = normalizeLedgerItem(pending, "")
+		pending.Status = claimStatusPending
+		if claimSet[pending.ClaimID] {
+			a.ledger = append(a.ledger, pending)
+		}
+	}
+}
+
+func (a *inboxAppliedDecision) materializeDestination(v vault, options Options, destination inboxDestinationAssignment, claims []InboxClaim, claimSet map[string]bool, assigned map[string]bool) error {
+	path := strings.TrimSpace(destination.Path)
+	if path == "" || destination.Confidence < options.ReviewThreshold {
+		a.addLowConfidencePending(destination, claimSet, assigned)
+		return nil
+	}
+
+	ledger := destinationLedger(destination, path, claims)
+	if hasLedgerStatus(ledger, claimStatusMerged) {
+		a.rewriteAttempted = true
+	}
+	if len(ledger) == 0 {
+		return nil
+	}
+
+	if hasLedgerStatus(ledger, claimStatusMerged) || hasLedgerStatus(ledger, claimStatusDeduped) {
+		if err := a.ensureDestinationLoaded(v, options, path); err != nil {
+			return err
+		}
+	}
+	merged := a.applyImmediateLedger(path, ledger, assigned)
+	a.applyMergedLedger(path, destination.FinalMarkdown, merged, assigned)
+	return nil
+}
+
+func (a *inboxAppliedDecision) addLowConfidencePending(destination inboxDestinationAssignment, claimSet map[string]bool, assigned map[string]bool) {
+	for _, id := range destinationClaimIDs(destination) {
+		if claimSet[id] && !assigned[id] {
+			a.ledger = append(a.ledger, InboxClaimLedger{ClaimID: id, Status: claimStatusPending, Reason: "destination confidence below threshold"})
+		}
+	}
+}
+
+func (a *inboxAppliedDecision) ensureDestinationLoaded(v vault, options Options, path string) error {
+	if _, ok := a.destinationBefore[path]; ok {
+		return nil
+	}
+	content, err := readDestinationNote(v, options, path)
+	if err != nil {
+		return err
+	}
+	a.destinationBefore[path] = content
+	a.destinationAfter[path] = content
+	return nil
+}
+
+func (a *inboxAppliedDecision) applyImmediateLedger(path string, ledger []InboxClaimLedger, assigned map[string]bool) []InboxClaimLedger {
+	merged := make([]InboxClaimLedger, 0, len(ledger))
+	for _, item := range ledger {
+		if assigned[item.ClaimID] {
+			continue
+		}
+		switch item.Status {
+		case claimStatusMerged:
+			merged = append(merged, item)
+		case claimStatusDeduped:
+			a.ledger = append(a.ledger, item)
+			a.destinationPaths = appendUniquePath(a.destinationPaths, path)
+			assigned[item.ClaimID] = true
+		default:
+			a.ledger = append(a.ledger, item)
+		}
+	}
+	return merged
+}
+
+func (a *inboxAppliedDecision) applyMergedLedger(path string, finalMarkdown string, merged []InboxClaimLedger, assigned map[string]bool) {
+	if len(merged) == 0 {
+		return
+	}
+	if strings.TrimSpace(finalMarkdown) == "" {
+		a.ledger = append(a.ledger, pendingLedgerForLedger(merged, "destination missing final markdown")...)
+		return
+	}
+
+	before := a.destinationBefore[path]
+	after := notetext.EnsureTrailingNewline(finalMarkdown)
+	if after == notetext.EnsureTrailingNewline(before) {
+		a.ledger = append(a.ledger, pendingLedgerForLedger(merged, "destination final markdown did not change for merged claim")...)
+		return
+	}
+
+	for _, item := range merged {
+		a.ledger = append(a.ledger, item)
+		assigned[item.ClaimID] = true
+	}
+	a.destinationAfter[path] = after
+	a.destinationWrites[path] = after
+	a.destinationPaths = appendUniquePath(a.destinationPaths, path)
+	a.destinationDiffs = append(a.destinationDiffs, InboxDestinationDiff{
+		Path:    path,
+		Before:  before,
+		After:   after,
+		Diff:    notetext.SimpleMarkdownDiff(before, after),
+		Created: false,
+	})
+}
+
+func destinationLedger(destination inboxDestinationAssignment, path string, claims []InboxClaim) []InboxClaimLedger {
+	ledger := normalizeRouteLedger(destination.Ledger, path, claims)
+	claimSet := claimIDSet(claims)
+	mentioned := map[string]bool{}
+	for _, item := range ledger {
+		mentioned[item.ClaimID] = true
+	}
+	for _, id := range destination.ClaimIDs {
+		id = strings.TrimSpace(id)
+		if !claimSet[id] || mentioned[id] {
+			continue
+		}
+		reason := strings.TrimSpace(destination.Reason)
+		if reason == "" {
+			reason = "destination selected for claim"
+		}
+		ledger = append(ledger, InboxClaimLedger{
+			ClaimID:         id,
+			Status:          claimStatusMerged,
+			DestinationPath: path,
+			Reason:          reason,
+		})
+		mentioned[id] = true
+	}
+	return ledger
+}
+
+func pendingLedgerForLedger(ledger []InboxClaimLedger, reason string) []InboxClaimLedger {
+	out := make([]InboxClaimLedger, 0, len(ledger))
+	for _, item := range ledger {
+		out = append(out, InboxClaimLedger{
+			ClaimID:         item.ClaimID,
+			Status:          claimStatusPending,
+			DestinationPath: item.DestinationPath,
+			Evidence:        item.Evidence,
+			Reason:          reason,
+		})
+	}
+	return out
+}
+
+func hasLedgerStatus(ledger []InboxClaimLedger, status string) bool {
+	for _, item := range ledger {
+		if item.Status == status {
+			return true
+		}
+	}
+	return false
+}

@@ -18,9 +18,7 @@ func TestServiceInboxMergeProcessesSourceAndRollbackRestores(t *testing.T) {
 	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "batch", "inflation.md"), "Inflation rose to 7% due to oil prices.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Inflation = 7% due to oil prices","source":"Inflation rose to 7% due to oil prices."}],"destinations":[{"path":"zettelkasten/economy.md","claim_ids":["c1"],"confidence":0.99,"reason":"inflation destination"}],"pending":[],"notes":"ok"}`,
-		`{"final_markdown":"- **Inflation**:: 6%\n- **Inflation**:: 7% (Oil prices ^)","ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added 7% oil price line","reason":"new fact"}],"notes":"ok"}`,
-		`{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"}`,
+		`{"claims":[{"id":"c1","text":"Inflation = 7% due to oil prices","source":"Inflation rose to 7% due to oil prices."}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"final_markdown":"- **Inflation**:: 6%\n- **Inflation**:: 7% (Oil prices ^)","ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added 7% oil price line","reason":"new fact"}],"reason":"inflation destination"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -144,9 +142,7 @@ func TestServiceInboxMergeDoesNotWriteDedupedOnlyDestination(t *testing.T) {
 	writeTestFile(t, sourcePath, "Rote learning fails in UPSC.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Rote learning fails in UPSC","source":"Rote learning fails in UPSC."}],"destinations":[{"path":"zettelkasten/polity.md","claim_ids":["c1"],"confidence":0.99,"reason":"already represented"}],"pending":[],"notes":"ok"}`,
-		`{"final_markdown":"- **UPSC**: BROKEN STYLE REWRITE.\n","ledger":[{"claim_id":"c1","status":"deduped","destination_path":"zettelkasten/polity.md","evidence":"existing rote learning line","reason":"already represented"}],"notes":"deduped"}`,
-		`{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"dedupe verified"}`,
+		`{"claims":[{"id":"c1","text":"Rote learning fails in UPSC","source":"Rote learning fails in UPSC."}],"destinations":[{"path":"zettelkasten/polity.md","confidence":0.99,"final_markdown":"- **UPSC**: BROKEN STYLE REWRITE.\n","ledger":[{"claim_id":"c1","status":"deduped","destination_path":"zettelkasten/polity.md","evidence":"existing rote learning line","reason":"already represented"}],"reason":"already represented"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"dedupe verified"},"notes":"deduped"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -187,8 +183,8 @@ func TestServiceInboxMergeDoesNotWriteDedupedOnlyDestination(t *testing.T) {
 	if processed.ProcessedPath == "" || !strings.HasPrefix(processed.ProcessedPath, "inbox-to-merge/_processed/") {
 		t.Fatalf("processed path = %q, want processed folder path", processed.ProcessedPath)
 	}
-	if resp.APICalls.Total != 4 || resp.APICalls.Chat != 3 || resp.APICalls.Embeddings != 1 {
-		t.Fatalf("api calls = %#v, want three chat calls and one embedding call", resp.APICalls)
+	if resp.APICalls.Total != 2 || resp.APICalls.Chat != 1 || resp.APICalls.Embeddings != 1 {
+		t.Fatalf("api calls = %#v, want one chat call and one embedding call", resp.APICalls)
 	}
 }
 
@@ -203,8 +199,7 @@ func TestServiceInboxMergeUsesRouteLevelDedupeWithoutRewrite(t *testing.T) {
 	writeTestFile(t, sourcePath, "Rote learning fails in UPSC.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Rote learning fails in UPSC","source":"Rote learning fails in UPSC."}],"destinations":[{"path":"zettelkasten/polity.md","confidence":0.99,"ledger":[{"claim_id":"c1","status":"deduped","destination_path":"zettelkasten/polity.md","evidence":"excerpt already says rote learning fails","reason":"already represented"}],"reason":"already represented"}],"pending":[],"notes":"ok"}`,
-		`{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"route dedupe verified"}`,
+		`{"claims":[{"id":"c1","text":"Rote learning fails in UPSC","source":"Rote learning fails in UPSC."}],"destinations":[{"path":"zettelkasten/polity.md","confidence":0.99,"ledger":[{"claim_id":"c1","status":"deduped","destination_path":"zettelkasten/polity.md","evidence":"excerpt already says rote learning fails","reason":"already represented"}],"reason":"already represented"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"route dedupe verified"},"notes":"ok"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -235,16 +230,14 @@ func TestServiceInboxMergeUsesRouteLevelDedupeWithoutRewrite(t *testing.T) {
 	if got := readTestFile(t, destinationPath); got != destinationContent {
 		t.Fatalf("deduped destination changed = %q, want %q", got, destinationContent)
 	}
-	if len(provider.chatCalls) != 2 {
-		t.Fatalf("chat calls = %d, want route and validate only", len(provider.chatCalls))
+	if len(provider.chatCalls) != 1 {
+		t.Fatalf("chat calls = %d, want one decision call", len(provider.chatCalls))
 	}
-	for _, call := range provider.chatCalls {
-		if call.Model == "merge-model" {
-			t.Fatalf("merge model was called for route-level dedupe")
-		}
+	if provider.chatCalls[0].Model != "merge-model" {
+		t.Fatalf("chat model = %q, want merge-model for one-shot inbox decision", provider.chatCalls[0].Model)
 	}
-	if resp.APICalls.Total != 3 || resp.APICalls.Chat != 2 || resp.APICalls.Embeddings != 1 {
-		t.Fatalf("api calls = %#v, want two chat calls and one embedding call", resp.APICalls)
+	if resp.APICalls.Total != 2 || resp.APICalls.Chat != 1 || resp.APICalls.Embeddings != 1 {
+		t.Fatalf("api calls = %#v, want one chat call and one embedding call", resp.APICalls)
 	}
 }
 
@@ -258,9 +251,7 @@ func TestServiceInboxMergeAddsLexicalCandidatesBeyondEmbeddingLimit(t *testing.T
 	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "mixed.md"), "- **Example**: 2022 Mains answer = **Jobless Growth**.\n- **Root**: Anthrop = man.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"2022 Mains answer is Jobless Growth","source":"Example"},{"id":"c2","text":"Anthrop means man","source":"Root"}],"destinations":[{"path":"zettelkasten/zzz_jobless.md","claim_ids":["c1"],"confidence":0.99,"reason":"lexical candidate matched Jobless Growth"}],"pending":[{"claim_id":"c2","status":"pending","reason":"no destination for root word"}],"notes":"partial"}`,
-		`{"final_markdown":"- **Jobless Growth**: Services = high value/low labor.\n- **2022 Mains**: answer = Jobless Growth.","ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/zzz_jobless.md","evidence":"added 2022 mains answer","reason":"same concept"}],"notes":"ok"}`,
-		`{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"}`,
+		`{"claims":[{"id":"c1","text":"2022 Mains answer is Jobless Growth","source":"Example"},{"id":"c2","text":"Anthrop means man","source":"Root"}],"destinations":[{"path":"zettelkasten/zzz_jobless.md","confidence":0.99,"final_markdown":"- **Jobless Growth**: Services = high value/low labor.\n- **2022 Mains**: answer = Jobless Growth.","ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/zzz_jobless.md","evidence":"added 2022 mains answer","reason":"same concept"}],"reason":"lexical candidate matched Jobless Growth"}],"pending":[{"claim_id":"c2","status":"pending","reason":"no destination for root word"}],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"partial"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -289,18 +280,18 @@ func TestServiceInboxMergeAddsLexicalCandidatesBeyondEmbeddingLimit(t *testing.T
 	if resp.PendingCount != 1 || resp.ProcessedCount != 0 {
 		t.Fatalf("InboxMerge() = %#v, want partial result with one merged lexical candidate", resp)
 	}
-	if len(provider.chatCalls) != 3 {
-		t.Fatalf("chat calls = %d, want route, rewrite, validate", len(provider.chatCalls))
+	if len(provider.chatCalls) != 1 {
+		t.Fatalf("chat calls = %d, want one decision call", len(provider.chatCalls))
 	}
-	routePayload := provider.chatCalls[0].Messages[len(provider.chatCalls[0].Messages)-1].Content
-	if !strings.Contains(routePayload, "zettelkasten/zzz_jobless.md") {
-		t.Fatalf("route payload missing lexical jobless candidate: %s", routePayload)
+	decisionPayload := provider.chatCalls[0].Messages[len(provider.chatCalls[0].Messages)-1].Content
+	if !strings.Contains(decisionPayload, "zettelkasten/zzz_jobless.md") {
+		t.Fatalf("decision payload missing lexical jobless candidate: %s", decisionPayload)
 	}
 	if got := readTestFile(t, joblessPath); !strings.Contains(got, "2022 Mains") {
 		t.Fatalf("jobless destination = %q, want merged mains example", got)
 	}
-	if resp.APICalls.Total != 4 || resp.APICalls.Chat != 3 || resp.APICalls.Embeddings != 1 {
-		t.Fatalf("api calls = %#v, want three chat calls and one embedding call", resp.APICalls)
+	if resp.APICalls.Total != 2 || resp.APICalls.Chat != 1 || resp.APICalls.Embeddings != 1 {
+		t.Fatalf("api calls = %#v, want one chat call and one embedding call", resp.APICalls)
 	}
 }
 
@@ -355,12 +346,10 @@ func TestServiceInboxMergeAdoptsUnmatchedSourceWhenEnabled(t *testing.T) {
 		t.Fatalf("processed result = %#v, want one created destination merge", processed)
 	}
 	if len(provider.chatCalls) != 1 {
-		t.Fatalf("chat calls = %d, want combined route only", len(provider.chatCalls))
+		t.Fatalf("chat calls = %d, want one decision call", len(provider.chatCalls))
 	}
-	for _, call := range provider.chatCalls {
-		if call.Model == "merge-model" {
-			t.Fatalf("merge model was called for adopted source")
-		}
+	if provider.chatCalls[0].Model != "merge-model" {
+		t.Fatalf("chat model = %q, want merge-model for one-shot inbox decision", provider.chatCalls[0].Model)
 	}
 	if resp.APICalls.Total != 2 || resp.APICalls.Chat != 1 || resp.APICalls.Embeddings != 1 {
 		t.Fatalf("api calls = %#v, want one chat call and one embedding call", resp.APICalls)
@@ -434,9 +423,7 @@ func TestServiceInboxMergeAppliesPartialAndPreservesPendingSource(t *testing.T) 
 	writeTestFile(t, sourcePath, "Inflation rose to 7%.\nUnclear prelims range.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Inflation rose to 7%","source":"Inflation rose to 7%."},{"id":"c2","text":"Unclear prelims range","source":"Unclear prelims range."}],"destinations":[{"path":"zettelkasten/economy.md","claim_ids":["c1"],"confidence":0.99,"reason":"inflation destination"}],"pending":[{"claim_id":"c2","status":"pending","reason":"no confident destination"}],"notes":"partial"}`,
-		`{"final_markdown":"- **Inflation**:: 6%\n- **Inflation**:: 7%","ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added inflation 7%","reason":"new fact"}],"notes":"ok"}`,
-		`{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"partial applied facts are represented"}`,
+		`{"claims":[{"id":"c1","text":"Inflation rose to 7%","source":"Inflation rose to 7%."},{"id":"c2","text":"Unclear prelims range","source":"Unclear prelims range."}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"final_markdown":"- **Inflation**:: 6%\n- **Inflation**:: 7%","ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added inflation 7%","reason":"new fact"}],"reason":"inflation destination"}],"pending":[{"claim_id":"c2","status":"pending","reason":"no confident destination"}],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"partial applied facts are represented"},"notes":"partial"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -464,8 +451,8 @@ func TestServiceInboxMergeAppliesPartialAndPreservesPendingSource(t *testing.T) 
 	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
 		t.Fatalf("InboxMerge() = %#v, want one partial pending note", resp)
 	}
-	if resp.APICalls.Total != 4 || resp.APICalls.Chat != 3 || resp.APICalls.Embeddings != 1 {
-		t.Fatalf("api calls = %#v, want three chat calls and one embedding call", resp.APICalls)
+	if resp.APICalls.Total != 2 || resp.APICalls.Chat != 1 || resp.APICalls.Embeddings != 1 {
+		t.Fatalf("api calls = %#v, want one chat call and one embedding call", resp.APICalls)
 	}
 	partial := resp.Pending[0]
 	if partial.Status != "partial" || partial.ProcessedPath == "" || !strings.HasPrefix(partial.ProcessedPath, "inbox-to-merge/_pending/") {
@@ -503,8 +490,7 @@ func TestInboxRollbackIgnoresPendingDestinationArchives(t *testing.T) {
 	writeTestFile(t, sourcePath, "Inflation rose to 7%, but routing is uncertain.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Inflation rose to 7%","source":"Inflation rose to 7%"}],"destinations":[{"path":"zettelkasten/economy.md","claim_ids":["c1"],"confidence":0.99,"reason":"inflation destination"}],"pending":[],"notes":"ok"}`,
-		`{"final_markdown":"- **Inflation**:: 6%\n- **Inflation**:: 7%","ledger":[{"claim_id":"c1","status":"pending","destination_path":"zettelkasten/economy.md","reason":"not enough evidence to merge"}],"notes":"pending"}`,
+		`{"claims":[{"id":"c1","text":"Inflation rose to 7%","source":"Inflation rose to 7%"}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"ledger":[{"claim_id":"c1","status":"pending","destination_path":"zettelkasten/economy.md","reason":"not enough evidence to merge"}],"reason":"inflation destination"}],"pending":[],"notes":"pending"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
