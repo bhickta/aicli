@@ -12,11 +12,11 @@ func readActive(options Options, path string) (vault, string, string, error) {
 	if err != nil {
 		return vault{}, "", "", err
 	}
-	abs, err := v.notePath(path, options)
+	abs, err := v.NotePath(path, options)
 	if err != nil {
 		return vault{}, "", "", err
 	}
-	rel, err := v.rel(abs)
+	rel, err := v.Rel(abs)
 	if err != nil {
 		return vault{}, "", "", err
 	}
@@ -31,11 +31,11 @@ func buildExtractions(v vault, options Options, selections []Selection) ([]Sourc
 	extractions := make([]SourceExtraction, 0, len(selections))
 	sourceBlocks := make([]string, 0, len(selections))
 	for _, selection := range selections {
-		abs, err := v.notePath(selection.Path, options)
+		abs, err := v.NotePath(selection.Path, options)
 		if err != nil {
 			return nil, "", err
 		}
-		rel, err := v.rel(abs)
+		rel, err := v.Rel(abs)
 		if err != nil {
 			return nil, "", err
 		}

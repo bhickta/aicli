@@ -130,15 +130,15 @@ func TestServiceIndexPrunesDeletedDestinationNotes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newVault() error = %v", err)
 	}
-	cache, err := newEmbeddingIndex(v, normalizeOptions(options), embeddingProvider).load()
+	cachedPaths, err := newEmbeddingIndex(v, normalizeOptions(options), embeddingProvider).CachedPaths()
 	if err != nil {
 		t.Fatalf("load cache: %v", err)
 	}
-	if _, ok := cache.Items["zettelkasten/removed.md"]; ok {
-		t.Fatalf("deleted note remains in cache: %#v", cache.Items)
+	if _, ok := cachedPaths["zettelkasten/removed.md"]; ok {
+		t.Fatalf("deleted note remains in cache: %#v", cachedPaths)
 	}
-	if _, ok := cache.Items["zettelkasten/kept.md"]; !ok {
-		t.Fatalf("kept note missing from cache: %#v", cache.Items)
+	if _, ok := cachedPaths["zettelkasten/kept.md"]; !ok {
+		t.Fatalf("kept note missing from cache: %#v", cachedPaths)
 	}
 }
 

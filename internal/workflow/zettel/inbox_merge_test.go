@@ -338,13 +338,20 @@ func TestMergeJudgePassedRequiresNoMissingFactsOrUnsupportedAdditions(t *testing
 	}
 }
 
-func readInboxRunManifest(t *testing.T, archivePath string) inboxRunManifest {
+type testInboxRunManifest struct {
+	Status         string `json:"status"`
+	ProcessedCount int    `json:"processed_count"`
+	PendingCount   int    `json:"pending_count"`
+	FailedCount    int    `json:"failed_count"`
+}
+
+func readInboxRunManifest(t *testing.T, archivePath string) testInboxRunManifest {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(archivePath, "manifest.json"))
 	if err != nil {
 		t.Fatalf("read inbox manifest: %v", err)
 	}
-	var manifest inboxRunManifest
+	var manifest testInboxRunManifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatalf("parse inbox manifest: %v", err)
 	}

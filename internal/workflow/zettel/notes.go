@@ -8,7 +8,7 @@ func ListNotes(options Options) (ListNotesResponse, error) {
 	if err != nil {
 		return ListNotesResponse{}, err
 	}
-	notes, err := v.scanNotes(options)
+	notes, err := v.ScanNotes(options)
 	if err != nil {
 		return ListNotesResponse{}, err
 	}

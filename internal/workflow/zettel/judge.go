@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	progressmodel "github.com/bhickta/aicli/internal/progress"
+	"github.com/bhickta/aicli/internal/workflow/zettel/audit"
 )
 
 func (s *Service) judgeCandidates(ctx context.Context, activePath string, activeContent string, similar []scoredCandidate, options Options) ([]Candidate, error) {
@@ -79,7 +80,7 @@ func (s *Service) runMergeAttempts(ctx context.Context, activePath string, activ
 		if progress != nil {
 			progress(progressmodel.Indeterminate(fmt.Sprintf("validating merge proposal %d/%d", attempt, options.MaxMergeRetries)))
 		}
-		coverage := buildCoverageReport(sourceMaterial, finalContent)
+		coverage := audit.BuildCoverageReport(sourceMaterial, finalContent)
 		judge, err := chatJSON[MergeJudge](ctx, s.validationProvider, options.ValidationModel, validationMessages(sourceMaterial, finalContent))
 		if err != nil {
 			return proposal, err

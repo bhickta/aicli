@@ -1,0 +1,74 @@
+package zettel
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+)
+
+func writeDestinationNotes(v vault, options Options, destinationAfter map[string]string) error {
+	paths := make([]string, 0, len(destinationAfter))
+	for path := range destinationAfter {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		abs, err := v.NotePath(path, options)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(abs, []byte(ensureTrailingNewline(destinationAfter[path])), 0o600); err != nil {
+			return fmt.Errorf("write destination note %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func moveInboxSourceToProcessed(v vault, options Options, sourcePath string) (string, error) {
+	inbox := strings.Trim(filepath.ToSlash(filepath.Clean(options.InboxFolder)), "/")
+	source := strings.Trim(filepath.ToSlash(filepath.Clean(sourcePath)), "/")
+	relInside := strings.TrimPrefix(source, inbox)
+	relInside = strings.Trim(relInside, "/")
+	if relInside == "" {
+		relInside = filepath.Base(source)
+	}
+	processedRel := filepath.ToSlash(filepath.Join(inbox, "_processed", time.Now().Format("2006-01-02"), relInside))
+	processedAbs, err := v.Abs(processedRel)
+	if err != nil {
+		return "", err
+	}
+	processedAbs = uniquePath(processedAbs)
+	sourceAbs, err := v.Abs(sourcePath)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(processedAbs), 0o755); err != nil {
+		return "", fmt.Errorf("create processed folder: %w", err)
+	}
+	if err := os.Rename(sourceAbs, processedAbs); err != nil {
+		return "", fmt.Errorf("move processed source: %w", err)
+	}
+	rel, err := v.Rel(processedAbs)
+	if err != nil {
+		return "", err
+	}
+	return rel, nil
+}
+
+func uniquePath(path string) string {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return path
+	}
+	ext := filepath.Ext(path)
+	base := strings.TrimSuffix(path, ext)
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d%s", base, i, ext)
+		if _, err := os.Stat(candidate); errors.Is(err, os.ErrNotExist) {
+			return candidate
+		}
+	}
+}

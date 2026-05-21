@@ -9,6 +9,7 @@ import (
 
 	progressmodel "github.com/bhickta/aicli/internal/progress"
 	"github.com/bhickta/aicli/internal/provider"
+	archivepkg "github.com/bhickta/aicli/internal/workflow/zettel/archive"
 )
 
 type Service struct {
@@ -132,7 +133,7 @@ func (s *Service) Apply(_ context.Context, req ApplyRequest, progress ProgressFu
 	if err != nil {
 		return ApplyResponse{}, err
 	}
-	activeAbs, err := v.notePath(proposal.ActivePath, options)
+	activeAbs, err := v.NotePath(proposal.ActivePath, options)
 	if err != nil {
 		return ApplyResponse{}, err
 	}
@@ -147,7 +148,7 @@ func (s *Service) Apply(_ context.Context, req ApplyRequest, progress ProgressFu
 	sourceContents := make(map[string]string, len(proposal.SourceExtractions))
 	sourcePaths := make([]string, 0, len(proposal.SourceExtractions))
 	for _, extraction := range proposal.SourceExtractions {
-		sourceAbs, err := v.notePath(extraction.Path, options)
+		sourceAbs, err := v.NotePath(extraction.Path, options)
 		if err != nil {
 			return ApplyResponse{}, err
 		}
@@ -164,7 +165,7 @@ func (s *Service) Apply(_ context.Context, req ApplyRequest, progress ProgressFu
 	if progress != nil {
 		progress(progressmodel.Units("archiving originals", 0, 2, "operation"))
 	}
-	archive := newArchiveStore(v, options)
+	archive := archivepkg.NewStore(v, options)
 	archivePath, err := archive.WriteBeforeApply(proposal, activeContent, sourceContents)
 	if err != nil {
 		return ApplyResponse{}, err
@@ -176,7 +177,7 @@ func (s *Service) Apply(_ context.Context, req ApplyRequest, progress ProgressFu
 		return ApplyResponse{}, fmt.Errorf("write active note: %w", err)
 	}
 	for _, extraction := range proposal.SourceExtractions {
-		sourceAbs, err := v.notePath(extraction.Path, options)
+		sourceAbs, err := v.NotePath(extraction.Path, options)
 		if err != nil {
 			return ApplyResponse{}, err
 		}
@@ -200,7 +201,7 @@ func (s *Service) Rollback(_ context.Context, req RollbackRequest, progress Prog
 	if progress != nil {
 		progress(progressmodel.Indeterminate("restoring latest zettel merge archive"))
 	}
-	jobID, err := newArchiveStore(v, options).Rollback(req.JobID)
+	jobID, err := archivepkg.NewStore(v, options).Rollback(req.JobID)
 	if err != nil {
 		return RollbackResponse{}, err
 	}
