@@ -140,6 +140,8 @@ func inboxDecisionMessages(sourcePath string, sourceContent string, candidates [
 			"Do not summarize away meaningful details, but avoid splitting a concept into many tiny ledger rows.",
 			"Use destinations only from the provided candidate paths.",
 			"Choose destinations by conceptual fit, not by exact keyword overlap. A note about the overall definition or nature of Economics can merge into an Economics etymology/definition note.",
+			"Do not merge a broad syllabus, roadmap, strategy, or overview claim into a narrow candidate note whose title/path is about a specific subtopic such as debt, deficit, a single policy, or a single institution.",
+			"When candidates are too narrow, return the claim as pending; the application can preserve it as a new note when adoption is enabled.",
 			"Allow split routing only when the source contains clearly separate concepts that belong in different destination notes.",
 			"Use status=deduped only when the visible numbered candidate excerpt already represents the concept unit.",
 			"Use status=merged only when actions include the deduplicated new destination lines needed for that concept unit.",

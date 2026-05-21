@@ -29,6 +29,7 @@ type inboxRunManifest struct {
 	PendingCount   int                `json:"pending_count,omitempty"`
 	FailedCount    int                `json:"failed_count,omitempty"`
 	Limit          int                `json:"limit,omitempty"`
+	APICalls       model.APICallUsage `json:"api_calls,omitempty"`
 	Items          []inboxArchiveItem `json:"items"`
 	RestoredAt     *time.Time         `json:"restored_at,omitempty"`
 }
@@ -176,6 +177,20 @@ func (s Store) FinalizeInboxRun(runID string, response InboxMergeResponse) error
 	manifest.PendingCount = response.PendingCount
 	manifest.FailedCount = response.FailedCount
 	manifest.Limit = response.Limit
+	manifest.APICalls = response.APICalls
+	return s.writeInboxManifest(base, manifest)
+}
+
+func (s Store) UpdateInboxRunAPICalls(runID string, usage model.APICallUsage) error {
+	base, err := s.InboxRunPath(runID)
+	if err != nil {
+		return err
+	}
+	manifest, err := s.readInboxManifest(base)
+	if err != nil {
+		return err
+	}
+	manifest.APICalls = usage
 	return s.writeInboxManifest(base, manifest)
 }
 

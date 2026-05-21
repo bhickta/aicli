@@ -73,6 +73,8 @@ func (a *inboxAppliedDecision) materializeDestination(v vault, options Options, 
 			return err
 		}
 	}
+	ledger = a.rejectWeakDestinationRoutes(path, destination, claims, ledger)
+	ledger = a.rejectUnverifiedDedupes(path, claims, ledger)
 	if hasLedgerStatus(ledger, claimStatusMerged) {
 		a.rewriteAttempted = true
 	}
@@ -109,6 +111,44 @@ func (a *inboxAppliedDecision) ensureDestinationLoaded(v vault, options Options,
 	a.destinationBefore[path] = content
 	a.destinationAfter[path] = content
 	return nil
+}
+
+func (a *inboxAppliedDecision) rejectWeakDestinationRoutes(path string, destination inboxDestinationAssignment, claims []InboxClaim, ledger []InboxClaimLedger) []InboxClaimLedger {
+	out := make([]InboxClaimLedger, 0, len(ledger))
+	for _, item := range ledger {
+		if item.Status != claimStatusMerged || destinationRouteFits(path, destination, claims, item) {
+			out = append(out, item)
+			continue
+		}
+		pending := item
+		pending.Status = claimStatusPending
+		if pending.Reason == "" {
+			pending.Reason = "destination topic is too narrow or conceptually mismatched for claim"
+		} else {
+			pending.Reason = "destination topic is too narrow or conceptually mismatched for claim: " + pending.Reason
+		}
+		a.ledger = append(a.ledger, pending)
+	}
+	return out
+}
+
+func (a *inboxAppliedDecision) rejectUnverifiedDedupes(path string, claims []InboxClaim, ledger []InboxClaimLedger) []InboxClaimLedger {
+	out := make([]InboxClaimLedger, 0, len(ledger))
+	for _, item := range ledger {
+		if item.Status != claimStatusDeduped || destinationContainsClaim(a.destinationBefore[path], claims, item) {
+			out = append(out, item)
+			continue
+		}
+		pending := item
+		pending.Status = claimStatusPending
+		if pending.Reason == "" {
+			pending.Reason = "dedupe could not be mechanically verified in destination"
+		} else {
+			pending.Reason = "dedupe could not be mechanically verified in destination: " + pending.Reason
+		}
+		a.ledger = append(a.ledger, pending)
+	}
+	return out
 }
 
 func (a *inboxAppliedDecision) applyImmediateLedger(path string, ledger []InboxClaimLedger, assigned map[string]bool) []InboxClaimLedger {
@@ -302,13 +342,16 @@ func applyDestinationAction(lines []string, action inboxDestinationAction) ([]st
 	if len(insertLines) == 0 {
 		return lines, false, false, "destination action missing lines"
 	}
-	if destinationAlreadyContainsLines(lines, insertLines) {
-		return lines, false, true, ""
-	}
 
 	index, reason := destinationActionIndex(lines, actionType, action)
 	if reason != "" {
 		return lines, false, false, reason
+	}
+	if actionType == "insert_after" && index > 0 {
+		insertLines = alignInsertedChildBullets(lines[index-1], insertLines)
+	}
+	if destinationAlreadyContainsLines(lines, insertLines) {
+		return lines, false, true, ""
 	}
 	out := make([]string, 0, len(lines)+len(insertLines))
 	out = append(out, lines[:index]...)
@@ -346,6 +389,33 @@ func destinationActionLines(action inboxDestinationAction) []string {
 		}
 	}
 	return lines
+}
+
+func alignInsertedChildBullets(anchor string, insertLines []string) []string {
+	trimmedAnchor := strings.TrimSpace(anchor)
+	if !strings.HasPrefix(trimmedAnchor, "- ") || !strings.HasSuffix(trimmedAnchor, ":") {
+		return insertLines
+	}
+	indent := lineIndent(anchor) + "\t"
+	out := make([]string, len(insertLines))
+	changed := false
+	for i, line := range insertLines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(line, indent) || !strings.HasPrefix(trimmed, "- ") {
+			out[i] = line
+			continue
+		}
+		out[i] = indent + trimmed
+		changed = true
+	}
+	if !changed {
+		return insertLines
+	}
+	return out
+}
+
+func lineIndent(line string) string {
+	return line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 }
 
 func destinationActionIndex(lines []string, actionType string, action inboxDestinationAction) (int, string) {

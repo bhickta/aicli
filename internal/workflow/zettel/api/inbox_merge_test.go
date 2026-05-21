@@ -207,13 +207,13 @@ func TestServiceInboxMergeActionDoesNotInventFrontmatterForPlainDestination(t *t
 	t.Parallel()
 
 	vaultDir := t.TempDir()
-	destinationPath := filepath.Join(vaultDir, "zettelkasten", "jobs.md")
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "economics.md")
 	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "jobless.md")
-	writeTestFile(t, destinationPath, "- **Jobless Growth**: GDP growth without enough jobs.\n")
+	writeTestFile(t, destinationPath, "- **Economics**: Existing concept.\n")
 	writeTestFile(t, sourcePath, "Economics is technical and conceptual in UPSC.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Economics is technical and conceptual in UPSC.","source":"source note"}],"destinations":[{"path":"zettelkasten/jobs.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"- **Jobless Growth**: GDP growth without enough jobs.","line_number":1,"lines":["- **Economics as Exam Domain**: Economics is technical + conceptual in UPSC."],"reason":"same UPSC economics context"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/jobs.md","evidence":"Economics as Exam Domain bullet","reason":"same UPSC economics context"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
+		`{"claims":[{"id":"c1","text":"Economics is technical and conceptual in UPSC.","source":"source note"}],"destinations":[{"path":"zettelkasten/economics.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"- **Economics**: Existing concept.","line_number":1,"lines":["- **Economics as Exam Domain**: Economics is technical + conceptual in UPSC."],"reason":"same UPSC economics context"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economics.md","evidence":"Economics as Exam Domain bullet","reason":"same UPSC economics context"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -740,6 +740,55 @@ func TestServiceInboxMergeAdoptsUnmatchedSourceWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestServiceInboxMergeAdoptsWhenCandidateIsTooNarrow(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	narrowDestinationPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "UPSC Prelims Concepts on Debt and Deficit.md")
+	writeTestFile(t, narrowDestinationPath, "- **Debt and Deficit**: Existing prelims PYQ facts.\n")
+	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "003.md")
+	sourceContent := "- **Prelims Syllabus**: Econ/Social Development, Sustainable Development, Poverty, Inclusion, Demographics, Social Sector Initiatives.\n"
+	writeTestFile(t, sourcePath, sourceContent)
+
+	provider := &fakeZettelProvider{chatResponses: []string{
+		`{"claims":[{"id":"c1","text":"UPSC Prelims syllabus includes Econ/Social Development, Sustainable Development, Poverty, Inclusion, Demographics, and Social Sector Initiatives.","source":"Prelims Syllabus"}],"destinations":[{"path":"zettelkasten/Economy/UPSC Prelims Concepts on Debt and Deficit.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"append_to_end","lines":["- **UPSC Prelims Syllabus**: Econ/Social Development, Sustainable Development, Poverty, Inclusion, Demographics, Social Sector Initiatives."],"reason":"same prelims context"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/Economy/UPSC Prelims Concepts on Debt and Deficit.md","evidence":"prelims syllabus line","reason":"same prelims context"}],"reason":"same prelims context"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "in",
+		AdoptUnmatchedInbox:  true,
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want too-narrow candidate adopted as new note", resp)
+	}
+	if got := readTestFile(t, narrowDestinationPath); got != "- **Debt and Deficit**: Existing prelims PYQ facts.\n" {
+		t.Fatalf("narrow destination changed = %q", got)
+	}
+	adoptedPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "Economy Shivin", "003.md")
+	if got := readTestFile(t, adoptedPath); got != sourceContent {
+		t.Fatalf("adopted destination = %q, want source content", got)
+	}
+}
+
 func TestServiceInboxMergeKeepsPendingSourceUnchanged(t *testing.T) {
 	t.Parallel()
 
@@ -841,6 +890,9 @@ func TestServiceInboxMergeAppliesPartialAndPreservesPendingSource(t *testing.T) 
 	manifest := readInboxRunManifest(t, resp.ArchivePath)
 	if manifest.Status != "partial" || manifest.PendingCount != 1 {
 		t.Fatalf("manifest = %#v, want partial run", manifest)
+	}
+	if manifest.APICalls.Total != 2 || manifest.APICalls.Chat != 1 || manifest.APICalls.Embeddings != 1 {
+		t.Fatalf("manifest api calls = %#v, want recorded usage", manifest.APICalls)
 	}
 
 	if _, err := service.Rollback(context.Background(), RollbackRequest{Options: options, JobID: resp.RunID}, nil); err != nil {
@@ -1007,10 +1059,11 @@ func TestServiceInboxMergeFailsFastWhenEmbeddingProviderUnavailable(t *testing.T
 }
 
 type testInboxRunManifest struct {
-	Status         string `json:"status"`
-	ProcessedCount int    `json:"processed_count"`
-	PendingCount   int    `json:"pending_count"`
-	FailedCount    int    `json:"failed_count"`
+	Status         string       `json:"status"`
+	ProcessedCount int          `json:"processed_count"`
+	PendingCount   int          `json:"pending_count"`
+	FailedCount    int          `json:"failed_count"`
+	APICalls       APICallUsage `json:"api_calls"`
 	Items          []struct {
 		SourcePath string `json:"source_path"`
 		Status     string `json:"status"`
