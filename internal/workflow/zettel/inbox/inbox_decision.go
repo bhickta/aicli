@@ -1,7 +1,6 @@
 package inbox
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/bhickta/aicli/internal/workflow/zettel/notetext"
@@ -72,7 +71,7 @@ func (a *inboxAppliedDecision) materializeDestination(v vault, options Options, 
 		}
 	}
 	merged := a.applyImmediateLedger(path, ledger, assigned)
-	a.applyMergedLedger(path, destination.FinalMarkdown, merged, assigned)
+	a.applyMergedLedger(path, destination, merged, assigned)
 	return nil
 }
 
@@ -117,34 +116,55 @@ func (a *inboxAppliedDecision) applyImmediateLedger(path string, ledger []InboxC
 	return merged
 }
 
-func (a *inboxAppliedDecision) applyMergedLedger(path string, finalMarkdown string, merged []InboxClaimLedger, assigned map[string]bool) {
+func (a *inboxAppliedDecision) applyMergedLedger(path string, destination inboxDestinationAssignment, merged []InboxClaimLedger, assigned map[string]bool) {
 	if len(merged) == 0 {
 		return
 	}
-	if strings.TrimSpace(finalMarkdown) == "" {
-		a.ledger = append(a.ledger, pendingLedgerForLedger(merged, "destination missing final markdown")...)
+	if len(destination.Actions) > 0 {
+		a.applyMergedActions(path, destination.Actions, merged, assigned)
+		return
+	}
+	a.ledger = append(a.ledger, pendingLedgerForLedger(merged, "destination missing actions for merged claim")...)
+}
+
+func (a *inboxAppliedDecision) applyMergedActions(path string, actions []inboxDestinationAction, merged []InboxClaimLedger, assigned map[string]bool) {
+	grouped := groupDestinationActions(actions, merged)
+	currentLines := notetext.SplitLines(a.destinationAfter[path])
+	changed := false
+	for _, item := range merged {
+		if assigned[item.ClaimID] {
+			continue
+		}
+		nextLines, actionChanged, represented, reason := applyClaimDestinationActions(currentLines, grouped[item.ClaimID])
+		if reason != "" {
+			a.ledger = append(a.ledger, pendingLedgerForLedger([]InboxClaimLedger{item}, reason)...)
+			continue
+		}
+		if !represented {
+			a.ledger = append(a.ledger, pendingLedgerForLedger([]InboxClaimLedger{item}, "destination actions did not change for merged claim")...)
+			continue
+		}
+		currentLines = nextLines
+		changed = changed || actionChanged
+		if actionChanged {
+			a.ledger = append(a.ledger, item)
+		} else {
+			deduped := item
+			deduped.Status = claimStatusDeduped
+			if deduped.Reason == "" {
+				deduped.Reason = "destination already contains action lines"
+			}
+			a.ledger = append(a.ledger, deduped)
+		}
+		assigned[item.ClaimID] = true
+		a.destinationPaths = appendUniquePath(a.destinationPaths, path)
+	}
+	if !changed {
 		return
 	}
 
 	before := a.destinationBefore[path]
-	after := sanitizeGeneratedDestinationMarkdown(before, finalMarkdown)
-	if !preservesExistingDestinationLines(before, after) {
-		a.ledger = append(a.ledger, pendingLedgerForLedger(merged, "destination rewrite changed existing content")...)
-		return
-	}
-	if reason := validateGeneratedDestinationAdditions(before, after); reason != "" {
-		a.ledger = append(a.ledger, pendingLedgerForLedger(merged, reason)...)
-		return
-	}
-	if after == notetext.EnsureTrailingNewline(before) {
-		a.ledger = append(a.ledger, pendingLedgerForLedger(merged, "destination final markdown did not change for merged claim")...)
-		return
-	}
-
-	for _, item := range merged {
-		a.ledger = append(a.ledger, item)
-		assigned[item.ClaimID] = true
-	}
+	after := notetext.EnsureTrailingNewline(strings.Join(currentLines, "\n"))
 	a.destinationAfter[path] = after
 	a.destinationWrites[path] = after
 	a.destinationPaths = appendUniquePath(a.destinationPaths, path)
@@ -181,6 +201,26 @@ func destinationLedger(destination inboxDestinationAssignment, path string, clai
 		})
 		mentioned[id] = true
 	}
+	for _, action := range destination.Actions {
+		id := strings.TrimSpace(action.ClaimID)
+		if !claimSet[id] || mentioned[id] {
+			continue
+		}
+		reason := strings.TrimSpace(action.Reason)
+		if reason == "" {
+			reason = strings.TrimSpace(destination.Reason)
+		}
+		if reason == "" {
+			reason = "destination action selected for claim"
+		}
+		ledger = append(ledger, InboxClaimLedger{
+			ClaimID:         id,
+			Status:          claimStatusMerged,
+			DestinationPath: path,
+			Reason:          reason,
+		})
+		mentioned[id] = true
+	}
 	return ledger
 }
 
@@ -198,6 +238,177 @@ func pendingLedgerForLedger(ledger []InboxClaimLedger, reason string) []InboxCla
 	return out
 }
 
+func groupDestinationActions(actions []inboxDestinationAction, merged []InboxClaimLedger) map[string][]inboxDestinationAction {
+	grouped := map[string][]inboxDestinationAction{}
+	defaultClaimID := ""
+	if len(merged) == 1 {
+		defaultClaimID = merged[0].ClaimID
+	}
+	for _, action := range actions {
+		claimID := strings.TrimSpace(action.ClaimID)
+		if claimID == "" {
+			claimID = defaultClaimID
+		}
+		if claimID == "" {
+			continue
+		}
+		grouped[claimID] = append(grouped[claimID], action)
+	}
+	return grouped
+}
+
+func applyClaimDestinationActions(lines []string, actions []inboxDestinationAction) ([]string, bool, bool, string) {
+	if len(actions) == 0 {
+		return lines, false, false, "destination missing actions for merged claim"
+	}
+	next := append([]string{}, lines...)
+	changed := false
+	represented := false
+	for _, action := range actions {
+		var actionChanged bool
+		var actionRepresented bool
+		var reason string
+		next, actionChanged, actionRepresented, reason = applyDestinationAction(next, action)
+		if reason != "" {
+			return lines, false, false, reason
+		}
+		changed = changed || actionChanged
+		represented = represented || actionRepresented
+	}
+	return next, changed, represented, ""
+}
+
+func applyDestinationAction(lines []string, action inboxDestinationAction) ([]string, bool, bool, string) {
+	actionType := normalizeDestinationActionType(action.Type)
+	insertLines := destinationActionLines(action)
+	if actionType == "pending" {
+		return lines, false, false, destinationActionReason(action, "destination action marked pending")
+	}
+	if len(insertLines) == 0 {
+		return lines, false, false, "destination action missing lines"
+	}
+	if destinationAlreadyContainsLines(lines, insertLines) {
+		return lines, false, true, ""
+	}
+
+	index, reason := destinationActionIndex(lines, actionType, action)
+	if reason != "" {
+		return lines, false, false, reason
+	}
+	out := make([]string, 0, len(lines)+len(insertLines))
+	out = append(out, lines[:index]...)
+	out = append(out, insertLines...)
+	out = append(out, lines[index:]...)
+	return out, true, true, ""
+}
+
+func normalizeDestinationActionType(actionType string) string {
+	switch strings.ToLower(strings.TrimSpace(actionType)) {
+	case "insert_after", "insert_after_line", "insert_after_exact_line", "add_after":
+		return "insert_after"
+	case "insert_before", "insert_before_line", "insert_before_exact_line", "add_before":
+		return "insert_before"
+	case "append", "append_to_end", "add_to_end":
+		return "append_to_end"
+	case "pending":
+		return "pending"
+	default:
+		return ""
+	}
+}
+
+func destinationActionLines(action inboxDestinationAction) []string {
+	raw := append([]string{}, action.Lines...)
+	if strings.TrimSpace(action.Line) != "" {
+		raw = append(raw, action.Line)
+	}
+	lines := make([]string, 0, len(raw))
+	for _, item := range raw {
+		for _, line := range notetext.SplitLines(strings.Trim(item, "\n")) {
+			if strings.TrimSpace(line) != "" {
+				lines = append(lines, line)
+			}
+		}
+	}
+	return lines
+}
+
+func destinationActionIndex(lines []string, actionType string, action inboxDestinationAction) (int, string) {
+	switch actionType {
+	case "append_to_end":
+		return len(lines), ""
+	case "insert_after", "insert_before":
+	default:
+		return 0, "unknown destination action type"
+	}
+
+	lineIndex, reason := destinationAnchorIndex(lines, action)
+	if reason != "" {
+		return 0, reason
+	}
+	if actionType == "insert_after" {
+		return lineIndex + 1, ""
+	}
+	return lineIndex, ""
+}
+
+func destinationAnchorIndex(lines []string, action inboxDestinationAction) (int, string) {
+	anchor := strings.TrimRight(action.Anchor, "\n")
+	if action.LineNumber > 0 {
+		index := action.LineNumber - 1
+		if index < 0 || index >= len(lines) {
+			return 0, "destination action line number outside destination"
+		}
+		if anchor != "" && lines[index] != anchor {
+			return 0, "destination action anchor does not match line number"
+		}
+		return index, ""
+	}
+	if anchor == "" {
+		return 0, "destination action missing exact anchor"
+	}
+	found := -1
+	for i, line := range lines {
+		if line != anchor {
+			continue
+		}
+		if found != -1 {
+			return 0, "destination action anchor matched multiple lines"
+		}
+		found = i
+	}
+	if found == -1 {
+		return 0, "destination action anchor not found"
+	}
+	return found, ""
+}
+
+func destinationAlreadyContainsLines(lines []string, insertLines []string) bool {
+	if len(insertLines) == 0 || len(insertLines) > len(lines) {
+		return false
+	}
+	for i := 0; i <= len(lines)-len(insertLines); i++ {
+		match := true
+		for j, line := range insertLines {
+			if lines[i+j] != line {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
+
+func destinationActionReason(action inboxDestinationAction, fallback string) string {
+	if strings.TrimSpace(action.Reason) != "" {
+		return action.Reason
+	}
+	return fallback
+}
+
 func hasLedgerStatus(ledger []InboxClaimLedger, status string) bool {
 	for _, item := range ledger {
 		if item.Status == status {
@@ -205,151 +416,4 @@ func hasLedgerStatus(ledger []InboxClaimLedger, status string) bool {
 		}
 	}
 	return false
-}
-
-func sanitizeGeneratedDestinationMarkdown(before string, generated string) string {
-	if hasLeadingYAMLFrontmatter(before) {
-		return notetext.EnsureTrailingNewline(generated)
-	}
-	return notetext.EnsureTrailingNewline(stripLeadingYAMLFrontmatter(generated))
-}
-
-func hasLeadingYAMLFrontmatter(content string) bool {
-	first, rest, ok := strings.Cut(content, "\n")
-	if strings.TrimSpace(first) != "---" || !ok {
-		return false
-	}
-	for {
-		line, remaining, hasMore := strings.Cut(rest, "\n")
-		if strings.TrimSpace(line) == "---" {
-			return true
-		}
-		if !hasMore {
-			return false
-		}
-		rest = remaining
-	}
-}
-
-func stripLeadingYAMLFrontmatter(content string) string {
-	first, rest, ok := strings.Cut(content, "\n")
-	if strings.TrimSpace(first) != "---" {
-		return content
-	}
-	if !ok {
-		return ""
-	}
-	remaining := rest
-	for {
-		line, tail, hasMore := strings.Cut(remaining, "\n")
-		if strings.TrimSpace(line) == "---" {
-			return tail
-		}
-		if !hasMore {
-			return rest
-		}
-		remaining = tail
-	}
-}
-
-func preservesExistingDestinationLines(before string, after string) bool {
-	beforeLines := notetext.SplitLines(before)
-	if len(beforeLines) == 0 {
-		return true
-	}
-	afterLines := notetext.SplitLines(after)
-	beforeIndex := 0
-	for _, line := range afterLines {
-		if line != beforeLines[beforeIndex] {
-			continue
-		}
-		beforeIndex++
-		if beforeIndex == len(beforeLines) {
-			return true
-		}
-	}
-	return false
-}
-
-func validateGeneratedDestinationAdditions(before string, after string) string {
-	labels := destinationBulletLabels(notetext.SplitLines(before))
-	for _, line := range insertedDestinationLines(notetext.SplitLines(before), notetext.SplitLines(after)) {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		if !strings.HasPrefix(trimmed, "- ") {
-			return "destination inserted non-bullet content"
-		}
-		if !strings.Contains(trimmed, "**") {
-			return "destination inserted non-telegraphic bullet"
-		}
-		if len([]rune(trimmed)) > 320 {
-			return "destination inserted overlong bullet"
-		}
-		key, label, ok := destinationBulletLabelKey(line)
-		if !ok {
-			continue
-		}
-		if labels[key] {
-			return "destination adds duplicate bullet label: " + label
-		}
-		labels[key] = true
-	}
-	return ""
-}
-
-func insertedDestinationLines(beforeLines []string, afterLines []string) []string {
-	inserted := []string{}
-	beforeIndex := 0
-	for _, line := range afterLines {
-		if beforeIndex < len(beforeLines) && line == beforeLines[beforeIndex] {
-			beforeIndex++
-			continue
-		}
-		inserted = append(inserted, line)
-	}
-	return inserted
-}
-
-func destinationBulletLabels(lines []string) map[string]bool {
-	labels := map[string]bool{}
-	for _, line := range lines {
-		key, _, ok := destinationBulletLabelKey(line)
-		if ok {
-			labels[key] = true
-		}
-	}
-	return labels
-}
-
-func destinationBulletLabelKey(line string) (string, string, bool) {
-	level, rest := markdownIndentLevel(line)
-	if !strings.HasPrefix(rest, "- **") {
-		return "", "", false
-	}
-	label, _, ok := strings.Cut(strings.TrimPrefix(rest, "- **"), "**")
-	label = strings.TrimSpace(label)
-	if !ok || label == "" {
-		return "", "", false
-	}
-	normalized := strings.Join(strings.Fields(strings.ToLower(label)), " ")
-	return fmt.Sprintf("%d:%s", level, normalized), label, true
-}
-
-func markdownIndentLevel(line string) (int, string) {
-	width := 0
-	for len(line) > 0 {
-		switch line[0] {
-		case '\t':
-			width += 2
-			line = line[1:]
-		case ' ':
-			width++
-			line = line[1:]
-		default:
-			return width / 2, line
-		}
-	}
-	return width / 2, ""
 }

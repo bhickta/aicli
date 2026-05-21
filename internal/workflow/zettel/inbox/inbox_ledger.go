@@ -27,7 +27,7 @@ func normalizeClaims(claims []InboxClaim) []InboxClaim {
 }
 
 func destinationClaimIDs(destination inboxDestinationAssignment) []string {
-	ids := make([]string, 0, len(destination.ClaimIDs)+len(destination.Ledger))
+	ids := make([]string, 0, len(destination.ClaimIDs)+len(destination.Ledger)+len(destination.Actions))
 	seen := map[string]bool{}
 	for _, id := range destination.ClaimIDs {
 		id = strings.TrimSpace(id)
@@ -38,6 +38,13 @@ func destinationClaimIDs(destination inboxDestinationAssignment) []string {
 	}
 	for _, item := range destination.Ledger {
 		id := strings.TrimSpace(item.ClaimID)
+		if id != "" && !seen[id] {
+			ids = append(ids, id)
+			seen[id] = true
+		}
+	}
+	for _, action := range destination.Actions {
+		id := strings.TrimSpace(action.ClaimID)
 		if id != "" && !seen[id] {
 			ids = append(ids, id)
 			seen[id] = true

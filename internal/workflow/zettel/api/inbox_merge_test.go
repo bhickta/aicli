@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -19,7 +18,7 @@ func TestServiceInboxMergeProcessesSourceAndRollbackRestores(t *testing.T) {
 	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "batch", "inflation.md"), "Inflation rose to 7% due to oil prices.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Inflation = 7% due to oil prices","source":"Inflation rose to 7% due to oil prices."}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"final_markdown":"- **Inflation**:: 6%\n- **Inflation Spike**:: 7% (Oil prices ^)","ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added 7% oil price line","reason":"new fact"}],"reason":"inflation destination"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
+		`{"claims":[{"id":"c1","text":"Inflation = 7% due to oil prices","source":"Inflation rose to 7% due to oil prices."}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"- **Inflation**:: 6%","line_number":1,"lines":["- **Inflation Spike**:: 7% (Oil prices ^)"],"reason":"new fact"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added 7% oil price line","reason":"new fact"}],"reason":"inflation destination"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -157,19 +156,8 @@ func TestServiceInboxMergeAcceptsConceptLevelEconomicsMerge(t *testing.T) {
 		"",
 	}, "\n"))
 
-	finalMarkdown := strings.Join([]string{
-		"---",
-		"Status: Read",
-		"---",
-		"- **Economics (Etymology)**: Oikos (Household) + Nomos (Management).",
-		"- **Economics (Definition)**: Household management using limited resources to satisfy unlimited wants.",
-		"  - **Preparation Lens**: Economics = technical + conceptual; rote learning fails, so roots/logic > memorized definitions.",
-		"  - **Example**: 2022 Mains statement \"Economic growth led by labor productivity\" -> answer = Jobless Growth.",
-		"  - **Root Examples**: Anthrop=man, Phil/Phile=love, Mis=hate, Ology=study, Ped=child, Gyne=woman.",
-		"",
-	}, "\n")
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"concept-1","text":"Economics definition and conceptual clarity: technical+conceptual nature, rote learning fails, 2022 Jobless Growth example, and root-word method.","source":"whole source note"}],"destinations":[{"path":"zettelkasten/Economics Definition.md","confidence":0.99,"final_markdown":` + strconv.Quote(finalMarkdown) + `,"ledger":[{"claim_id":"concept-1","status":"merged","destination_path":"zettelkasten/Economics Definition.md","evidence":"Preparation Lens, Example, and Root Examples bullets","reason":"same overall Economics definition/conceptual clarity note"}],"reason":"same economics definition concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"concept represented"},"notes":"merged as one concept unit"}`,
+		`{"claims":[{"id":"concept-1","text":"Economics definition and conceptual clarity: technical+conceptual nature, rote learning fails, 2022 Jobless Growth example, and root-word method.","source":"whole source note"}],"destinations":[{"path":"zettelkasten/Economics Definition.md","confidence":0.99,"actions":[{"claim_id":"concept-1","type":"insert_after_exact_line","anchor":"- **Economics (Definition)**: Household management using limited resources to satisfy unlimited wants.","line_number":5,"lines":["  - **Preparation Lens**: Economics = technical + conceptual; rote learning fails, so roots/logic > memorized definitions.","  - **Example**: 2022 Mains statement \"Economic growth led by labor productivity\" -> answer = Jobless Growth.","  - **Root Examples**: Anthrop=man, Phil/Phile=love, Mis=hate, Ology=study, Ped=child, Gyne=woman."],"reason":"same overall Economics definition/conceptual clarity note"}],"ledger":[{"claim_id":"concept-1","status":"merged","destination_path":"zettelkasten/Economics Definition.md","evidence":"Preparation Lens, Example, and Root Examples bullets","reason":"same overall Economics definition/conceptual clarity note"}],"reason":"same economics definition concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"concept represented"},"notes":"merged as one concept unit"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -205,12 +193,15 @@ func TestServiceInboxMergeAcceptsConceptLevelEconomicsMerge(t *testing.T) {
 	if !strings.Contains(systemPrompt, "Extract coherent concept units") || !strings.Contains(systemPrompt, "line-by-line atomic fragments") {
 		t.Fatalf("system prompt does not pin concept-level extraction: %s", systemPrompt)
 	}
+	if !strings.Contains(systemPrompt, "Do not return full rewritten destination notes") {
+		t.Fatalf("system prompt does not require action-only merge: %s", systemPrompt)
+	}
 	if got := readTestFile(t, destinationPath); !strings.Contains(got, "Economics = technical + conceptual") || !strings.Contains(got, "Jobless Growth") {
 		t.Fatalf("destination content = %q, want economics concept details merged", got)
 	}
 }
 
-func TestServiceInboxMergeStripsGeneratedFrontmatterFromPlainDestination(t *testing.T) {
+func TestServiceInboxMergeActionDoesNotInventFrontmatterForPlainDestination(t *testing.T) {
 	t.Parallel()
 
 	vaultDir := t.TempDir()
@@ -219,14 +210,8 @@ func TestServiceInboxMergeStripsGeneratedFrontmatterFromPlainDestination(t *test
 	writeTestFile(t, destinationPath, "- **Jobless Growth**: GDP growth without enough jobs.\n")
 	writeTestFile(t, sourcePath, "Economics is technical and conceptual in UPSC.\n")
 
-	finalMarkdown := strings.Join([]string{
-		"---",
-		"- **Jobless Growth**: GDP growth without enough jobs.",
-		"- **Economics as Exam Domain**: Economics is technical + conceptual in UPSC.",
-		"",
-	}, "\n")
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Economics is technical and conceptual in UPSC.","source":"source note"}],"destinations":[{"path":"zettelkasten/jobs.md","confidence":0.99,"final_markdown":` + strconv.Quote(finalMarkdown) + `,"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/jobs.md","evidence":"Economics as Exam Domain bullet","reason":"same UPSC economics context"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
+		`{"claims":[{"id":"c1","text":"Economics is technical and conceptual in UPSC.","source":"source note"}],"destinations":[{"path":"zettelkasten/jobs.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"- **Jobless Growth**: GDP growth without enough jobs.","line_number":1,"lines":["- **Economics as Exam Domain**: Economics is technical + conceptual in UPSC."],"reason":"same UPSC economics context"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/jobs.md","evidence":"Economics as Exam Domain bullet","reason":"same UPSC economics context"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -263,7 +248,7 @@ func TestServiceInboxMergeStripsGeneratedFrontmatterFromPlainDestination(t *test
 	}
 }
 
-func TestServiceInboxMergeRejectsDestinationFormattingChurn(t *testing.T) {
+func TestServiceInboxMergeAppliesActionWithoutFormattingChurn(t *testing.T) {
 	t.Parallel()
 
 	vaultDir := t.TempDir()
@@ -273,14 +258,8 @@ func TestServiceInboxMergeRejectsDestinationFormattingChurn(t *testing.T) {
 	writeTestFile(t, destinationPath, destinationContent)
 	writeTestFile(t, sourcePath, "Microeconomics uses microscope view for individual choices.\n")
 
-	finalMarkdown := strings.Join([]string{
-		"- **Microeconomics**: Study of individual decision units.",
-		"  - **Focus**: Price, demand, supply.",
-		"  - **Microscope View**: individual choices.",
-		"",
-	}, "\n")
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Microeconomics uses microscope view for individual choices.","source":"source note"}],"destinations":[{"path":"zettelkasten/micro.md","confidence":0.99,"final_markdown":` + strconv.Quote(finalMarkdown) + `,"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/micro.md","evidence":"Microscope View bullet","reason":"same microeconomics concept"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
+		`{"claims":[{"id":"c1","text":"Microeconomics uses microscope view for individual choices.","source":"source note"}],"destinations":[{"path":"zettelkasten/micro.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"\t- **Focus**: Price, demand, supply.","line_number":2,"lines":["\t- **Microscope View**: individual choices."],"reason":"same microeconomics concept"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/micro.md","evidence":"Microscope View bullet","reason":"same microeconomics concept"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -305,37 +284,34 @@ func TestServiceInboxMergeRejectsDestinationFormattingChurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InboxMerge() error = %v", err)
 	}
-	if resp.PendingCount != 1 || resp.ProcessedCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want pending note because destination formatting changed", resp)
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want processed note through mechanical action", resp)
 	}
-	if got := readTestFile(t, destinationPath); got != destinationContent {
-		t.Fatalf("destination content = %q, want unchanged %q", got, destinationContent)
+	want := "- **Microeconomics**: Study of individual decision units.\n\t- **Focus**: Price, demand, supply.\n\t- **Microscope View**: individual choices.\n"
+	if got := readTestFile(t, destinationPath); got != want {
+		t.Fatalf("destination content = %q, want %q", got, want)
 	}
-	if _, err := os.Stat(sourcePath); err != nil {
-		t.Fatalf("source note moved despite rejected formatting churn: %v", err)
-	}
-	if !strings.Contains(resp.Pending[0].Reason, "destination rewrite changed existing content") {
-		t.Fatalf("pending reason = %q, want formatting churn reason", resp.Pending[0].Reason)
+	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+		t.Fatalf("source still exists or unexpected stat error: %v", err)
 	}
 }
 
-func TestServiceInboxMergeRejectsDuplicateDestinationBulletLabel(t *testing.T) {
+func TestServiceInboxMergeDedupesActionLinesAlreadyInDestination(t *testing.T) {
 	t.Parallel()
 
 	vaultDir := t.TempDir()
 	destinationPath := filepath.Join(vaultDir, "zettelkasten", "pds.md")
 	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "pds.md")
-	destinationContent := "- **Public Distribution System (PDS)**: Operated under joint responsibility.\n"
-	writeTestFile(t, destinationPath, destinationContent)
-	writeTestFile(t, sourcePath, "PDS distributes subsidized food grains through ration cards.\n")
-
-	finalMarkdown := strings.Join([]string{
+	destinationContent := strings.Join([]string{
 		"- **Public Distribution System (PDS)**: Operated under joint responsibility.",
 		"- **Public Distribution System (PDS)**: Distributes subsidized food grains through ration cards.",
 		"",
 	}, "\n")
+	writeTestFile(t, destinationPath, destinationContent)
+	writeTestFile(t, sourcePath, "PDS distributes subsidized food grains through ration cards.\n")
+
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"PDS distributes subsidized food grains through ration cards.","source":"source note"}],"destinations":[{"path":"zettelkasten/pds.md","confidence":0.99,"final_markdown":` + strconv.Quote(finalMarkdown) + `,"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/pds.md","evidence":"PDS food grain line","reason":"same concept"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
+		`{"claims":[{"id":"c1","text":"PDS distributes subsidized food grains through ration cards.","source":"source note"}],"destinations":[{"path":"zettelkasten/pds.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"- **Public Distribution System (PDS)**: Operated under joint responsibility.","line_number":1,"lines":["- **Public Distribution System (PDS)**: Distributes subsidized food grains through ration cards."],"reason":"same concept"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/pds.md","evidence":"PDS food grain line","reason":"same concept"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -360,21 +336,22 @@ func TestServiceInboxMergeRejectsDuplicateDestinationBulletLabel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InboxMerge() error = %v", err)
 	}
-	if resp.PendingCount != 1 || resp.ProcessedCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want pending note because destination duplicated a concept label", resp)
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want processed dedupe when action line already exists", resp)
+	}
+	processed := resp.Processed[0]
+	if processed.MergedCount != 0 || processed.DedupedCount != 1 {
+		t.Fatalf("processed result = %#v, want action represented as deduped without writing duplicate line", processed)
 	}
 	if got := readTestFile(t, destinationPath); got != destinationContent {
 		t.Fatalf("destination content = %q, want unchanged %q", got, destinationContent)
 	}
-	if _, err := os.Stat(sourcePath); err != nil {
-		t.Fatalf("source note moved despite duplicate label rejection: %v", err)
-	}
-	if !strings.Contains(resp.Pending[0].Reason, "destination adds duplicate bullet label") {
-		t.Fatalf("pending reason = %q, want duplicate bullet label reason", resp.Pending[0].Reason)
+	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+		t.Fatalf("source still exists or unexpected stat error: %v", err)
 	}
 }
 
-func TestServiceInboxMergeRejectsNonTelegraphicDestinationInsertion(t *testing.T) {
+func TestServiceInboxMergeAppliesFactPreservingProseAction(t *testing.T) {
 	t.Parallel()
 
 	vaultDir := t.TempDir()
@@ -384,13 +361,8 @@ func TestServiceInboxMergeRejectsNonTelegraphicDestinationInsertion(t *testing.T
 	writeTestFile(t, destinationPath, destinationContent)
 	writeTestFile(t, sourcePath, "Economics preparation needs conceptual clarity.\n")
 
-	finalMarkdown := strings.Join([]string{
-		"- **Economy**: Existing concept.",
-		"Economics preparation needs conceptual clarity and cannot be mugged up.",
-		"",
-	}, "\n")
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Economics preparation needs conceptual clarity.","source":"source note"}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"final_markdown":` + strconv.Quote(finalMarkdown) + `,"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added prose line","reason":"same concept"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
+		`{"claims":[{"id":"c1","text":"Economics preparation needs conceptual clarity.","source":"source note"}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"- **Economy**: Existing concept.","line_number":1,"lines":["Economics preparation needs conceptual clarity and cannot be mugged up."],"reason":"same concept"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added prose line","reason":"same concept"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -415,17 +387,15 @@ func TestServiceInboxMergeRejectsNonTelegraphicDestinationInsertion(t *testing.T
 	if err != nil {
 		t.Fatalf("InboxMerge() error = %v", err)
 	}
-	if resp.PendingCount != 1 || resp.ProcessedCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want pending note because destination inserted prose", resp)
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want fact-preserving prose action accepted", resp)
 	}
-	if got := readTestFile(t, destinationPath); got != destinationContent {
-		t.Fatalf("destination content = %q, want unchanged %q", got, destinationContent)
+	want := destinationContent + "Economics preparation needs conceptual clarity and cannot be mugged up.\n"
+	if got := readTestFile(t, destinationPath); got != want {
+		t.Fatalf("destination content = %q, want %q", got, want)
 	}
-	if _, err := os.Stat(sourcePath); err != nil {
-		t.Fatalf("source note moved despite non-telegraphic insertion rejection: %v", err)
-	}
-	if !strings.Contains(resp.Pending[0].Reason, "destination inserted non-bullet content") {
-		t.Fatalf("pending reason = %q, want non-bullet insertion reason", resp.Pending[0].Reason)
+	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+		t.Fatalf("source still exists or unexpected stat error: %v", err)
 	}
 }
 
@@ -440,7 +410,7 @@ func TestServiceInboxMergeDoesNotWriteDedupedOnlyDestination(t *testing.T) {
 	writeTestFile(t, sourcePath, "Rote learning fails in UPSC.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Rote learning fails in UPSC","source":"Rote learning fails in UPSC."}],"destinations":[{"path":"zettelkasten/polity.md","confidence":0.99,"final_markdown":"- **UPSC**: BROKEN STYLE REWRITE.\n","ledger":[{"claim_id":"c1","status":"deduped","destination_path":"zettelkasten/polity.md","evidence":"existing rote learning line","reason":"already represented"}],"reason":"already represented"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"dedupe verified"},"notes":"deduped"}`,
+		`{"claims":[{"id":"c1","text":"Rote learning fails in UPSC","source":"Rote learning fails in UPSC."}],"destinations":[{"path":"zettelkasten/polity.md","confidence":0.99,"ledger":[{"claim_id":"c1","status":"deduped","destination_path":"zettelkasten/polity.md","evidence":"existing rote learning line","reason":"already represented"}],"reason":"already represented"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"dedupe verified"},"notes":"deduped"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -549,7 +519,7 @@ func TestServiceInboxMergeAddsLexicalCandidatesBeyondEmbeddingLimit(t *testing.T
 	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "mixed.md"), "- **Example**: 2022 Mains answer = **Jobless Growth**.\n- **Root**: Anthrop = man.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"2022 Mains answer is Jobless Growth","source":"Example"},{"id":"c2","text":"Anthrop means man","source":"Root"}],"destinations":[{"path":"zettelkasten/zzz_jobless.md","confidence":0.99,"final_markdown":"- **Jobless Growth**: Services = high value/low labor.\n- **2022 Mains**: answer = Jobless Growth.","ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/zzz_jobless.md","evidence":"added 2022 mains answer","reason":"same concept"}],"reason":"lexical candidate matched Jobless Growth"}],"pending":[{"claim_id":"c2","status":"pending","reason":"no destination for root word"}],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"partial"}`,
+		`{"claims":[{"id":"c1","text":"2022 Mains answer is Jobless Growth","source":"Example"},{"id":"c2","text":"Anthrop means man","source":"Root"}],"destinations":[{"path":"zettelkasten/zzz_jobless.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"- **Jobless Growth**: Services = high value/low labor.","line_number":1,"lines":["- **2022 Mains**: answer = Jobless Growth."],"reason":"same concept"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/zzz_jobless.md","evidence":"added 2022 mains answer","reason":"same concept"}],"reason":"lexical candidate matched Jobless Growth"}],"pending":[{"claim_id":"c2","status":"pending","reason":"no destination for root word"}],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"partial"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{
@@ -721,7 +691,7 @@ func TestServiceInboxMergeAppliesPartialAndPreservesPendingSource(t *testing.T) 
 	writeTestFile(t, sourcePath, "Inflation rose to 7%.\nUnclear prelims range.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Inflation rose to 7%","source":"Inflation rose to 7%."},{"id":"c2","text":"Unclear prelims range","source":"Unclear prelims range."}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"final_markdown":"- **Inflation**:: 6%\n- **Inflation Level**:: 7%","ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added inflation 7%","reason":"new fact"}],"reason":"inflation destination"}],"pending":[{"claim_id":"c2","status":"pending","reason":"no confident destination"}],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"partial applied facts are represented"},"notes":"partial"}`,
+		`{"claims":[{"id":"c1","text":"Inflation rose to 7%","source":"Inflation rose to 7%."},{"id":"c2","text":"Unclear prelims range","source":"Unclear prelims range."}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"- **Inflation**:: 6%","line_number":1,"lines":["- **Inflation Level**:: 7%"],"reason":"new fact"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added inflation 7%","reason":"new fact"}],"reason":"inflation destination"}],"pending":[{"claim_id":"c2","status":"pending","reason":"no confident destination"}],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"partial applied facts are represented"},"notes":"partial"}`,
 	}}
 	service := NewWithProviders(provider, provider, provider, provider)
 	options := Options{

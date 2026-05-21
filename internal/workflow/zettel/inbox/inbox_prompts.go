@@ -17,12 +17,22 @@ type inboxDestinationDecision struct {
 }
 
 type inboxDestinationAssignment struct {
-	Path          string             `json:"path"`
-	ClaimIDs      []string           `json:"claim_ids,omitempty"`
-	FinalMarkdown string             `json:"final_markdown,omitempty"`
-	Ledger        []InboxClaimLedger `json:"ledger,omitempty"`
-	Confidence    float64            `json:"confidence"`
-	Reason        string             `json:"reason,omitempty"`
+	Path       string                   `json:"path"`
+	ClaimIDs   []string                 `json:"claim_ids,omitempty"`
+	Actions    []inboxDestinationAction `json:"actions,omitempty"`
+	Ledger     []InboxClaimLedger       `json:"ledger,omitempty"`
+	Confidence float64                  `json:"confidence"`
+	Reason     string                   `json:"reason,omitempty"`
+}
+
+type inboxDestinationAction struct {
+	ClaimID    string   `json:"claim_id,omitempty"`
+	Type       string   `json:"type"`
+	Anchor     string   `json:"anchor,omitempty"`
+	LineNumber int      `json:"line_number,omitempty"`
+	Line       string   `json:"line,omitempty"`
+	Lines      []string `json:"lines,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
 }
 
 func inboxDecisionMessages(sourcePath string, sourceContent string, candidates []scoredCandidate, options Options, shorthandPrompt string) []provider.Message {
@@ -48,10 +58,17 @@ func inboxDecisionMessages(sourcePath string, sourceContent string, candidates [
 				"source": "short source heading, quote, or block reference",
 			}},
 			"destinations": []map[string]any{{
-				"path":           "destination candidate path; must be one of candidates[].path",
-				"claim_ids":      []string{"backward-compatible ids represented by this destination"},
-				"confidence":     "number 0..1",
-				"final_markdown": "complete destination note after edits; omit or empty when every claim is deduped/pending",
+				"path":       "destination candidate path; must be one of candidates[].path",
+				"claim_ids":  []string{"ids represented by this destination"},
+				"confidence": "number 0..1",
+				"actions": []map[string]any{{
+					"claim_id":    "claim id represented by this action",
+					"type":        "insert_after_exact_line, insert_before_exact_line, or append_to_end",
+					"anchor":      "exact destination line text without the line number; required except append_to_end",
+					"line_number": "optional destination line number from numbered_excerpt; use with anchor when possible",
+					"lines":       []string{"deduplicated new destination line(s) preserving source facts"},
+					"reason":      "short reason",
+				}},
 				"ledger": []map[string]any{{
 					"claim_id":         "claim id",
 					"status":           "merged, deduped, or pending",
@@ -69,7 +86,7 @@ func inboxDecisionMessages(sourcePath string, sourceContent string, candidates [
 			"validation": map[string]any{
 				"verdict":               "pass or fail",
 				"score":                 "number 0..1",
-				"missing_facts":         []string{"facts missing from final markdown or dedupe ledger"},
+				"missing_facts":         []string{"facts missing from actions or dedupe ledger"},
 				"unsupported_additions": []string{"facts added without support in source/candidate"},
 				"notes":                 "short self-check",
 			},
@@ -90,20 +107,16 @@ func inboxDecisionMessages(sourcePath string, sourceContent string, candidates [
 			"Choose destinations by conceptual fit, not by exact keyword overlap. A note about the overall definition or nature of Economics can merge into an Economics etymology/definition note.",
 			"Allow split routing only when the source contains clearly separate concepts that belong in different destination notes.",
 			"Use status=deduped only when the visible numbered candidate excerpt already represents the concept unit.",
-			"Use status=merged only when final_markdown includes the minimal edit needed for that concept unit.",
+			"Use status=merged only when actions include the deduplicated new destination lines needed for that concept unit.",
 			"Use status=pending when no candidate is a conceptually safe home, the candidate is truncated before the relevant location, confidence is low, or the source conflicts with the destination.",
-			"final_markdown must be the complete destination note after edits, not a patch, diff, summary, or explanation.",
-			"If every concept unit for a destination is deduped or pending, omit final_markdown or leave it empty.",
-			"Do not add, remove, or invent YAML frontmatter. Preserve the destination note's existing frontmatter shape exactly.",
-			"If a destination note does not start with YAML frontmatter, final_markdown must not start with ---.",
-			"Every existing destination line must appear byte-for-byte unchanged and in the same order in final_markdown.",
-			"Insert new concept lines around existing lines; do not reindent, rewrap, renumber, normalize bullets, or rewrite existing destination text.",
-			"New lines must be telegraphic markdown bullets with a bold label, e.g. - **Concept**: compact fact.",
-			"Do not add a new bullet whose bold label already exists at the same hierarchy level; merge the detail under the existing concept or mark pending.",
-			"Preserve existing destination wording, symbols, operators, numbers, qualifiers, and order unless a minimal edit is required.",
-			"Do not make style-only rewrites to existing destination content.",
+			"Do not return full rewritten destination notes. Return actions containing only deduplicated new destination lines.",
+			"Each action must point to an exact existing destination line from numbered_excerpt, or append_to_end when no local anchor is safe.",
+			"Do not include line numbers or patch markers in action lines.",
+			"Action lines may follow the destination's existing style; fact preservation matters more than formatting.",
+			"Do not duplicate facts already represented in the candidate excerpt.",
+			"Preserve all source facts, numbers, qualifiers, examples, and definitions inside merged action lines or dedupe evidence.",
 			"Do not add external knowledge.",
-			"Set validation verdict=pass when every non-pending source concept unit is represented at concept level by final_markdown or a deduped ledger entry, every existing visible destination concept remains represented, and there are no unsupported additions.",
+			"Set validation verdict=pass when every non-pending source concept unit is represented at concept level by actions or a deduped ledger entry, every visible destination fact remains represented, and there are no unsupported additions.",
 			"Set validation verdict=fail if any merged/deduped concept unit is not safely represented.",
 			"",
 			"EXTREME SHORTHAND STYLE TEMPLATE:",
