@@ -127,6 +127,10 @@ func (a *inboxAppliedDecision) applyMergedLedger(path string, finalMarkdown stri
 
 	before := a.destinationBefore[path]
 	after := sanitizeGeneratedDestinationMarkdown(before, finalMarkdown)
+	if !preservesExistingDestinationLines(before, after) {
+		a.ledger = append(a.ledger, pendingLedgerForLedger(merged, "destination rewrite changed existing content")...)
+		return
+	}
 	if after == notetext.EnsureTrailingNewline(before) {
 		a.ledger = append(a.ledger, pendingLedgerForLedger(merged, "destination final markdown did not change for merged claim")...)
 		return
@@ -241,4 +245,23 @@ func stripLeadingYAMLFrontmatter(content string) string {
 		}
 		remaining = tail
 	}
+}
+
+func preservesExistingDestinationLines(before string, after string) bool {
+	beforeLines := notetext.SplitLines(before)
+	if len(beforeLines) == 0 {
+		return true
+	}
+	afterLines := notetext.SplitLines(after)
+	beforeIndex := 0
+	for _, line := range afterLines {
+		if line != beforeLines[beforeIndex] {
+			continue
+		}
+		beforeIndex++
+		if beforeIndex == len(beforeLines) {
+			return true
+		}
+	}
+	return false
 }

@@ -263,6 +263,62 @@ func TestServiceInboxMergeStripsGeneratedFrontmatterFromPlainDestination(t *test
 	}
 }
 
+func TestServiceInboxMergeRejectsDestinationFormattingChurn(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "micro.md")
+	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "micro-focus.md")
+	destinationContent := "- **Microeconomics**: Study of individual decision units.\n\t- **Focus**: Price, demand, supply.\n"
+	writeTestFile(t, destinationPath, destinationContent)
+	writeTestFile(t, sourcePath, "Microeconomics uses microscope view for individual choices.\n")
+
+	finalMarkdown := strings.Join([]string{
+		"- **Microeconomics**: Study of individual decision units.",
+		"  - **Focus**: Price, demand, supply.",
+		"  - **Microscope View**: individual choices.",
+		"",
+	}, "\n")
+	provider := &fakeZettelProvider{chatResponses: []string{
+		`{"claims":[{"id":"c1","text":"Microeconomics uses microscope view for individual choices.","source":"source note"}],"destinations":[{"path":"zettelkasten/micro.md","confidence":0.99,"final_markdown":` + strconv.Quote(finalMarkdown) + `,"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/micro.md","evidence":"Microscope View bullet","reason":"same microeconomics concept"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "inbox-to-merge",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.PendingCount != 1 || resp.ProcessedCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want pending note because destination formatting changed", resp)
+	}
+	if got := readTestFile(t, destinationPath); got != destinationContent {
+		t.Fatalf("destination content = %q, want unchanged %q", got, destinationContent)
+	}
+	if _, err := os.Stat(sourcePath); err != nil {
+		t.Fatalf("source note moved despite rejected formatting churn: %v", err)
+	}
+	if !strings.Contains(resp.Pending[0].Reason, "destination rewrite changed existing content") {
+		t.Fatalf("pending reason = %q, want formatting churn reason", resp.Pending[0].Reason)
+	}
+}
+
 func TestServiceInboxMergeDoesNotWriteDedupedOnlyDestination(t *testing.T) {
 	t.Parallel()
 
