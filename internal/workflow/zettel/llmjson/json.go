@@ -1,4 +1,4 @@
-package zettel
+package llmjson
 
 import (
 	"context"
@@ -10,11 +10,7 @@ import (
 	"github.com/bhickta/aicli/internal/provider"
 )
 
-type embedder interface {
-	Embeddings(context.Context, provider.EmbeddingRequest) (provider.EmbeddingResponse, error)
-}
-
-func chatJSON[T any](ctx context.Context, p provider.Provider, model string, messages []provider.Message) (T, error) {
+func Chat[T any](ctx context.Context, p provider.Provider, model string, messages []provider.Message) (T, error) {
 	var out T
 	if p == nil {
 		return out, errors.New("provider is required")

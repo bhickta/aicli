@@ -1,4 +1,4 @@
-package zettel
+package inbox
 
 import (
 	"encoding/json"

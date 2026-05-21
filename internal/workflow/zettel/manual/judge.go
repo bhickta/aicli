@@ -1,4 +1,4 @@
-package zettel
+package manual
 
 import (
 	"context"
@@ -7,9 +7,10 @@ import (
 
 	progressmodel "github.com/bhickta/aicli/internal/progress"
 	"github.com/bhickta/aicli/internal/workflow/zettel/audit"
+	"github.com/bhickta/aicli/internal/workflow/zettel/llmjson"
 )
 
-func (s *Service) judgeCandidates(ctx context.Context, activePath string, activeContent string, similar []scoredCandidate, options Options) ([]Candidate, error) {
+func (r Runner) judgeCandidates(ctx context.Context, activePath string, activeContent string, similar []scoredCandidate, options Options) ([]Candidate, error) {
 	if len(similar) == 0 {
 		return []Candidate{}, nil
 	}
@@ -22,9 +23,9 @@ func (s *Service) judgeCandidates(ctx context.Context, activePath string, active
 		Reason           string      `json:"reason"`
 		SourceLineRanges []LineRange `json:"source_line_ranges"`
 	}
-	response, err := chatJSON[struct {
+	response, err := llmjson.Chat[struct {
 		Decisions []decision `json:"decisions"`
-	}](ctx, s.candidateProvider, options.CandidateModel, judgeCandidatesPrompt(activePath, activeContent, similar, options))
+	}](ctx, r.candidateProvider, options.CandidateModel, judgeCandidatesPrompt(activePath, activeContent, similar, options))
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +61,7 @@ func (s *Service) judgeCandidates(ctx context.Context, activePath string, active
 	return out, nil
 }
 
-func (s *Service) runMergeAttempts(ctx context.Context, activePath string, activeContent string, extractions []SourceExtraction, sourceMaterial string, options Options, progress ProgressFunc) (Proposal, error) {
+func (r Runner) runMergeAttempts(ctx context.Context, activePath string, activeContent string, extractions []SourceExtraction, sourceMaterial string, options Options, progress ProgressFunc) (Proposal, error) {
 	var proposal Proposal
 	var hint string
 	for attempt := 1; attempt <= options.MaxMergeRetries; attempt++ {
@@ -71,7 +72,7 @@ func (s *Service) runMergeAttempts(ctx context.Context, activePath string, activ
 		if err != nil {
 			return proposal, err
 		}
-		plan, err := chatJSON[MergePlan](ctx, s.mergeProvider, options.MergeModel, messages)
+		plan, err := llmjson.Chat[MergePlan](ctx, r.mergeProvider, options.MergeModel, messages)
 		if err != nil {
 			return proposal, err
 		}
@@ -81,7 +82,7 @@ func (s *Service) runMergeAttempts(ctx context.Context, activePath string, activ
 			progress(progressmodel.Indeterminate(fmt.Sprintf("validating merge proposal %d/%d", attempt, options.MaxMergeRetries)))
 		}
 		coverage := audit.BuildCoverageReport(sourceMaterial, finalContent)
-		judge, err := chatJSON[MergeJudge](ctx, s.validationProvider, options.ValidationModel, validationMessages(sourceMaterial, finalContent))
+		judge, err := llmjson.Chat[MergeJudge](ctx, r.validationProvider, options.ValidationModel, validationMessages(sourceMaterial, finalContent))
 		if err != nil {
 			return proposal, err
 		}

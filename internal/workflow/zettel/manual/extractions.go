@@ -1,4 +1,4 @@
-package zettel
+package manual
 
 import (
 	"errors"

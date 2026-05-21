@@ -1,10 +1,12 @@
-package zettel
+package inbox
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/bhickta/aicli/internal/workflow/zettel/indexer"
 )
 
 func inboxSelectionNeedsProviderPreflight(v vault, options Options, sourceNotes []string) (bool, error) {
@@ -26,8 +28,8 @@ func inboxSelectionNeedsProviderPreflight(v vault, options Options, sourceNotes 
 	return false, nil
 }
 
-func (s *Service) preflightInboxMerge(ctx context.Context, v vault, options Options) error {
-	index := newEmbeddingIndex(v, options, s.embeddingProvider)
+func (r Runner) preflightInboxMerge(ctx context.Context, v vault, options Options) error {
+	index := indexer.New(v, options, r.embeddingProvider)
 	cachedItems, err := index.CachedItemCount()
 	if err != nil {
 		return fmt.Errorf("load zettelkasten embedding index: %w", err)

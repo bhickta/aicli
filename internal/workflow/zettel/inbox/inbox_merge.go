@@ -1,4 +1,4 @@
-package zettel
+package inbox
 
 import (
 	"context"
@@ -10,22 +10,15 @@ import (
 
 	progressmodel "github.com/bhickta/aicli/internal/progress"
 	archivepkg "github.com/bhickta/aicli/internal/workflow/zettel/archive"
+	"github.com/bhickta/aicli/internal/workflow/zettel/indexer"
 	"github.com/bhickta/aicli/internal/workflow/zettel/notetext"
 	"github.com/bhickta/aicli/internal/workflow/zettel/prompt"
+	"github.com/bhickta/aicli/internal/workflow/zettel/vaultfs"
 )
 
-const (
-	inboxStatusProcessed = "processed"
-	inboxStatusPending   = "pending"
-	inboxStatusFailed    = "failed"
-	claimStatusMerged    = "merged"
-	claimStatusDeduped   = "deduped"
-	claimStatusPending   = "pending"
-)
-
-func (s *Service) InboxMerge(ctx context.Context, req InboxMergeRequest, progress ProgressFunc) (InboxMergeResponse, error) {
+func (r Runner) InboxMerge(ctx context.Context, req InboxMergeRequest, progress ProgressFunc) (InboxMergeResponse, error) {
 	options := normalizeOptions(req.Options)
-	v, err := newVault(options.VaultPath)
+	v, err := vaultfs.New(options.VaultPath)
 	if err != nil {
 		return InboxMergeResponse{}, err
 	}
@@ -60,7 +53,7 @@ func (s *Service) InboxMerge(ctx context.Context, req InboxMergeRequest, progres
 		return response, err
 	}
 	if needsPreflight {
-		if err := s.preflightInboxMerge(ctx, v, options); err != nil {
+		if err := r.preflightInboxMerge(ctx, v, options); err != nil {
 			return response, err
 		}
 	}
@@ -75,13 +68,15 @@ func (s *Service) InboxMerge(ctx context.Context, req InboxMergeRequest, progres
 				"note",
 			))
 		}
-		result, err := s.processInboxSource(ctx, v, archive, runID, options, sourcePath, shorthandPrompt)
+		result, err := r.processInboxSource(ctx, v, archive, runID, options, sourcePath, shorthandPrompt)
 		if err != nil {
 			result = InboxSourceResult{SourcePath: sourcePath, Status: inboxStatusFailed, Reason: err.Error()}
 		}
 		switch result.Status {
 		case inboxStatusProcessed:
 			response.Processed = append(response.Processed, result)
+		case inboxStatusPartial:
+			response.Pending = append(response.Pending, result)
 		case inboxStatusFailed:
 			response.Failed = append(response.Failed, result)
 		default:
@@ -103,7 +98,7 @@ func (s *Service) InboxMerge(ctx context.Context, req InboxMergeRequest, progres
 	return response, nil
 }
 
-func (s *Service) processInboxSource(ctx context.Context, v vault, archive archivepkg.Store, runID string, options Options, sourcePath string, shorthandPrompt string) (InboxSourceResult, error) {
+func (r Runner) processInboxSource(ctx context.Context, v vault, archive archivepkg.Store, runID string, options Options, sourcePath string, shorthandPrompt string) (InboxSourceResult, error) {
 	sourceAbs, err := v.Abs(sourcePath)
 	if err != nil {
 		return InboxSourceResult{}, err
@@ -120,7 +115,7 @@ func (s *Service) processInboxSource(ctx context.Context, v vault, archive archi
 		return processExactDuplicateInboxSource(v, archive, runID, options, sourcePath, sourceContent, destinationPath)
 	}
 
-	claims, err := s.extractInboxClaims(ctx, sourcePath, sourceContent, options)
+	claims, err := r.extractInboxClaims(ctx, sourcePath, sourceContent, options)
 	if err != nil {
 		return result, err
 	}
@@ -134,11 +129,11 @@ func (s *Service) processInboxSource(ctx context.Context, v vault, archive archi
 		return result, nil
 	}
 
-	similar, err := newEmbeddingIndex(v, options, s.embeddingProvider).Similar(ctx, sourcePath, sourceContent)
+	similar, err := indexer.New(v, options, r.embeddingProvider).Similar(ctx, sourcePath, sourceContent)
 	if err != nil {
 		return result, err
 	}
-	decision, err := s.routeInboxClaims(ctx, sourcePath, claims, similar, options)
+	decision, err := r.routeInboxClaims(ctx, sourcePath, claims, similar, options)
 	if err != nil {
 		return result, err
 	}
@@ -153,7 +148,7 @@ func (s *Service) processInboxSource(ctx context.Context, v vault, archive archi
 		if len(assignedClaims) == 0 {
 			continue
 		}
-		before, after, plan, err := s.rewriteInboxDestination(ctx, v, options, destinationPath, sourcePath, assignedClaims, shorthandPrompt)
+		before, after, plan, err := r.rewriteInboxDestination(ctx, v, options, destinationPath, sourcePath, assignedClaims, shorthandPrompt)
 		if err != nil {
 			ledger = append(ledger, pendingLedgerForClaims(assignedClaims, fmt.Sprintf("rewrite failed: %s", err.Error()))...)
 			continue
@@ -175,7 +170,7 @@ func (s *Service) processInboxSource(ctx context.Context, v vault, archive archi
 	result.DestinationPaths = destinationPaths
 	result.Diffs = destinationDiffs
 	result.MergedCount, result.DedupedCount, result.PendingCount = countLedgerStatuses(ledger)
-	if result.PendingCount > 0 || len(destinationAfter) == 0 {
+	if len(destinationAfter) == 0 || result.MergedCount+result.DedupedCount == 0 {
 		result.Status = inboxStatusPending
 		result.Reason = firstPendingReason(ledger, "one or more claims could not be safely merged or deduped")
 		if _, err := archive.WriteInboxItem(runID, result, sourceContent, destinationBefore, destinationAfter); err != nil {
@@ -184,7 +179,13 @@ func (s *Service) processInboxSource(ctx context.Context, v vault, archive archi
 		return result, nil
 	}
 
-	validation, err := s.validateInboxMerge(ctx, sourcePath, sourceContent, destinationBefore, destinationAfter, ledger, options)
+	validationSource := sourceContent
+	validationLedger := ledger
+	if result.PendingCount > 0 {
+		validationSource = appliedClaimsSource(sourcePath, claims, ledger)
+		validationLedger = appliedLedger(ledger)
+	}
+	validation, err := r.validateInboxMerge(ctx, sourcePath, validationSource, destinationBefore, destinationAfter, validationLedger, options)
 	if err != nil {
 		return result, err
 	}
@@ -199,13 +200,21 @@ func (s *Service) processInboxSource(ctx context.Context, v vault, archive archi
 	}
 
 	result.Status = inboxStatusProcessed
+	if result.PendingCount > 0 {
+		result.Status = inboxStatusPartial
+		result.Reason = "partial merge applied; unresolved claims preserved in pending folder: " + firstPendingReason(ledger, "one or more claims could not be safely merged or deduped")
+	}
 	if _, err := archive.WriteInboxItem(runID, result, sourceContent, destinationBefore, destinationAfter); err != nil {
 		return result, err
 	}
 	if err := writeDestinationNotes(v, options, destinationAfter); err != nil {
 		return result, err
 	}
-	processedPath, err := moveInboxSourceToProcessed(v, options, sourcePath)
+	moveSource := moveInboxSourceToProcessed
+	if result.Status == inboxStatusPartial {
+		moveSource = moveInboxSourceToPending
+	}
+	processedPath, err := moveSource(v, options, sourcePath)
 	if err != nil {
 		return result, err
 	}

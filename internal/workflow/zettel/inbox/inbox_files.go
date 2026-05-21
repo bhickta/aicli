@@ -1,4 +1,4 @@
-package zettel
+package inbox
 
 import (
 	"errors"
@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/bhickta/aicli/internal/workflow/zettel/notetext"
 )
 
 func writeDestinationNotes(v vault, options Options, destinationAfter map[string]string) error {
@@ -21,7 +23,7 @@ func writeDestinationNotes(v vault, options Options, destinationAfter map[string
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(abs, []byte(ensureTrailingNewline(destinationAfter[path])), 0o600); err != nil {
+		if err := os.WriteFile(abs, []byte(notetext.EnsureTrailingNewline(destinationAfter[path])), 0o600); err != nil {
 			return fmt.Errorf("write destination note %s: %w", path, err)
 		}
 	}
@@ -29,6 +31,14 @@ func writeDestinationNotes(v vault, options Options, destinationAfter map[string
 }
 
 func moveInboxSourceToProcessed(v vault, options Options, sourcePath string) (string, error) {
+	return moveInboxSourceToFolder(v, options, sourcePath, "_processed")
+}
+
+func moveInboxSourceToPending(v vault, options Options, sourcePath string) (string, error) {
+	return moveInboxSourceToFolder(v, options, sourcePath, "_pending")
+}
+
+func moveInboxSourceToFolder(v vault, options Options, sourcePath string, folder string) (string, error) {
 	inbox := strings.Trim(filepath.ToSlash(filepath.Clean(options.InboxFolder)), "/")
 	source := strings.Trim(filepath.ToSlash(filepath.Clean(sourcePath)), "/")
 	relInside := strings.TrimPrefix(source, inbox)
@@ -36,7 +46,7 @@ func moveInboxSourceToProcessed(v vault, options Options, sourcePath string) (st
 	if relInside == "" {
 		relInside = filepath.Base(source)
 	}
-	processedRel := filepath.ToSlash(filepath.Join(inbox, "_processed", time.Now().Format("2006-01-02"), relInside))
+	processedRel := filepath.ToSlash(filepath.Join(inbox, folder, time.Now().Format("2006-01-02"), relInside))
 	processedAbs, err := v.Abs(processedRel)
 	if err != nil {
 		return "", err

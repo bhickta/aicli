@@ -174,6 +174,11 @@ func inboxRunStatus(response InboxMergeResponse) string {
 		}
 		return "failed"
 	}
+	for _, item := range response.Pending {
+		if item.Status == "partial" {
+			return "partial"
+		}
+	}
 	if response.PendingCount > 0 {
 		if response.ProcessedCount > 0 {
 			return "partial"
@@ -194,7 +199,7 @@ func (s Store) rollbackInboxRun(runID string) (string, error) {
 	}
 	for i := len(manifest.Items) - 1; i >= 0; i-- {
 		item := manifest.Items[i]
-		if item.Status != "processed" {
+		if item.Status != "processed" && item.Status != "partial" {
 			continue
 		}
 		for _, destination := range item.Destinations {

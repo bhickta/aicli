@@ -182,6 +182,73 @@ func TestServiceInboxMergeKeepsPendingSourceUnchanged(t *testing.T) {
 	}
 }
 
+func TestServiceInboxMergeAppliesPartialAndPreservesPendingSource(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "economy.md")
+	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "mixed.md")
+	writeTestFile(t, destinationPath, "- **Inflation**:: 6%\n")
+	writeTestFile(t, sourcePath, "Inflation rose to 7%.\nUnclear prelims range.\n")
+
+	provider := &fakeZettelProvider{chatResponses: []string{
+		`{"claims":[{"id":"c1","text":"Inflation rose to 7%","source":"Inflation rose to 7%."},{"id":"c2","text":"Unclear prelims range","source":"Unclear prelims range."}],"notes":"ok"}`,
+		`{"destinations":[{"path":"zettelkasten/economy.md","claim_ids":["c1"],"confidence":0.99,"reason":"inflation destination"}],"pending":[{"claim_id":"c2","status":"pending","reason":"no confident destination"}],"notes":"partial"}`,
+		`{"final_markdown":"- **Inflation**:: 6%\n- **Inflation**:: 7%","ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added inflation 7%","reason":"new fact"}],"notes":"ok"}`,
+		`{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"partial applied facts are represented"}`,
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "inbox-to-merge",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want one partial pending note", resp)
+	}
+	partial := resp.Pending[0]
+	if partial.Status != "partial" || partial.ProcessedPath == "" || !strings.HasPrefix(partial.ProcessedPath, "inbox-to-merge/_pending/") {
+		t.Fatalf("partial result = %#v, want pending folder path", partial)
+	}
+	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+		t.Fatalf("source still exists or unexpected stat error: %v", err)
+	}
+	if got := readTestFile(t, destinationPath); got != "- **Inflation**:: 6%\n- **Inflation**:: 7%\n" {
+		t.Fatalf("destination content = %q, want partial applied merge", got)
+	}
+	manifest := readInboxRunManifest(t, resp.ArchivePath)
+	if manifest.Status != "partial" || manifest.PendingCount != 1 {
+		t.Fatalf("manifest = %#v, want partial run", manifest)
+	}
+
+	if _, err := service.Rollback(context.Background(), RollbackRequest{Options: options, JobID: resp.RunID}, nil); err != nil {
+		t.Fatalf("Rollback() error = %v", err)
+	}
+	if got := readTestFile(t, destinationPath); got != "- **Inflation**:: 6%\n" {
+		t.Fatalf("rollback destination = %q", got)
+	}
+	if got := readTestFile(t, sourcePath); got != "Inflation rose to 7%.\nUnclear prelims range.\n" {
+		t.Fatalf("rollback source = %q", got)
+	}
+}
+
 func TestInboxRollbackIgnoresPendingDestinationArchives(t *testing.T) {
 	t.Parallel()
 
@@ -321,20 +388,6 @@ func TestServiceInboxMergeFailsFastWhenEmbeddingProviderUnavailable(t *testing.T
 	}
 	if resp.SelectedCount != 1 || resp.FailedCount != 0 {
 		t.Fatalf("InboxMerge() response = %#v, want selected count without per-note failure", resp)
-	}
-}
-
-func TestMergeJudgePassedRequiresNoMissingFactsOrUnsupportedAdditions(t *testing.T) {
-	t.Parallel()
-
-	if !mergeJudgePassed(MergeJudge{Verdict: "pass", Score: 1}, 0.98) {
-		t.Fatal("mergeJudgePassed() rejected clean passing judge")
-	}
-	if mergeJudgePassed(MergeJudge{Verdict: "pass", Score: 1, MissingFacts: []string{"missing"}}, 0.98) {
-		t.Fatal("mergeJudgePassed() accepted judge with missing facts")
-	}
-	if mergeJudgePassed(MergeJudge{Verdict: "pass", Score: 1, UnsupportedAdditions: []string{"extra"}}, 0.98) {
-		t.Fatal("mergeJudgePassed() accepted judge with unsupported additions")
 	}
 }
 

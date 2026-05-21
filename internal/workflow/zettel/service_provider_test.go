@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/bhickta/aicli/internal/provider"
+	"github.com/bhickta/aicli/internal/workflow/zettel/indexer"
+	"github.com/bhickta/aicli/internal/workflow/zettel/vaultfs"
 )
 
 type fakeZettelProvider struct {
@@ -126,11 +128,11 @@ func TestServiceIndexPrunesDeletedDestinationNotes(t *testing.T) {
 		t.Fatalf("second Index() = %#v, want one reused note and one pruned note", second)
 	}
 
-	v, err := newVault(vaultDir)
+	v, err := vaultfs.New(vaultDir)
 	if err != nil {
 		t.Fatalf("newVault() error = %v", err)
 	}
-	cachedPaths, err := newEmbeddingIndex(v, normalizeOptions(options), embeddingProvider).CachedPaths()
+	cachedPaths, err := indexer.New(v, normalizeOptions(options), embeddingProvider).CachedPaths()
 	if err != nil {
 		t.Fatalf("load cache: %v", err)
 	}

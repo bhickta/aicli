@@ -1,4 +1,4 @@
-package zettel
+package inbox
 
 import (
 	"fmt"
@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	archivepkg "github.com/bhickta/aicli/internal/workflow/zettel/archive"
+	"github.com/bhickta/aicli/internal/workflow/zettel/notetext"
 )
 
 func findExactDestinationDuplicate(v vault, options Options, sourcePath string, sourceContent string) (string, bool, error) {
@@ -19,7 +20,7 @@ func findExactDestinationDuplicate(v vault, options Options, sourcePath string, 
 		return "", false, err
 	}
 	sort.Strings(notes)
-	sourceHash := hashText(sourceContent)
+	sourceHash := notetext.HashText(sourceContent)
 	sourceBase := filepath.Base(sourcePath)
 	fallback := ""
 	for _, notePath := range notes {
@@ -32,7 +33,7 @@ func findExactDestinationDuplicate(v vault, options Options, sourcePath string, 
 			return "", false, fmt.Errorf("read destination note: %w", err)
 		}
 		content := string(contentBytes)
-		if hashText(content) != sourceHash || content != sourceContent {
+		if notetext.HashText(content) != sourceHash || content != sourceContent {
 			continue
 		}
 		if filepath.Base(notePath) == sourceBase {

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/bhickta/aicli/internal/workflow/zettel/notetext"
 )
 
 func TestServiceApplyClipsExactRangesAndRollbackRestores(t *testing.T) {
@@ -23,11 +25,11 @@ func TestServiceApplyClipsExactRangesAndRollbackRestores(t *testing.T) {
 		RootFolder:    "zettelkasten",
 		DataFolder:    ".aicli-zettel-merge",
 		ActivePath:    "zettelkasten/active.md",
-		ActiveHash:    hashText("# IMF\n\n- existing fact\n"),
+		ActiveHash:    notetext.HashText("# IMF\n\n- existing fact\n"),
 		FinalMarkdown: "# IMF\n\n- existing fact\n- copied one\n- copied two\n",
 		SourceExtractions: []SourceExtraction{{
 			Path:              "zettelkasten/source.md",
-			OriginalHash:      hashText(sourceContent),
+			OriginalHash:      notetext.HashText(sourceContent),
 			SourceLineRanges:  []LineRange{{StartLine: 1, EndLine: 2}},
 			ExtractedMarkdown: "- copied one\n- copied two",
 		}},
@@ -85,11 +87,11 @@ func TestServiceApplyRejectsChangedSource(t *testing.T) {
 		RootFolder:    "zettelkasten",
 		DataFolder:    ".aicli-zettel-merge",
 		ActivePath:    "zettelkasten/active.md",
-		ActiveHash:    hashText("active\n"),
+		ActiveHash:    notetext.HashText("active\n"),
 		FinalMarkdown: "active\nmerged\n",
 		SourceExtractions: []SourceExtraction{{
 			Path:              "zettelkasten/source.md",
-			OriginalHash:      hashText("original\n"),
+			OriginalHash:      notetext.HashText("original\n"),
 			SourceLineRanges:  []LineRange{{StartLine: 1, EndLine: 1}},
 			ExtractedMarkdown: "original",
 		}},

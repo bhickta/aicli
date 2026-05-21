@@ -1,4 +1,4 @@
-package zettel
+package inbox
 
 import (
 	"fmt"
@@ -180,4 +180,37 @@ func mergeJudgePassed(judge MergeJudge, threshold float64) bool {
 		judge.Score >= threshold &&
 		len(judge.MissingFacts) == 0 &&
 		len(judge.UnsupportedAdditions) == 0
+}
+
+func appliedLedger(ledger []InboxClaimLedger) []InboxClaimLedger {
+	out := make([]InboxClaimLedger, 0, len(ledger))
+	for _, item := range ledger {
+		if item.Status == claimStatusPending {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func appliedClaimsSource(sourcePath string, claims []InboxClaim, ledger []InboxClaimLedger) string {
+	applied := map[string]bool{}
+	for _, item := range ledger {
+		if item.Status != claimStatusPending {
+			applied[item.ClaimID] = true
+		}
+	}
+	lines := []string{"PATH: " + sourcePath, "APPLIED CLAIMS:"}
+	for _, claim := range claims {
+		if !applied[claim.ID] {
+			continue
+		}
+		source := strings.TrimSpace(claim.Source)
+		if source == "" {
+			lines = append(lines, fmt.Sprintf("- %s: %s", claim.ID, claim.Text))
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("- %s: %s | source: %s", claim.ID, claim.Text, source))
+	}
+	return strings.Join(lines, "\n")
 }
