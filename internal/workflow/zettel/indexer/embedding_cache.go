@@ -77,11 +77,6 @@ func (idx *Index) CachedPaths() (map[string]struct{}, error) {
 	return paths, nil
 }
 
-func (idx *Index) CheckEmbeddingProvider(ctx context.Context) error {
-	_, err := idx.embed(ctx, []string{"zettelkasten inbox merge embedding preflight"})
-	return err
-}
-
 func (idx *Index) save(cache embeddingCache) error {
 	path, err := idx.cachePath(false)
 	if err != nil {

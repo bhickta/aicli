@@ -11,19 +11,16 @@ import (
 	"github.com/bhickta/aicli/internal/workflow/zettel/notetext"
 )
 
-func (r Runner) extractInboxClaims(ctx context.Context, sourcePath string, sourceContent string, options Options) ([]InboxClaim, error) {
-	resp, err := llmjson.Chat[inboxClaimExtraction](ctx, r.candidateProvider, options.CandidateModel, claimExtractionMessages(sourcePath, sourceContent))
-	if err != nil {
-		return nil, err
-	}
-	return normalizeClaims(resp.Claims), nil
-}
-
-func (r Runner) routeInboxClaims(ctx context.Context, sourcePath string, claims []InboxClaim, candidates []scoredCandidate, options Options) (inboxDestinationDecision, error) {
+func (r Runner) routeInboxSource(ctx context.Context, sourcePath string, sourceContent string, candidates []scoredCandidate, options Options) (inboxDestinationDecision, error) {
 	if len(candidates) == 0 {
 		return inboxDestinationDecision{}, errors.New("no destination candidates found; run the zettel index workflow first")
 	}
-	return llmjson.Chat[inboxDestinationDecision](ctx, r.candidateProvider, options.CandidateModel, inboxDestinationMessages(sourcePath, claims, candidates, options))
+	resp, err := llmjson.Chat[inboxDestinationDecision](ctx, r.candidateProvider, options.CandidateModel, inboxRouteMessages(sourcePath, sourceContent, candidates, options))
+	if err != nil {
+		return inboxDestinationDecision{}, err
+	}
+	resp.Claims = normalizeClaims(resp.Claims)
+	return resp, nil
 }
 
 func (r Runner) rewriteInboxDestination(ctx context.Context, v vault, options Options, destinationPath string, sourcePath string, claims []InboxClaim, shorthandPrompt string) (string, string, inboxRewritePlan, error) {

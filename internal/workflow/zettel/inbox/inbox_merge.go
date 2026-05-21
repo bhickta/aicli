@@ -107,7 +107,7 @@ func (r Runner) InboxMerge(ctx context.Context, req InboxMergeRequest, progress 
 }
 
 func (r Runner) processInboxSource(ctx context.Context, v vault, archive archivepkg.Store, runID string, options Options, sourcePath string, shorthandPrompt string, progress ProgressFunc) (InboxSourceResult, error) {
-	reportInboxStage(progress, sourcePath, "checking exact duplicates", 0, 8)
+	reportInboxStage(progress, sourcePath, "checking exact duplicates", 0, 7)
 	sourceAbs, err := v.Abs(sourcePath)
 	if err != nil {
 		return InboxSourceResult{}, err
@@ -124,11 +124,18 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		return processExactDuplicateInboxSource(v, archive, runID, options, sourcePath, sourceContent, destinationPath)
 	}
 
-	reportInboxStage(progress, sourcePath, "extracting source claims", 1, 8)
-	claims, err := r.extractInboxClaims(ctx, sourcePath, sourceContent, options)
+	reportInboxStage(progress, sourcePath, "embedding source and finding candidates", 1, 7)
+	similar, err := indexer.New(v, options, r.embeddingProvider).Similar(ctx, sourcePath, sourceContent)
 	if err != nil {
 		return result, err
 	}
+	similar = augmentInboxCandidates(ctx, v, options, sourcePath, sourceContent, similar)
+	reportInboxStage(progress, sourcePath, "extracting and routing claims", 2, 7)
+	decision, err := r.routeInboxSource(ctx, sourcePath, sourceContent, similar, options)
+	if err != nil {
+		return result, err
+	}
+	claims := decision.Claims
 	result.Claims = claims
 	if len(claims) == 0 {
 		result.Status = inboxStatusPending
@@ -137,17 +144,6 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 			return result, err
 		}
 		return result, nil
-	}
-
-	reportInboxStage(progress, sourcePath, "embedding source and finding candidates", 2, 8)
-	similar, err := indexer.New(v, options, r.embeddingProvider).Similar(ctx, sourcePath, sourceContent)
-	if err != nil {
-		return result, err
-	}
-	reportInboxStage(progress, sourcePath, "routing claims to destinations", 3, 8)
-	decision, err := r.routeInboxClaims(ctx, sourcePath, claims, similar, options)
-	if err != nil {
-		return result, err
 	}
 
 	assignments, ledger := normalizeInboxAssignments(decision, claims, options)
@@ -163,7 +159,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 			continue
 		}
 		rewriteIndex++
-		reportInboxStage(progress, sourcePath, fmt.Sprintf("rewriting destination %d/%d: %s", rewriteIndex, len(assignments), filepath.Base(destinationPath)), 4, 8)
+		reportInboxStage(progress, sourcePath, fmt.Sprintf("rewriting destination %d/%d: %s", rewriteIndex, len(assignments), filepath.Base(destinationPath)), 3, 7)
 		before, after, plan, err := r.rewriteInboxDestination(ctx, v, options, destinationPath, sourcePath, assignedClaims, shorthandPrompt)
 		if err != nil {
 			ledger = append(ledger, pendingLedgerForClaims(assignedClaims, fmt.Sprintf("rewrite failed: %s", err.Error()))...)
@@ -196,9 +192,10 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 	result.DestinationPaths = destinationPaths
 	result.Diffs = destinationDiffs
 	result.MergedCount, result.DedupedCount, result.PendingCount = countLedgerStatuses(ledger)
+	mechanicalAdoption := false
 	if result.MergedCount+result.DedupedCount == 0 {
 		if options.AdoptUnmatchedInbox && rewriteIndex == 0 {
-			reportInboxStage(progress, sourcePath, "adopting unmatched source as new zettel", 5, 8)
+			reportInboxStage(progress, sourcePath, "adopting unmatched source as new zettel", 4, 7)
 			adoptedPath, created, err := adoptInboxDestinationPath(v, options, sourcePath)
 			if err != nil {
 				return result, err
@@ -217,6 +214,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 				Diff:    notetext.SimpleMarkdownDiff("", destinationAfter[adoptedPath]),
 				Created: created,
 			}}
+			mechanicalAdoption = true
 		}
 	}
 	if result.MergedCount+result.DedupedCount == 0 {
@@ -234,10 +232,13 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		validationSource = appliedClaimsSource(sourcePath, claims, ledger)
 		validationLedger = appliedLedger(ledger)
 	}
-	reportInboxStage(progress, sourcePath, "validating lossless merge", 6, 8)
-	validation, err := r.validateInboxMerge(ctx, sourcePath, validationSource, destinationBefore, destinationAfter, validationLedger, options)
-	if err != nil {
-		return result, err
+	validation := mechanicalInboxValidation(mechanicalAdoption)
+	if !mechanicalAdoption {
+		reportInboxStage(progress, sourcePath, "validating lossless merge", 5, 7)
+		validation, err = r.validateInboxMerge(ctx, sourcePath, validationSource, destinationBefore, destinationAfter, validationLedger, options)
+		if err != nil {
+			return result, err
+		}
 	}
 	result.Validation = validation
 	if !mergeJudgePassed(validation, options.ValidationThreshold) {
@@ -254,11 +255,11 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		result.Status = inboxStatusPartial
 		result.Reason = "partial merge applied; unresolved claims preserved in pending folder: " + firstPendingReason(ledger, "one or more claims could not be safely merged or deduped")
 	}
-	reportInboxStage(progress, sourcePath, "archiving merge result", 7, 8)
+	reportInboxStage(progress, sourcePath, "archiving merge result", 6, 7)
 	if _, err := archive.WriteInboxItem(runID, result, sourceContent, destinationBefore, destinationWrites); err != nil {
 		return result, err
 	}
-	reportInboxStage(progress, sourcePath, "writing destination notes", 7, 8)
+	reportInboxStage(progress, sourcePath, "writing destination notes", 6, 7)
 	if err := writeDestinationNotes(v, options, destinationWrites); err != nil {
 		return result, err
 	}
@@ -266,7 +267,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 	if result.Status == inboxStatusPartial {
 		moveSource = moveInboxSourceToPending
 	}
-	reportInboxStage(progress, sourcePath, "moving source note", 7, 8)
+	reportInboxStage(progress, sourcePath, "moving source note", 6, 7)
 	processedPath, err := moveSource(v, options, sourcePath)
 	if err != nil {
 		return result, err

@@ -37,8 +37,5 @@ func (r Runner) preflightInboxMerge(ctx context.Context, v vault, options Option
 	if cachedItems == 0 {
 		return errors.New("zettelkasten embedding index is empty; run Build Index after selecting the destination notes folder")
 	}
-	if err := index.CheckEmbeddingProvider(ctx); err != nil {
-		return fmt.Errorf("embedding provider unavailable for inbox merge: %w", err)
-	}
 	return nil
 }

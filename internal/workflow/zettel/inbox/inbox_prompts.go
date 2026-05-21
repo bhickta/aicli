@@ -7,12 +7,8 @@ import (
 	"github.com/bhickta/aicli/internal/provider"
 )
 
-type inboxClaimExtraction struct {
-	Claims []InboxClaim `json:"claims"`
-	Notes  string       `json:"notes,omitempty"`
-}
-
 type inboxDestinationDecision struct {
+	Claims       []InboxClaim                 `json:"claims,omitempty"`
 	Destinations []inboxDestinationAssignment `json:"destinations"`
 	Pending      []InboxClaimLedger           `json:"pending"`
 	Notes        string                       `json:"notes,omitempty"`
@@ -32,33 +28,7 @@ type inboxRewritePlan struct {
 	Notes         string             `json:"notes,omitempty"`
 }
 
-func claimExtractionMessages(sourcePath string, sourceContent string) []provider.Message {
-	payload, _ := json.MarshalIndent(map[string]any{
-		"source_path": sourcePath,
-		"source_note": sourceContent,
-		"required_schema": map[string]any{
-			"claims": []map[string]any{{
-				"id":     "stable id like c1",
-				"text":   "one atomic factual claim in English",
-				"source": "short source quote or block reference",
-			}},
-			"notes": "short explanation",
-		},
-	}, "", "  ")
-	return []provider.Message{
-		{Role: "system", Content: strings.Join([]string{
-			"You extract atomic UPSC study claims from Markdown.",
-			"Return JSON only.",
-			"Extract every factual claim, definition, date, statistic, proper noun, list item, qualifier, and analytical relation.",
-			"Translate claims to English.",
-			"Filter gossip, rumors, unsupported opinion, and political speculation.",
-			"Do not summarize away details; split dense content into enough claims to preserve every detail.",
-		}, "\n")},
-		{Role: "user", Content: string(payload)},
-	}
-}
-
-func inboxDestinationMessages(sourcePath string, claims []InboxClaim, candidates []scoredCandidate, options Options) []provider.Message {
+func inboxRouteMessages(sourcePath string, sourceContent string, candidates []scoredCandidate, options Options) []provider.Message {
 	payload := make([]map[string]any, 0, len(candidates))
 	for i, candidate := range candidates {
 		excerpt, _ := numberedExcerpt(candidate.Path, candidate.Content, options.CandidateJudgeChars)
@@ -71,9 +41,14 @@ func inboxDestinationMessages(sourcePath string, claims []InboxClaim, candidates
 	}
 	user, _ := json.MarshalIndent(map[string]any{
 		"source_path": sourcePath,
-		"claims":      claims,
+		"source_note": sourceContent,
 		"candidates":  payload,
 		"required_schema": map[string]any{
+			"claims": []map[string]any{{
+				"id":     "stable id like c1",
+				"text":   "one atomic factual claim in English",
+				"source": "short source quote or block reference",
+			}},
 			"destinations": []map[string]any{{
 				"path":       "destination candidate path",
 				"claim_ids":  []string{"backward-compatible claim ids needing a merge rewrite"},
@@ -97,8 +72,12 @@ func inboxDestinationMessages(sourcePath string, claims []InboxClaim, candidates
 	}, "", "  ")
 	return []provider.Message{
 		{Role: "system", Content: strings.Join([]string{
-			"You route source claims into existing UPSC zettelkasten destination notes.",
+			"You extract atomic claims from a source note and route them into existing UPSC zettelkasten destination notes.",
 			"Return JSON only.",
+			"Extract every factual claim, definition, date, statistic, proper noun, list item, qualifier, and analytical relation.",
+			"Translate claims to English.",
+			"Filter gossip, rumors, unsupported opinion, and political speculation.",
+			"Do not summarize away details; split dense content into enough claims to preserve every detail.",
 			"Use destinations only from the provided candidate paths.",
 			"Allow split routing when one source note contains claims for multiple destinations.",
 			"Only assign a claim when confidence is high that it belongs in that destination.",
