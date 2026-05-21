@@ -94,6 +94,8 @@ func inboxDecisionMessages(sourcePath string, sourceContent string, candidates [
 			"Use status=pending when no candidate is a conceptually safe home, the candidate is truncated before the relevant location, confidence is low, or the source conflicts with the destination.",
 			"final_markdown must be the complete destination note after edits, not a patch, diff, summary, or explanation.",
 			"If every concept unit for a destination is deduped or pending, omit final_markdown or leave it empty.",
+			"Do not add, remove, or invent YAML frontmatter. Preserve the destination note's existing frontmatter shape exactly.",
+			"If a destination note does not start with YAML frontmatter, final_markdown must not start with ---.",
 			"Preserve existing destination wording, symbols, operators, numbers, qualifiers, and order unless a minimal edit is required.",
 			"Do not make style-only rewrites to existing destination content.",
 			"Do not add external knowledge.",

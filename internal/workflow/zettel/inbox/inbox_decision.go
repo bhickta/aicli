@@ -126,7 +126,7 @@ func (a *inboxAppliedDecision) applyMergedLedger(path string, finalMarkdown stri
 	}
 
 	before := a.destinationBefore[path]
-	after := notetext.EnsureTrailingNewline(finalMarkdown)
+	after := sanitizeGeneratedDestinationMarkdown(before, finalMarkdown)
 	if after == notetext.EnsureTrailingNewline(before) {
 		a.ledger = append(a.ledger, pendingLedgerForLedger(merged, "destination final markdown did not change for merged claim")...)
 		return
@@ -196,4 +196,49 @@ func hasLedgerStatus(ledger []InboxClaimLedger, status string) bool {
 		}
 	}
 	return false
+}
+
+func sanitizeGeneratedDestinationMarkdown(before string, generated string) string {
+	if hasLeadingYAMLFrontmatter(before) {
+		return notetext.EnsureTrailingNewline(generated)
+	}
+	return notetext.EnsureTrailingNewline(stripLeadingYAMLFrontmatter(generated))
+}
+
+func hasLeadingYAMLFrontmatter(content string) bool {
+	first, rest, ok := strings.Cut(content, "\n")
+	if strings.TrimSpace(first) != "---" || !ok {
+		return false
+	}
+	for {
+		line, remaining, hasMore := strings.Cut(rest, "\n")
+		if strings.TrimSpace(line) == "---" {
+			return true
+		}
+		if !hasMore {
+			return false
+		}
+		rest = remaining
+	}
+}
+
+func stripLeadingYAMLFrontmatter(content string) string {
+	first, rest, ok := strings.Cut(content, "\n")
+	if strings.TrimSpace(first) != "---" {
+		return content
+	}
+	if !ok {
+		return ""
+	}
+	remaining := rest
+	for {
+		line, tail, hasMore := strings.Cut(remaining, "\n")
+		if strings.TrimSpace(line) == "---" {
+			return tail
+		}
+		if !hasMore {
+			return rest
+		}
+		remaining = tail
+	}
 }

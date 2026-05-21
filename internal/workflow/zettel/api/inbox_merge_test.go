@@ -210,6 +210,59 @@ func TestServiceInboxMergeAcceptsConceptLevelEconomicsMerge(t *testing.T) {
 	}
 }
 
+func TestServiceInboxMergeStripsGeneratedFrontmatterFromPlainDestination(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "jobs.md")
+	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "jobless.md")
+	writeTestFile(t, destinationPath, "- **Jobless Growth**: GDP growth without enough jobs.\n")
+	writeTestFile(t, sourcePath, "Economics is technical and conceptual in UPSC.\n")
+
+	finalMarkdown := strings.Join([]string{
+		"---",
+		"- **Jobless Growth**: GDP growth without enough jobs.",
+		"- **Economics as Exam Domain**: Economics is technical + conceptual in UPSC.",
+		"",
+	}, "\n")
+	provider := &fakeZettelProvider{chatResponses: []string{
+		`{"claims":[{"id":"c1","text":"Economics is technical and conceptual in UPSC.","source":"source note"}],"destinations":[{"path":"zettelkasten/jobs.md","confidence":0.99,"final_markdown":` + strconv.Quote(finalMarkdown) + `,"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/jobs.md","evidence":"Economics as Exam Domain bullet","reason":"same UPSC economics context"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "inbox-to-merge",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want processed note", resp)
+	}
+	got := readTestFile(t, destinationPath)
+	if strings.HasPrefix(got, "---\n") {
+		t.Fatalf("destination starts with generated frontmatter marker: %q", got)
+	}
+	if !strings.Contains(got, "Economics as Exam Domain") {
+		t.Fatalf("destination content = %q, want merged concept", got)
+	}
+}
+
 func TestServiceInboxMergeDoesNotWriteDedupedOnlyDestination(t *testing.T) {
 	t.Parallel()
 
