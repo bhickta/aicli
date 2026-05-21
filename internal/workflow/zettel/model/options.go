@@ -40,5 +40,6 @@ type Options struct {
 	EmbeddingBatchSize   int     `json:"embedding_batch_size"`
 	InboxFolder          string  `json:"inbox_folder"`
 	InboxLimit           int     `json:"inbox_limit"`
+	AdoptUnmatchedInbox  bool    `json:"adopt_unmatched_inbox"`
 	ShorthandPromptPath  string  `json:"shorthand_prompt_path"`
 }

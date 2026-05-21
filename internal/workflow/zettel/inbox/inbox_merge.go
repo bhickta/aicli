@@ -68,7 +68,7 @@ func (r Runner) InboxMerge(ctx context.Context, req InboxMergeRequest, progress 
 				"note",
 			))
 		}
-		result, err := r.processInboxSource(ctx, v, archive, runID, options, sourcePath, shorthandPrompt)
+		result, err := r.processInboxSource(ctx, v, archive, runID, options, sourcePath, shorthandPrompt, progress)
 		if err != nil {
 			result = InboxSourceResult{SourcePath: sourcePath, Status: inboxStatusFailed, Reason: err.Error()}
 		}
@@ -85,6 +85,14 @@ func (r Runner) InboxMerge(ctx context.Context, req InboxMergeRequest, progress 
 			}
 			response.Pending = append(response.Pending, result)
 		}
+		if progress != nil {
+			progress(progressmodel.Units(
+				fmt.Sprintf("finished inbox note %d/%d: %s", i+1, len(sourceNotes), filepath.Base(sourcePath)),
+				i+1,
+				len(sourceNotes),
+				"note",
+			))
+		}
 	}
 	if progress != nil {
 		progress(progressmodel.Units("completed inbox merge run", len(sourceNotes), len(sourceNotes), "note"))
@@ -98,7 +106,8 @@ func (r Runner) InboxMerge(ctx context.Context, req InboxMergeRequest, progress 
 	return response, nil
 }
 
-func (r Runner) processInboxSource(ctx context.Context, v vault, archive archivepkg.Store, runID string, options Options, sourcePath string, shorthandPrompt string) (InboxSourceResult, error) {
+func (r Runner) processInboxSource(ctx context.Context, v vault, archive archivepkg.Store, runID string, options Options, sourcePath string, shorthandPrompt string, progress ProgressFunc) (InboxSourceResult, error) {
+	reportInboxStage(progress, sourcePath, "checking exact duplicates", 0, 8)
 	sourceAbs, err := v.Abs(sourcePath)
 	if err != nil {
 		return InboxSourceResult{}, err
@@ -115,6 +124,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		return processExactDuplicateInboxSource(v, archive, runID, options, sourcePath, sourceContent, destinationPath)
 	}
 
+	reportInboxStage(progress, sourcePath, "extracting source claims", 1, 8)
 	claims, err := r.extractInboxClaims(ctx, sourcePath, sourceContent, options)
 	if err != nil {
 		return result, err
@@ -129,10 +139,12 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		return result, nil
 	}
 
+	reportInboxStage(progress, sourcePath, "embedding source and finding candidates", 2, 8)
 	similar, err := indexer.New(v, options, r.embeddingProvider).Similar(ctx, sourcePath, sourceContent)
 	if err != nil {
 		return result, err
 	}
+	reportInboxStage(progress, sourcePath, "routing claims to destinations", 3, 8)
 	decision, err := r.routeInboxClaims(ctx, sourcePath, claims, similar, options)
 	if err != nil {
 		return result, err
@@ -144,18 +156,21 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 	destinationWrites := map[string]string{}
 	destinationDiffs := []InboxDestinationDiff{}
 	destinationPaths := make([]string, 0, len(assignments))
+	rewriteIndex := 0
 	for destinationPath, claimIDs := range assignments {
 		assignedClaims := selectClaims(claims, claimIDs)
 		if len(assignedClaims) == 0 {
 			continue
 		}
+		rewriteIndex++
+		reportInboxStage(progress, sourcePath, fmt.Sprintf("rewriting destination %d/%d: %s", rewriteIndex, len(assignments), filepath.Base(destinationPath)), 4, 8)
 		before, after, plan, err := r.rewriteInboxDestination(ctx, v, options, destinationPath, sourcePath, assignedClaims, shorthandPrompt)
 		if err != nil {
 			ledger = append(ledger, pendingLedgerForClaims(assignedClaims, fmt.Sprintf("rewrite failed: %s", err.Error()))...)
 			continue
 		}
 		destinationBefore[destinationPath] = before
-		destinationPaths = append(destinationPaths, destinationPath)
+		destinationPaths = appendUniquePath(destinationPaths, destinationPath)
 		rewriteLedger := normalizeRewriteLedger(plan.Ledger, destinationPath, assignedClaims)
 		ledger = append(ledger, rewriteLedger...)
 		destinationAfter[destinationPath] = before
@@ -165,18 +180,45 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		destinationAfter[destinationPath] = after
 		destinationWrites[destinationPath] = after
 		destinationDiffs = append(destinationDiffs, InboxDestinationDiff{
-			Path:   destinationPath,
-			Before: before,
-			After:  after,
-			Diff:   notetext.SimpleMarkdownDiff(before, after),
+			Path:    destinationPath,
+			Before:  before,
+			After:   after,
+			Diff:    notetext.SimpleMarkdownDiff(before, after),
+			Created: false,
 		})
 	}
 
 	ledger = ensureAllClaimsAccounted(claims, ledger)
+	if err := materializeDedupedDestinations(v, options, ledger, destinationBefore, destinationAfter, &destinationPaths); err != nil {
+		return result, err
+	}
 	result.Ledger = ledger
 	result.DestinationPaths = destinationPaths
 	result.Diffs = destinationDiffs
 	result.MergedCount, result.DedupedCount, result.PendingCount = countLedgerStatuses(ledger)
+	if result.MergedCount+result.DedupedCount == 0 {
+		if options.AdoptUnmatchedInbox && rewriteIndex == 0 {
+			reportInboxStage(progress, sourcePath, "adopting unmatched source as new zettel", 5, 8)
+			adoptedPath, created, err := adoptInboxDestinationPath(v, options, sourcePath)
+			if err != nil {
+				return result, err
+			}
+			ledger = adoptedInboxLedger(claims, adoptedPath)
+			result.Ledger = ledger
+			result.DestinationPaths = []string{adoptedPath}
+			result.MergedCount, result.DedupedCount, result.PendingCount = countLedgerStatuses(ledger)
+			destinationBefore[adoptedPath] = ""
+			destinationAfter[adoptedPath] = notetext.EnsureTrailingNewline(sourceContent)
+			destinationWrites[adoptedPath] = destinationAfter[adoptedPath]
+			result.Diffs = []InboxDestinationDiff{{
+				Path:    adoptedPath,
+				Before:  "",
+				After:   destinationAfter[adoptedPath],
+				Diff:    notetext.SimpleMarkdownDiff("", destinationAfter[adoptedPath]),
+				Created: created,
+			}}
+		}
+	}
 	if result.MergedCount+result.DedupedCount == 0 {
 		result.Status = inboxStatusPending
 		result.Reason = firstPendingReason(ledger, "one or more claims could not be safely merged or deduped")
@@ -192,6 +234,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		validationSource = appliedClaimsSource(sourcePath, claims, ledger)
 		validationLedger = appliedLedger(ledger)
 	}
+	reportInboxStage(progress, sourcePath, "validating lossless merge", 6, 8)
 	validation, err := r.validateInboxMerge(ctx, sourcePath, validationSource, destinationBefore, destinationAfter, validationLedger, options)
 	if err != nil {
 		return result, err
@@ -211,9 +254,11 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		result.Status = inboxStatusPartial
 		result.Reason = "partial merge applied; unresolved claims preserved in pending folder: " + firstPendingReason(ledger, "one or more claims could not be safely merged or deduped")
 	}
+	reportInboxStage(progress, sourcePath, "archiving merge result", 7, 8)
 	if _, err := archive.WriteInboxItem(runID, result, sourceContent, destinationBefore, destinationWrites); err != nil {
 		return result, err
 	}
+	reportInboxStage(progress, sourcePath, "writing destination notes", 7, 8)
 	if err := writeDestinationNotes(v, options, destinationWrites); err != nil {
 		return result, err
 	}
@@ -221,6 +266,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 	if result.Status == inboxStatusPartial {
 		moveSource = moveInboxSourceToPending
 	}
+	reportInboxStage(progress, sourcePath, "moving source note", 7, 8)
 	processedPath, err := moveSource(v, options, sourcePath)
 	if err != nil {
 		return result, err
@@ -230,4 +276,20 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		return result, err
 	}
 	return result, nil
+}
+
+func reportInboxStage(progress ProgressFunc, sourcePath string, stage string, completed int, total int) {
+	if progress == nil {
+		return
+	}
+	progress(progressmodel.Units(fmt.Sprintf("%s: %s", stage, filepath.Base(sourcePath)), completed, total, "stage"))
+}
+
+func appendUniquePath(paths []string, path string) []string {
+	for _, existing := range paths {
+		if existing == path {
+			return paths
+		}
+	}
+	return append(paths, path)
 }

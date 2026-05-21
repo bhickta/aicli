@@ -37,6 +37,7 @@ export interface ZettelConfig {
   rootFolder: string;
   inboxFolder: string;
   inboxLimit: number;
+  adoptUnmatchedInbox: boolean;
   dataFolder: string;
   shorthandPromptPath: string;
   providerId: string;

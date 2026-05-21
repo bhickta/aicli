@@ -23,11 +23,26 @@ func writeDestinationNotes(v vault, options Options, destinationAfter map[string
 		if err != nil {
 			return err
 		}
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			return fmt.Errorf("create destination note folder %s: %w", path, err)
+		}
 		if err := os.WriteFile(abs, []byte(notetext.EnsureTrailingNewline(destinationAfter[path])), 0o600); err != nil {
 			return fmt.Errorf("write destination note %s: %w", path, err)
 		}
 	}
 	return nil
+}
+
+func readDestinationNote(v vault, options Options, path string) (string, error) {
+	abs, err := v.NotePath(path, options)
+	if err != nil {
+		return "", err
+	}
+	content, err := os.ReadFile(abs)
+	if err != nil {
+		return "", fmt.Errorf("read destination note %s: %w", path, err)
+	}
+	return string(content), nil
 }
 
 func moveInboxSourceToProcessed(v vault, options Options, sourcePath string) (string, error) {

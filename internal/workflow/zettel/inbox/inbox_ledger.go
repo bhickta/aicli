@@ -32,6 +32,7 @@ func normalizeInboxAssignments(decision inboxDestinationDecision, claims []Inbox
 	assigned := map[string]bool{}
 	ledger := []InboxClaimLedger{}
 	for _, pending := range decision.Pending {
+		pending.ClaimID = strings.TrimSpace(pending.ClaimID)
 		if claimSet[pending.ClaimID] {
 			pending.Status = claimStatusPending
 			ledger = append(ledger, pending)
@@ -40,14 +41,41 @@ func normalizeInboxAssignments(decision inboxDestinationDecision, claims []Inbox
 	for _, destination := range decision.Destinations {
 		path := strings.TrimSpace(destination.Path)
 		if path == "" || destination.Confidence < options.ReviewThreshold {
-			for _, id := range destination.ClaimIDs {
+			for _, id := range destinationClaimIDs(destination) {
 				if claimSet[id] {
 					ledger = append(ledger, InboxClaimLedger{ClaimID: id, Status: claimStatusPending, Reason: "destination confidence below threshold"})
 				}
 			}
 			continue
 		}
+		if len(destination.Ledger) > 0 {
+			for _, item := range normalizeRouteLedger(destination.Ledger, path, claims) {
+				if assigned[item.ClaimID] {
+					continue
+				}
+				switch item.Status {
+				case claimStatusMerged:
+					assignments[path] = append(assignments[path], item.ClaimID)
+					assigned[item.ClaimID] = true
+				case claimStatusDeduped:
+					ledger = append(ledger, item)
+					assigned[item.ClaimID] = true
+				default:
+					ledger = append(ledger, item)
+				}
+			}
+			for _, id := range destination.ClaimIDs {
+				id = strings.TrimSpace(id)
+				if !claimSet[id] || assigned[id] {
+					continue
+				}
+				assignments[path] = append(assignments[path], id)
+				assigned[id] = true
+			}
+			continue
+		}
 		for _, id := range destination.ClaimIDs {
+			id = strings.TrimSpace(id)
 			if !claimSet[id] || assigned[id] {
 				continue
 			}
@@ -56,6 +84,26 @@ func normalizeInboxAssignments(decision inboxDestinationDecision, claims []Inbox
 		}
 	}
 	return assignments, ledger
+}
+
+func destinationClaimIDs(destination inboxDestinationAssignment) []string {
+	ids := make([]string, 0, len(destination.ClaimIDs)+len(destination.Ledger))
+	seen := map[string]bool{}
+	for _, id := range destination.ClaimIDs {
+		id = strings.TrimSpace(id)
+		if id != "" && !seen[id] {
+			ids = append(ids, id)
+			seen[id] = true
+		}
+	}
+	for _, item := range destination.Ledger {
+		id := strings.TrimSpace(item.ClaimID)
+		if id != "" && !seen[id] {
+			ids = append(ids, id)
+			seen[id] = true
+		}
+	}
+	return ids
 }
 
 func claimIDSet(claims []InboxClaim) map[string]bool {
@@ -87,19 +135,37 @@ func normalizeRewriteLedger(ledger []InboxClaimLedger, destinationPath string, c
 		if !claimSet[item.ClaimID] {
 			continue
 		}
-		item.Status = strings.ToLower(strings.TrimSpace(item.Status))
-		if item.Status != claimStatusMerged && item.Status != claimStatusDeduped && item.Status != claimStatusPending {
-			item.Status = claimStatusPending
-			if item.Reason == "" {
-				item.Reason = "unknown ledger status"
-			}
-		}
-		if item.DestinationPath == "" {
-			item.DestinationPath = destinationPath
-		}
-		out = append(out, item)
+		out = append(out, normalizeLedgerItem(item, destinationPath))
 	}
 	return out
+}
+
+func normalizeRouteLedger(ledger []InboxClaimLedger, destinationPath string, claims []InboxClaim) []InboxClaimLedger {
+	claimSet := claimIDSet(claims)
+	out := make([]InboxClaimLedger, 0, len(ledger))
+	for _, item := range ledger {
+		item.ClaimID = strings.TrimSpace(item.ClaimID)
+		if !claimSet[item.ClaimID] {
+			continue
+		}
+		out = append(out, normalizeLedgerItem(item, destinationPath))
+	}
+	return out
+}
+
+func normalizeLedgerItem(item InboxClaimLedger, destinationPath string) InboxClaimLedger {
+	item.ClaimID = strings.TrimSpace(item.ClaimID)
+	item.Status = strings.ToLower(strings.TrimSpace(item.Status))
+	if item.Status != claimStatusMerged && item.Status != claimStatusDeduped && item.Status != claimStatusPending {
+		item.Status = claimStatusPending
+		if item.Reason == "" {
+			item.Reason = "unknown ledger status"
+		}
+	}
+	if item.DestinationPath == "" && destinationPath != "" {
+		item.DestinationPath = destinationPath
+	}
+	return item
 }
 
 func pendingLedgerForClaims(claims []InboxClaim, reason string) []InboxClaimLedger {

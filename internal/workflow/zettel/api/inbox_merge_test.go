@@ -194,6 +194,135 @@ func TestServiceInboxMergeDoesNotWriteDedupedOnlyDestination(t *testing.T) {
 	}
 }
 
+func TestServiceInboxMergeUsesRouteLevelDedupeWithoutRewrite(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "polity.md")
+	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "rote.md")
+	destinationContent := "- **UPSC**: Rote learning fails; independent thinking needed.\n"
+	writeTestFile(t, destinationPath, destinationContent)
+	writeTestFile(t, sourcePath, "Rote learning fails in UPSC.\n")
+
+	provider := &fakeZettelProvider{chatResponses: []string{
+		`{"claims":[{"id":"c1","text":"Rote learning fails in UPSC","source":"Rote learning fails in UPSC."}],"notes":"ok"}`,
+		`{"destinations":[{"path":"zettelkasten/polity.md","confidence":0.99,"ledger":[{"claim_id":"c1","status":"deduped","destination_path":"zettelkasten/polity.md","evidence":"excerpt already says rote learning fails","reason":"already represented"}],"reason":"already represented"}],"pending":[],"notes":"ok"}`,
+		`{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"route dedupe verified"}`,
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "inbox-to-merge",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want route-deduped note processed", resp)
+	}
+	if got := readTestFile(t, destinationPath); got != destinationContent {
+		t.Fatalf("deduped destination changed = %q, want %q", got, destinationContent)
+	}
+	if len(provider.chatCalls) != 3 {
+		t.Fatalf("chat calls = %d, want extract, route, validate only", len(provider.chatCalls))
+	}
+	for _, call := range provider.chatCalls {
+		if call.Model == "merge-model" {
+			t.Fatalf("merge model was called for route-level dedupe")
+		}
+	}
+	if resp.APICalls.Total != 5 || resp.APICalls.Chat != 3 || resp.APICalls.Embeddings != 2 {
+		t.Fatalf("api calls = %#v, want three chat calls and two embedding calls", resp.APICalls)
+	}
+}
+
+func TestServiceInboxMergeAdoptsUnmatchedSourceWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "Economy", "existing.md"), "- **Economy**: existing index seed.\n")
+	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "002.md")
+	sourceContent := "- **Conceptual Clarity**: Understanding roots > memorizing definitions.\n"
+	writeTestFile(t, sourcePath, sourceContent)
+
+	provider := &fakeZettelProvider{chatResponses: []string{
+		`{"claims":[{"id":"c1","text":"Understanding roots is better than memorizing definitions","source":"Conceptual Clarity"}],"notes":"ok"}`,
+		`{"destinations":[],"pending":[{"claim_id":"c1","status":"pending","reason":"no confident destination"}],"notes":"pending"}`,
+		`{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"adopted source preserves all claims"}`,
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "in",
+		AdoptUnmatchedInbox:  true,
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want adopted source processed", resp)
+	}
+	adoptedPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "Economy Shivin", "002.md")
+	if got := readTestFile(t, adoptedPath); got != sourceContent {
+		t.Fatalf("adopted destination = %q, want source content", got)
+	}
+	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+		t.Fatalf("source still exists or unexpected stat error: %v", err)
+	}
+	processed := resp.Processed[0]
+	if processed.MergedCount != 1 || processed.PendingCount != 0 || len(processed.Diffs) != 1 || !processed.Diffs[0].Created {
+		t.Fatalf("processed result = %#v, want one created destination merge", processed)
+	}
+	if len(provider.chatCalls) != 3 {
+		t.Fatalf("chat calls = %d, want extract, route, validate only", len(provider.chatCalls))
+	}
+	for _, call := range provider.chatCalls {
+		if call.Model == "merge-model" {
+			t.Fatalf("merge model was called for adopted source")
+		}
+	}
+
+	if _, err := service.Rollback(context.Background(), RollbackRequest{Options: options, JobID: resp.RunID}, nil); err != nil {
+		t.Fatalf("Rollback() error = %v", err)
+	}
+	if _, err := os.Stat(adoptedPath); !os.IsNotExist(err) {
+		t.Fatalf("rollback left adopted destination or unexpected stat error: %v", err)
+	}
+	if got := readTestFile(t, sourcePath); got != sourceContent {
+		t.Fatalf("rollback source = %q, want original content", got)
+	}
+}
+
 func TestServiceInboxMergeKeepsPendingSourceUnchanged(t *testing.T) {
 	t.Parallel()
 

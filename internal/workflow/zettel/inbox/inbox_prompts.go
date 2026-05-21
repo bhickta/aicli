@@ -19,10 +19,11 @@ type inboxDestinationDecision struct {
 }
 
 type inboxDestinationAssignment struct {
-	Path       string   `json:"path"`
-	ClaimIDs   []string `json:"claim_ids"`
-	Confidence float64  `json:"confidence"`
-	Reason     string   `json:"reason,omitempty"`
+	Path       string             `json:"path"`
+	ClaimIDs   []string           `json:"claim_ids"`
+	Ledger     []InboxClaimLedger `json:"ledger,omitempty"`
+	Confidence float64            `json:"confidence"`
+	Reason     string             `json:"reason,omitempty"`
 }
 
 type inboxRewritePlan struct {
@@ -75,9 +76,16 @@ func inboxDestinationMessages(sourcePath string, claims []InboxClaim, candidates
 		"required_schema": map[string]any{
 			"destinations": []map[string]any{{
 				"path":       "destination candidate path",
-				"claim_ids":  []string{"claim ids to merge or dedupe in this destination"},
+				"claim_ids":  []string{"backward-compatible claim ids needing a merge rewrite"},
 				"confidence": "number 0..1",
-				"reason":     "short reason",
+				"ledger": []map[string]any{{
+					"claim_id":         "claim id",
+					"status":           "merged or deduped",
+					"destination_path": "same destination candidate path",
+					"evidence":         "numbered excerpt line(s) proving dedupe, or why rewrite is needed",
+					"reason":           "short reason",
+				}},
+				"reason": "short reason",
 			}},
 			"pending": []map[string]any{{
 				"claim_id": "claim id that cannot be safely routed",
@@ -94,6 +102,9 @@ func inboxDestinationMessages(sourcePath string, claims []InboxClaim, candidates
 			"Use destinations only from the provided candidate paths.",
 			"Allow split routing when one source note contains claims for multiple destinations.",
 			"Only assign a claim when confidence is high that it belongs in that destination.",
+			"Inside each destination ledger, use status=deduped only when the numbered excerpt already represents the claim.",
+			"Use status=merged only when the destination is the correct home but needs an edit.",
+			"Do not send already-deduped claims to rewrite; mark them deduped in the routing ledger.",
 			"Mark uncertain claims as pending.",
 		}, "\n")},
 		{Role: "user", Content: string(user)},

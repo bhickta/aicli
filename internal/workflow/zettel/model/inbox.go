@@ -50,8 +50,9 @@ type InboxClaimLedger struct {
 }
 
 type InboxDestinationDiff struct {
-	Path   string `json:"path"`
-	Before string `json:"before,omitempty"`
-	After  string `json:"after,omitempty"`
-	Diff   string `json:"diff"`
+	Path    string `json:"path"`
+	Before  string `json:"before,omitempty"`
+	After   string `json:"after,omitempty"`
+	Diff    string `json:"diff"`
+	Created bool   `json:"created,omitempty"`
 }

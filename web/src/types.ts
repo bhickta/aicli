@@ -135,6 +135,7 @@ export interface InboxDestinationDiff {
   before?: string;
   after?: string;
   diff: string;
+  created?: boolean;
 }
 
 export interface ProviderApiCallUsage {

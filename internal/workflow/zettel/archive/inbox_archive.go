@@ -50,6 +50,7 @@ type inboxArchiveDestination struct {
 	BeforeArchive string `json:"before_archive"`
 	AfterArchive  string `json:"after_archive"`
 	DiffArchive   string `json:"diff_archive"`
+	Created       bool   `json:"created,omitempty"`
 }
 
 func (s Store) InboxRunPath(runID string) (string, error) {
@@ -97,6 +98,7 @@ func (s Store) WriteInboxItem(runID string, result InboxSourceResult, sourceCont
 			BeforeArchive: beforeArchive,
 			AfterArchive:  afterArchive,
 			DiffArchive:   diffArchive,
+			Created:       diff.Created,
 		})
 	}
 
@@ -210,6 +212,12 @@ func (s Store) rollbackInboxRun(runID string) (string, error) {
 			abs, err := s.vault.Abs(destination.Path)
 			if err != nil {
 				return "", err
+			}
+			if destination.Created {
+				if err := os.Remove(abs); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return "", fmt.Errorf("delete created destination: %w", err)
+				}
+				continue
 			}
 			if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 				return "", fmt.Errorf("create destination restore folder: %w", err)

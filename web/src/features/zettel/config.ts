@@ -20,12 +20,14 @@ export const promptOptions: SelectOption<string>[] = [
 export function createZettelConfig(): ZettelConfig {
   const legacyProviderId = localStorage.getItem("aicli.zettel.providerId") || "lms";
   const legacyJudgeModel = localStorage.getItem("aicli.zettel.judgeModel") || "deepseek-reasoner";
+  const storedAdoptUnmatched = localStorage.getItem("aicli.zettel.adoptUnmatchedInbox");
   return {
     vaultPath: localStorage.getItem("aicli.zettel.vaultPath") || "",
     activePath: localStorage.getItem("aicli.zettel.activePath") || "",
     rootFolder: localStorage.getItem("aicli.zettel.rootFolder") || "zettelkasten",
     inboxFolder: localStorage.getItem("aicli.zettel.inboxFolder") || "inbox-to-merge",
     inboxLimit: Number(localStorage.getItem("aicli.zettel.inboxLimit") || 0),
+    adoptUnmatchedInbox: storedAdoptUnmatched === null ? true : storedAdoptUnmatched === "true",
     dataFolder: localStorage.getItem("aicli.zettel.dataFolder") || ".aicli-zettel-merge",
     shorthandPromptPath: localStorage.getItem("aicli.zettel.shorthandPromptPath") || "example_prompts.md",
     providerId: legacyProviderId,
@@ -55,6 +57,7 @@ export function persistZettelConfig(config: ZettelConfig) {
   localStorage.setItem("aicli.zettel.rootFolder", config.rootFolder);
   localStorage.setItem("aicli.zettel.inboxFolder", config.inboxFolder);
   localStorage.setItem("aicli.zettel.inboxLimit", String(config.inboxLimit));
+  localStorage.setItem("aicli.zettel.adoptUnmatchedInbox", String(config.adoptUnmatchedInbox));
   localStorage.setItem("aicli.zettel.dataFolder", config.dataFolder);
   localStorage.setItem("aicli.zettel.shorthandPromptPath", config.shorthandPromptPath);
   localStorage.setItem("aicli.zettel.providerId", config.providerId);
