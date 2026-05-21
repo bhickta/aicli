@@ -58,6 +58,9 @@ func (a *inboxAppliedDecision) materializeDestination(v vault, options Options, 
 		a.addLowConfidencePending(destination, claimSet, assigned)
 		return nil
 	}
+	if strings.TrimSpace(destination.FinalNote) != "" {
+		return a.materializeFinalNoteDestination(v, options, path, destination, claims, claimSet, assigned)
+	}
 
 	ledger := destinationLedger(destination, path, claims)
 	if len(ledger) == 0 {
@@ -81,6 +84,69 @@ func (a *inboxAppliedDecision) materializeDestination(v vault, options Options, 
 	merged := a.applyImmediateLedger(path, ledger, assigned)
 	a.applyMergedLedger(path, destination, merged, assigned)
 	return nil
+}
+
+func (a *inboxAppliedDecision) materializeFinalNoteDestination(v vault, options Options, path string, destination inboxDestinationAssignment, claims []InboxClaim, claimSet map[string]bool, assigned map[string]bool) error {
+	ledger := destinationLedger(destination, path, claims)
+	if len(ledger) == 0 {
+		return nil
+	}
+	before, created, err := loadFinalNoteDestination(v, options, path)
+	if err != nil {
+		a.addDestinationPending(destination, claimSet, assigned, err.Error())
+		return nil
+	}
+	a.destinationBefore[path] = before
+	after := notetext.EnsureTrailingNewline(strings.Trim(destination.FinalNote, "\n"))
+	if strings.TrimSpace(after) == "" {
+		a.addDestinationPending(destination, claimSet, assigned, "final note was empty")
+		return nil
+	}
+	a.destinationAfter[path] = after
+	changed := before != after
+	if changed {
+		a.destinationWrites[path] = after
+		a.destinationDiffs = append(a.destinationDiffs, InboxDestinationDiff{
+			Path:    path,
+			Before:  before,
+			After:   after,
+			Diff:    notetext.SimpleMarkdownDiff(before, after),
+			Created: created,
+		})
+	}
+	for _, item := range ledger {
+		if assigned[item.ClaimID] {
+			continue
+		}
+		item = normalizeLedgerItem(item, path)
+		if item.Status == claimStatusPending {
+			a.ledger = append(a.ledger, item)
+			continue
+		}
+		a.ledger = append(a.ledger, synthesizeFinalNoteLedger(path, changed))
+		a.destinationPaths = appendUniquePath(a.destinationPaths, path)
+		assigned[item.ClaimID] = true
+	}
+	if changed {
+		a.rewriteAttempted = true
+	}
+	return nil
+}
+
+func loadFinalNoteDestination(v vault, options Options, path string) (string, bool, error) {
+	content, err := readDestinationNote(v, options, path)
+	if err == nil {
+		return content, false, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", false, err
+	}
+	root := strings.Trim(options.RootFolder, "/")
+	normalizedPath := strings.Trim(path, "/")
+	if root != "" && normalizedPath != root && !strings.HasPrefix(normalizedPath, root+"/") {
+		return "", false, errors.New("new final note path must be inside zettelkasten root")
+	}
+	return "", true, nil
 }
 
 func (a *inboxAppliedDecision) addLowConfidencePending(destination inboxDestinationAssignment, claimSet map[string]bool, assigned map[string]bool) {

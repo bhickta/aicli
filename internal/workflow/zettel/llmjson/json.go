@@ -24,7 +24,12 @@ func Chat[T any](ctx context.Context, p provider.Provider, model string, message
 	if err != nil {
 		return out, err
 	}
-	candidates, err := extractJSONObjects(res.Content)
+	return Parse[T](res.Content)
+}
+
+func Parse[T any](text string) (T, error) {
+	var out T
+	candidates, err := extractJSONObjects(text)
 	if err != nil {
 		return out, err
 	}

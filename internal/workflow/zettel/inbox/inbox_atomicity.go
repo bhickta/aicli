@@ -95,13 +95,25 @@ func meaningfulClaimTokens(value string) []string {
 	out := make([]string, 0, len(tokens))
 	seen := map[string]bool{}
 	for _, token := range tokens {
-		if len(token) < 4 || genericClaimToken(token) || seen[token] {
+		if !importantClaimToken(token) || genericClaimToken(token) || seen[token] {
 			continue
 		}
 		out = append(out, token)
 		seen[token] = true
 	}
 	return out
+}
+
+func importantClaimToken(token string) bool {
+	if len(token) >= 4 {
+		return true
+	}
+	for _, ch := range token {
+		if ch >= '0' && ch <= '9' {
+			return true
+		}
+	}
+	return false
 }
 
 func topicTokenSet(value string) map[string]bool {

@@ -192,14 +192,65 @@ func TestServiceInboxMergeAcceptsConceptLevelEconomicsMerge(t *testing.T) {
 		t.Fatalf("processed result = %#v, want one merged concept unit", processed)
 	}
 	systemPrompt := provider.chatCalls[0].Messages[0].Content
-	if !strings.Contains(systemPrompt, "Extract coherent concept units") || !strings.Contains(systemPrompt, "line-by-line atomic fragments") {
-		t.Fatalf("system prompt does not pin concept-level extraction: %s", systemPrompt)
+	if !strings.Contains(systemPrompt, "Return final destination notes only") || !strings.Contains(systemPrompt, "Do not return JSON") {
+		t.Fatalf("system prompt does not require final-note response: %s", systemPrompt)
 	}
-	if !strings.Contains(systemPrompt, "Do not return full rewritten destination notes") {
-		t.Fatalf("system prompt does not require action-only merge: %s", systemPrompt)
+	if !strings.Contains(systemPrompt, "BEGIN_NOTE <candidate path>") {
+		t.Fatalf("system prompt does not describe final-note envelope: %s", systemPrompt)
 	}
 	if got := readTestFile(t, destinationPath); !strings.Contains(got, "Economics = technical + conceptual") || !strings.Contains(got, "Jobless Growth") {
 		t.Fatalf("destination content = %q, want economics concept details merged", got)
+	}
+}
+
+func TestServiceInboxMergeWritesFinalNoteEnvelope(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "economics.md")
+	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "concept.md")
+	writeTestFile(t, destinationPath, "- **Economics**: Efficient use of scarce resources.\n")
+	writeTestFile(t, sourcePath, "- **Subject Nature**: Economics = technical + conceptual. Rote learning fails in UPSC.\n")
+
+	provider := &fakeZettelProvider{chatResponses: []string{
+		"BEGIN_NOTE zettelkasten/economics.md\n" +
+			"- **Economics**: Efficient use of scarce resources.\n" +
+			"- **Subject Nature**: Economics = technical + conceptual. Rote learning fails in UPSC.\n" +
+			"END_NOTE\n",
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "inbox-to-merge",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want final-note processed result", resp)
+	}
+	processed := resp.Processed[0]
+	if processed.Validation.Verdict != "pass" || processed.Validation.Score != 1 {
+		t.Fatalf("validation = %#v, want mechanical final-note validation", processed.Validation)
+	}
+	want := "- **Economics**: Efficient use of scarce resources.\n- **Subject Nature**: Economics = technical + conceptual. Rote learning fails in UPSC.\n"
+	if got := readTestFile(t, destinationPath); got != want {
+		t.Fatalf("destination = %q, want %q", got, want)
 	}
 }
 

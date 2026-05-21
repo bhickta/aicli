@@ -136,7 +136,12 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		return result, err
 	}
 	similar = augmentInboxCandidates(ctx, v, options, sourcePath, sourceContent, similar)
-	reportInboxStage(progress, sourcePath, "deciding claims, destinations, and edits", 2, 6)
+	if options.AdoptUnmatchedInbox {
+		if adoptedPath, _, err := adoptInboxDestinationPath(v, options, sourcePath); err == nil {
+			similar = appendInboxCandidatePath(similar, adoptedPath)
+		}
+	}
+	reportInboxStage(progress, sourcePath, "building final destination notes", 2, 6)
 	decision, err := r.decideInboxSource(ctx, sourcePath, sourceContent, similar, options, shorthandPrompt)
 	if err != nil {
 		return result, err
@@ -200,14 +205,20 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 	}
 
 	validation := mechanicalInboxValidation(mechanicalAdoption)
-	if !mechanicalAdoption {
+	if decision.FinalNotes {
+		validation = finalNotesValidation(sourceContent, destinationAfter)
+	} else if !mechanicalAdoption {
 		validation = decision.Validation
 	}
 	result.Validation = validation
 	if !mergeJudgePassed(validation, options.ValidationThreshold) {
 		result.Status = inboxStatusPending
 		result.Reason = "validation failed: " + validation.Notes
-		if _, err := archive.WriteInboxItem(runID, result, sourceContent, destinationBefore, destinationWrites); err != nil {
+		result.Ledger = pendingLedgerForClaims(claims, result.Reason)
+		result.MergedCount, result.DedupedCount, result.PendingCount = countLedgerStatuses(result.Ledger)
+		result.DestinationPaths = nil
+		result.Diffs = nil
+		if _, err := archive.WriteInboxItem(runID, result, sourceContent, nil, nil); err != nil {
 			return result, err
 		}
 		return result, nil

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/workflow/zettel/llmjson"
 )
 
@@ -16,7 +17,21 @@ func (r Runner) decideInboxSource(ctx context.Context, sourcePath string, source
 	if model == "" {
 		model = options.CandidateModel
 	}
-	resp, err := llmjson.Chat[inboxDestinationDecision](ctx, r.mergeProvider, model, inboxDecisionMessages(sourcePath, sourceContent, candidates, options, shorthandPrompt))
+	if r.mergeProvider == nil {
+		return inboxDestinationDecision{}, errors.New("provider is required")
+	}
+	res, err := r.mergeProvider.Chat(ctx, provider.ChatRequest{
+		Model:       model,
+		Messages:    inboxDecisionMessages(sourcePath, sourceContent, candidates, options, shorthandPrompt),
+		Temperature: 0,
+	})
+	if err != nil {
+		return inboxDestinationDecision{}, err
+	}
+	if decision, ok := parseInboxFinalNotes(sourcePath, res.Content); ok {
+		return decision, nil
+	}
+	resp, err := llmjson.Parse[inboxDestinationDecision](res.Content)
 	if err != nil {
 		return inboxDestinationDecision{}, err
 	}
