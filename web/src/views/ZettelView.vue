@@ -6,6 +6,7 @@ import ZettelInboxReport from "../components/zettel/ZettelInboxReport.vue";
 import ZettelMergeDiff from "../components/zettel/ZettelMergeDiff.vue";
 import ZettelNotePicker from "../components/zettel/ZettelNotePicker.vue";
 import ZettelProviderSettings from "../components/zettel/ZettelProviderSettings.vue";
+import ZettelRunSizeControl from "../components/zettel/ZettelRunSizeControl.vue";
 import ZettelWorkflowTabs from "../components/zettel/ZettelWorkflowTabs.vue";
 import { api, parseJobOutput, pollJob } from "../lib/api";
 import { readNumberValue, stringify } from "../lib/format";
@@ -84,12 +85,6 @@ const rollbackJobID = shallowRef("");
 const mode = shallowRef<ZettelMode>(storedMode === "manual" || storedMode === "settings" ? storedMode : "inbox");
 
 const candidateLimitOptions = [6, 12, 20, 30, 50];
-const inboxLimitOptions = [
-  { value: 0, label: "All inbox notes" },
-  { value: 5, label: "5 notes" },
-  { value: 10, label: "10 notes" },
-  { value: 25, label: "25 notes" },
-];
 const thresholdOptions = [
   { value: 0.75, label: "Broad" },
   { value: 0.85, label: "Balanced" },
@@ -454,14 +449,7 @@ function relativeToVault(path: string) {
         />
       </div>
 
-      <div class="field-row">
-        <div class="field">
-          <label for="zettel-inbox-limit">Run size</label>
-          <select id="zettel-inbox-limit" v-model.number="config.inboxLimit">
-            <option v-for="option in inboxLimitOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-          </select>
-        </div>
-      </div>
+      <ZettelRunSizeControl v-model="config.inboxLimit" :disabled="busy" />
 
       <div class="zettel-inline-actions">
         <button type="button" :disabled="busy || !config.vaultPath" @click="buildIndex">Build Index</button>

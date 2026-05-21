@@ -54,8 +54,14 @@ func (s *Service) InboxMerge(ctx context.Context, req InboxMergeRequest, progres
 	if len(sourceNotes) == 0 {
 		return response, nil
 	}
-	if err := s.preflightInboxMerge(ctx, v, options); err != nil {
+	needsPreflight, err := inboxSelectionNeedsProviderPreflight(v, options, sourceNotes)
+	if err != nil {
 		return response, err
+	}
+	if needsPreflight {
+		if err := s.preflightInboxMerge(ctx, v, options); err != nil {
+			return response, err
+		}
 	}
 
 	shorthandPrompt := loadShorthandPrompt(options)
@@ -90,7 +96,29 @@ func (s *Service) InboxMerge(ctx context.Context, req InboxMergeRequest, progres
 	response.ProcessedCount = len(response.Processed)
 	response.PendingCount = len(response.Pending)
 	response.FailedCount = len(response.Failed)
+	if err := archive.finalizeInboxRun(runID, response); err != nil {
+		return response, err
+	}
 	return response, nil
+}
+
+func inboxSelectionNeedsProviderPreflight(v vault, options Options, sourceNotes []string) (bool, error) {
+	for _, sourcePath := range sourceNotes {
+		sourceAbs, err := v.abs(sourcePath)
+		if err != nil {
+			return false, err
+		}
+		sourceBytes, err := os.ReadFile(sourceAbs)
+		if err != nil {
+			return false, fmt.Errorf("read inbox source: %w", err)
+		}
+		if _, ok, err := findExactDestinationDuplicate(v, options, sourcePath, string(sourceBytes)); err != nil {
+			return false, err
+		} else if !ok {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *Service) preflightInboxMerge(ctx context.Context, v vault, options Options) error {
@@ -119,6 +147,11 @@ func (s *Service) processInboxSource(ctx context.Context, v vault, archive archi
 	}
 	sourceContent := string(sourceBytes)
 	result := InboxSourceResult{SourcePath: sourcePath}
+	if destinationPath, ok, err := findExactDestinationDuplicate(v, options, sourcePath, sourceContent); err != nil {
+		return result, err
+	} else if ok {
+		return processExactDuplicateInboxSource(v, archive, runID, options, sourcePath, sourceContent, destinationPath)
+	}
 
 	claims, err := s.extractInboxClaims(ctx, sourcePath, sourceContent, options)
 	if err != nil {
@@ -362,7 +395,11 @@ func pendingLedgerForClaims(claims []InboxClaim, reason string) []InboxClaimLedg
 
 func ensureAllClaimsAccounted(claims []InboxClaim, ledger []InboxClaimLedger) []InboxClaimLedger {
 	accounted := map[string]bool{}
+	mentioned := map[string]bool{}
 	for _, item := range ledger {
+		if item.ClaimID != "" {
+			mentioned[item.ClaimID] = true
+		}
 		if item.Status == claimStatusMerged || item.Status == claimStatusDeduped {
 			accounted[item.ClaimID] = true
 		}
@@ -381,7 +418,7 @@ func ensureAllClaimsAccounted(claims []InboxClaim, ledger []InboxClaimLedger) []
 		out = append(out, item)
 	}
 	for _, claim := range claims {
-		if !accounted[claim.ID] {
+		if !accounted[claim.ID] && !mentioned[claim.ID] {
 			out = append(out, InboxClaimLedger{ClaimID: claim.ID, Status: claimStatusPending, Reason: "claim was not accounted for"})
 		}
 	}
@@ -422,7 +459,86 @@ func firstPendingReason(ledger []InboxClaimLedger, fallback string) string {
 }
 
 func mergeJudgePassed(judge MergeJudge, threshold float64) bool {
-	return strings.EqualFold(judge.Verdict, "pass") && judge.Score >= threshold
+	return strings.EqualFold(judge.Verdict, "pass") &&
+		judge.Score >= threshold &&
+		len(judge.MissingFacts) == 0 &&
+		len(judge.UnsupportedAdditions) == 0
+}
+
+func findExactDestinationDuplicate(v vault, options Options, sourcePath string, sourceContent string) (string, bool, error) {
+	if strings.TrimSpace(sourceContent) == "" {
+		return "", false, nil
+	}
+	notes, err := v.scanNotes(options)
+	if err != nil {
+		return "", false, err
+	}
+	sort.Strings(notes)
+	sourceHash := hashText(sourceContent)
+	sourceBase := filepath.Base(sourcePath)
+	fallback := ""
+	for _, notePath := range notes {
+		abs, err := v.notePath(notePath, options)
+		if err != nil {
+			return "", false, err
+		}
+		contentBytes, err := os.ReadFile(abs)
+		if err != nil {
+			return "", false, fmt.Errorf("read destination note: %w", err)
+		}
+		content := string(contentBytes)
+		if hashText(content) != sourceHash || content != sourceContent {
+			continue
+		}
+		if filepath.Base(notePath) == sourceBase {
+			return notePath, true, nil
+		}
+		if fallback == "" {
+			fallback = notePath
+		}
+	}
+	if fallback != "" {
+		return fallback, true, nil
+	}
+	return "", false, nil
+}
+
+func processExactDuplicateInboxSource(v vault, archive archiveStore, runID string, options Options, sourcePath string, sourceContent string, destinationPath string) (InboxSourceResult, error) {
+	result := InboxSourceResult{
+		SourcePath:       sourcePath,
+		Status:           inboxStatusProcessed,
+		DestinationPaths: []string{destinationPath},
+		DedupedCount:     1,
+		Claims: []InboxClaim{{
+			ID:     "source-note",
+			Text:   "Entire source note is byte-identical to an existing destination note.",
+			Source: sourcePath,
+		}},
+		Ledger: []InboxClaimLedger{{
+			ClaimID:         "source-note",
+			Status:          claimStatusDeduped,
+			DestinationPath: destinationPath,
+			Evidence:        "Inbox source content exactly matches the destination note.",
+			Reason:          "No merge needed because the destination already contains the whole source note byte-for-byte.",
+		}},
+		Validation: MergeJudge{
+			Verdict: "pass",
+			Score:   1,
+			Notes:   "Mechanical exact duplicate; no destination write was needed.",
+		},
+	}
+	if _, err := archive.writeInboxItem(runID, result, sourceContent, nil, nil); err != nil {
+		return result, err
+	}
+	processedPath, err := moveInboxSourceToProcessed(v, options, sourcePath)
+	if err != nil {
+		return result, err
+	}
+	result.ProcessedPath = processedPath
+	if err := archive.updateInboxItemProcessedPath(runID, sourcePath, processedPath); err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func writeDestinationNotes(v vault, options Options, destinationAfter map[string]string) error {

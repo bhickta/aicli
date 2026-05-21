@@ -11,11 +11,19 @@ import (
 )
 
 type inboxRunManifest struct {
-	RunID      string             `json:"run_id"`
-	CreatedAt  time.Time          `json:"created_at"`
-	Status     string             `json:"status"`
-	Items      []inboxArchiveItem `json:"items"`
-	RestoredAt *time.Time         `json:"restored_at,omitempty"`
+	RunID          string             `json:"run_id"`
+	CreatedAt      time.Time          `json:"created_at"`
+	CompletedAt    *time.Time         `json:"completed_at,omitempty"`
+	Status         string             `json:"status"`
+	SourceCount    int                `json:"source_count,omitempty"`
+	SelectedCount  int                `json:"selected_count,omitempty"`
+	SkippedCount   int                `json:"skipped_count,omitempty"`
+	ProcessedCount int                `json:"processed_count,omitempty"`
+	PendingCount   int                `json:"pending_count,omitempty"`
+	FailedCount    int                `json:"failed_count,omitempty"`
+	Limit          int                `json:"limit,omitempty"`
+	Items          []inboxArchiveItem `json:"items"`
+	RestoredAt     *time.Time         `json:"restored_at,omitempty"`
 }
 
 type inboxArchiveItem struct {
@@ -90,7 +98,7 @@ func (s archiveStore) writeInboxItem(runID string, result InboxSourceResult, sou
 		manifest.RunID = runID
 		manifest.CreatedAt = time.Now().UTC()
 	}
-	manifest.Status = "created"
+	manifest.Status = "running"
 	manifest.Items = append(manifest.Items, inboxArchiveItem{
 		SourcePath:    result.SourcePath,
 		Status:        result.Status,
@@ -126,6 +134,48 @@ func (s archiveStore) updateInboxItemProcessedPath(runID string, sourcePath stri
 	return s.writeInboxManifest(base, manifest)
 }
 
+func (s archiveStore) finalizeInboxRun(runID string, response InboxMergeResponse) error {
+	base, err := s.inboxRunPath(runID)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		return fmt.Errorf("create inbox run folder: %w", err)
+	}
+	manifest := s.readInboxManifestOrEmpty(runID)
+	if manifest.RunID == "" {
+		manifest.RunID = runID
+		manifest.CreatedAt = time.Now().UTC()
+	}
+	now := time.Now().UTC()
+	manifest.CompletedAt = &now
+	manifest.Status = inboxRunStatus(response)
+	manifest.SourceCount = response.SourceCount
+	manifest.SelectedCount = response.SelectedCount
+	manifest.SkippedCount = response.SkippedCount
+	manifest.ProcessedCount = response.ProcessedCount
+	manifest.PendingCount = response.PendingCount
+	manifest.FailedCount = response.FailedCount
+	manifest.Limit = response.Limit
+	return s.writeInboxManifest(base, manifest)
+}
+
+func inboxRunStatus(response InboxMergeResponse) string {
+	if response.FailedCount > 0 {
+		if response.ProcessedCount > 0 || response.PendingCount > 0 {
+			return "partial"
+		}
+		return "failed"
+	}
+	if response.PendingCount > 0 {
+		if response.ProcessedCount > 0 {
+			return "partial"
+		}
+		return "pending"
+	}
+	return "completed"
+}
+
 func (s archiveStore) rollbackInboxRun(runID string) (string, error) {
 	base, err := s.inboxRunPath(runID)
 	if err != nil {
@@ -137,6 +187,9 @@ func (s archiveStore) rollbackInboxRun(runID string) (string, error) {
 	}
 	for i := len(manifest.Items) - 1; i >= 0; i-- {
 		item := manifest.Items[i]
+		if item.Status != "processed" {
+			continue
+		}
 		for _, destination := range item.Destinations {
 			content, err := os.ReadFile(filepath.Join(base, destination.BeforeArchive))
 			if err != nil {
@@ -152,9 +205,6 @@ func (s archiveStore) rollbackInboxRun(runID string) (string, error) {
 			if err := os.WriteFile(abs, content, 0o600); err != nil {
 				return "", fmt.Errorf("restore destination: %w", err)
 			}
-		}
-		if item.Status != "processed" {
-			continue
 		}
 		sourceAbs, err := s.vault.abs(item.SourcePath)
 		if err != nil {

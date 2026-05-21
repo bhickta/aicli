@@ -2,6 +2,7 @@ package zettel
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -77,6 +78,62 @@ func TestServiceInboxMergeProcessesSourceAndRollbackRestores(t *testing.T) {
 	}
 }
 
+func TestServiceInboxMergeProcessesExactDuplicateWithoutProviders(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	content := "---\nStatus: Read\n---\n- **Conceptual Clarity**: Economics = technical + conceptual.\n"
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "Economy Shivin", "002.md")
+	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "002.md")
+	writeTestFile(t, destinationPath, content)
+	writeTestFile(t, sourcePath, content)
+
+	provider := &fakeZettelProvider{}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "in",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want exact duplicate processed mechanically", resp)
+	}
+	if len(provider.chatCalls) != 0 || provider.embeddingCalls != 0 {
+		t.Fatalf("provider calls chat=%d embedding=%d, want exact duplicate path to avoid providers", len(provider.chatCalls), provider.embeddingCalls)
+	}
+	processed := resp.Processed[0]
+	if processed.DedupedCount != 1 || len(processed.DestinationPaths) != 1 {
+		t.Fatalf("processed result = %#v, want one deduped destination", processed)
+	}
+	if processed.DestinationPaths[0] != "zettelkasten/Economy/Economy Shivin/002.md" {
+		t.Fatalf("destination path = %q, want original matching note", processed.DestinationPaths[0])
+	}
+	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+		t.Fatalf("source still exists or unexpected stat error: %v", err)
+	}
+	if got := readTestFile(t, destinationPath); got != content {
+		t.Fatalf("destination changed = %q, want exact original content", got)
+	}
+	manifest := readInboxRunManifest(t, resp.ArchivePath)
+	if manifest.Status != "completed" || manifest.ProcessedCount != 1 || manifest.PendingCount != 0 || manifest.FailedCount != 0 {
+		t.Fatalf("manifest = %#v, want completed exact duplicate run", manifest)
+	}
+}
+
 func TestServiceInboxMergeKeepsPendingSourceUnchanged(t *testing.T) {
 	t.Parallel()
 
@@ -122,6 +179,58 @@ func TestServiceInboxMergeKeepsPendingSourceUnchanged(t *testing.T) {
 	}
 	if resp.Pending[0].Reason != "no confident destination" {
 		t.Fatalf("pending reason = %q, want judge reason", resp.Pending[0].Reason)
+	}
+}
+
+func TestInboxRollbackIgnoresPendingDestinationArchives(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "economy.md")
+	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "stray.md")
+	writeTestFile(t, destinationPath, "- **Inflation**:: 6%\n")
+	writeTestFile(t, sourcePath, "Inflation rose to 7%, but routing is uncertain.\n")
+
+	provider := &fakeZettelProvider{chatResponses: []string{
+		`{"claims":[{"id":"c1","text":"Inflation rose to 7%","source":"Inflation rose to 7%"}],"notes":"ok"}`,
+		`{"destinations":[{"path":"zettelkasten/economy.md","claim_ids":["c1"],"confidence":0.99,"reason":"inflation destination"}],"pending":[],"notes":"ok"}`,
+		`{"final_markdown":"- **Inflation**:: 6%\n- **Inflation**:: 7%","ledger":[{"claim_id":"c1","status":"pending","destination_path":"zettelkasten/economy.md","reason":"not enough evidence to merge"}],"notes":"pending"}`,
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "inbox-to-merge",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.PendingCount != 1 || resp.ProcessedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want pending run", resp)
+	}
+
+	writeTestFile(t, destinationPath, "- **Inflation**:: manual edit after pending run\n")
+	if _, err := service.Rollback(context.Background(), RollbackRequest{Options: options, JobID: resp.RunID}, nil); err != nil {
+		t.Fatalf("Rollback() error = %v", err)
+	}
+	if got := readTestFile(t, destinationPath); got != "- **Inflation**:: manual edit after pending run\n" {
+		t.Fatalf("rollback changed unapplied pending destination = %q", got)
+	}
+	if got := readTestFile(t, sourcePath); got != "Inflation rose to 7%, but routing is uncertain.\n" {
+		t.Fatalf("pending source changed = %q", got)
 	}
 }
 
@@ -213,4 +322,31 @@ func TestServiceInboxMergeFailsFastWhenEmbeddingProviderUnavailable(t *testing.T
 	if resp.SelectedCount != 1 || resp.FailedCount != 0 {
 		t.Fatalf("InboxMerge() response = %#v, want selected count without per-note failure", resp)
 	}
+}
+
+func TestMergeJudgePassedRequiresNoMissingFactsOrUnsupportedAdditions(t *testing.T) {
+	t.Parallel()
+
+	if !mergeJudgePassed(MergeJudge{Verdict: "pass", Score: 1}, 0.98) {
+		t.Fatal("mergeJudgePassed() rejected clean passing judge")
+	}
+	if mergeJudgePassed(MergeJudge{Verdict: "pass", Score: 1, MissingFacts: []string{"missing"}}, 0.98) {
+		t.Fatal("mergeJudgePassed() accepted judge with missing facts")
+	}
+	if mergeJudgePassed(MergeJudge{Verdict: "pass", Score: 1, UnsupportedAdditions: []string{"extra"}}, 0.98) {
+		t.Fatal("mergeJudgePassed() accepted judge with unsupported additions")
+	}
+}
+
+func readInboxRunManifest(t *testing.T, archivePath string) inboxRunManifest {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(archivePath, "manifest.json"))
+	if err != nil {
+		t.Fatalf("read inbox manifest: %v", err)
+	}
+	var manifest inboxRunManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("parse inbox manifest: %v", err)
+	}
+	return manifest
 }
