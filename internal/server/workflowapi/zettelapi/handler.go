@@ -8,7 +8,7 @@ import (
 
 	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/server/workflowapi/core"
-	"github.com/bhickta/aicli/internal/workflow/zettel"
+	zettel "github.com/bhickta/aicli/internal/workflow/zettel/api"
 )
 
 type Handler struct {
