@@ -369,8 +369,9 @@ func destinationActionIndex(lines []string, actionType string, action inboxDesti
 
 func destinationAnchorIndex(lines []string, action inboxDestinationAction) (int, string) {
 	anchor := strings.TrimRight(action.Anchor, "\n")
-	if action.LineNumber > 0 {
-		index := action.LineNumber - 1
+	lineNumber := int(action.LineNumber)
+	if lineNumber > 0 {
+		index := lineNumber - 1
 		if index < 0 || index >= len(lines) {
 			return 0, "destination action line number outside destination"
 		}

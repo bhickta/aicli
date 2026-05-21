@@ -2,6 +2,7 @@ package inbox
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"github.com/bhickta/aicli/internal/provider"
@@ -26,13 +27,47 @@ type inboxDestinationAssignment struct {
 }
 
 type inboxDestinationAction struct {
-	ClaimID    string   `json:"claim_id,omitempty"`
-	Type       string   `json:"type"`
-	Anchor     string   `json:"anchor,omitempty"`
-	LineNumber int      `json:"line_number,omitempty"`
-	Line       string   `json:"line,omitempty"`
-	Lines      []string `json:"lines,omitempty"`
-	Reason     string   `json:"reason,omitempty"`
+	ClaimID    string             `json:"claim_id,omitempty"`
+	Type       string             `json:"type"`
+	Anchor     string             `json:"anchor,omitempty"`
+	LineNumber flexibleLineNumber `json:"line_number,omitempty"`
+	Line       string             `json:"line,omitempty"`
+	Lines      []string           `json:"lines,omitempty"`
+	Reason     string             `json:"reason,omitempty"`
+}
+
+type flexibleLineNumber int
+
+func (n *flexibleLineNumber) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" || raw == "null" {
+		*n = 0
+		return nil
+	}
+	if strings.HasPrefix(raw, `"`) {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*n = flexibleLineNumber(parseFlexibleLineNumber(value))
+		return nil
+	}
+	*n = flexibleLineNumber(parseFlexibleLineNumber(raw))
+	return nil
+}
+
+func parseFlexibleLineNumber(value string) int {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+		return parsed
+	}
+	if parsed, err := strconv.ParseFloat(value, 64); err == nil && parsed > 0 {
+		return int(parsed)
+	}
+	return 0
 }
 
 func inboxDecisionMessages(sourcePath string, sourceContent string, candidates []scoredCandidate, options Options, shorthandPrompt string) []provider.Message {
