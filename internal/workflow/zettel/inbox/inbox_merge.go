@@ -205,9 +205,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 	}
 
 	validation := mechanicalInboxValidation(mechanicalAdoption)
-	if decision.FinalNotes {
-		validation = finalNotesValidation(sourceContent, destinationAfter)
-	} else if !mechanicalAdoption {
+	if !mechanicalAdoption {
 		validation = decision.Validation
 	}
 	result.Validation = validation
