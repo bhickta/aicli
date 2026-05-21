@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -128,6 +129,84 @@ func TestServiceInboxMergeProcessesExactDuplicateWithoutProviders(t *testing.T) 
 	manifest := readInboxRunManifest(t, resp.ArchivePath)
 	if manifest.Status != "completed" || manifest.ProcessedCount != 1 || manifest.PendingCount != 0 || manifest.FailedCount != 0 {
 		t.Fatalf("manifest = %#v, want completed exact duplicate run", manifest)
+	}
+}
+
+func TestServiceInboxMergeAcceptsConceptLevelEconomicsMerge(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "Economics Definition.md")
+	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "002_Conceptual_Clarity.md")
+	writeTestFile(t, destinationPath, strings.Join([]string{
+		"---",
+		"Status: Read",
+		"---",
+		"- **Economics (Etymology)**: Oikos (Household) + Nomos (Management).",
+		"- **Economics (Definition)**: Household management using limited resources to satisfy unlimited wants.",
+		"",
+	}, "\n"))
+	writeTestFile(t, sourcePath, strings.Join([]string{
+		"---",
+		"Status: Read",
+		"---",
+		"- **Subject Nature**: Economics = technical + conceptual. Rote learning fails in UPSC.",
+		"  - **Example**: 2022 Mains statement \"Economic growth led by labor productivity\" -> answer = Jobless Growth.",
+		"- **Conceptual Clarity**: Understanding roots > memorizing definitions.",
+		"  - **Roots**: Anthrop=man, Phil/Phile=love, Mis=hate, Ology=study, Ped=child, Gyne=woman.",
+		"",
+	}, "\n"))
+
+	finalMarkdown := strings.Join([]string{
+		"---",
+		"Status: Read",
+		"---",
+		"- **Economics (Etymology)**: Oikos (Household) + Nomos (Management).",
+		"- **Economics (Definition)**: Household management using limited resources to satisfy unlimited wants.",
+		"  - **Preparation Lens**: Economics = technical + conceptual; rote learning fails, so roots/logic > memorized definitions.",
+		"  - **Example**: 2022 Mains statement \"Economic growth led by labor productivity\" -> answer = Jobless Growth.",
+		"  - **Root Examples**: Anthrop=man, Phil/Phile=love, Mis=hate, Ology=study, Ped=child, Gyne=woman.",
+		"",
+	}, "\n")
+	provider := &fakeZettelProvider{chatResponses: []string{
+		`{"claims":[{"id":"concept-1","text":"Economics definition and conceptual clarity: technical+conceptual nature, rote learning fails, 2022 Jobless Growth example, and root-word method.","source":"whole source note"}],"destinations":[{"path":"zettelkasten/Economics Definition.md","confidence":0.99,"final_markdown":` + strconv.Quote(finalMarkdown) + `,"ledger":[{"claim_id":"concept-1","status":"merged","destination_path":"zettelkasten/Economics Definition.md","evidence":"Preparation Lens, Example, and Root Examples bullets","reason":"same overall Economics definition/conceptual clarity note"}],"reason":"same economics definition concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"concept represented"},"notes":"merged as one concept unit"}`,
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "in",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want concept-level processed note", resp)
+	}
+	processed := resp.Processed[0]
+	if processed.MergedCount != 1 || len(processed.Claims) != 1 {
+		t.Fatalf("processed result = %#v, want one merged concept unit", processed)
+	}
+	systemPrompt := provider.chatCalls[0].Messages[0].Content
+	if !strings.Contains(systemPrompt, "Extract coherent concept units") || !strings.Contains(systemPrompt, "line-by-line atomic fragments") {
+		t.Fatalf("system prompt does not pin concept-level extraction: %s", systemPrompt)
+	}
+	if got := readTestFile(t, destinationPath); !strings.Contains(got, "Economics = technical + conceptual") || !strings.Contains(got, "Jobless Growth") {
+		t.Fatalf("destination content = %q, want economics concept details merged", got)
 	}
 }
 
