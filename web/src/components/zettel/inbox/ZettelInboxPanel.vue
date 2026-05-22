@@ -11,6 +11,9 @@ const props = defineProps<{
   inboxFolder: string;
   rootFolder: string;
   inboxLimit: number;
+  inboxWorkers: number;
+  inboxRandom: boolean;
+  inboxWorkerOptions: number[];
   busy: boolean;
   canRun: boolean;
   canUseFolders: boolean;
@@ -22,16 +25,28 @@ const emit = defineEmits<{
   buildIndex: [];
   pickFolder: [field: ZettelFolderField, label: string];
   updateInboxLimit: [value: number];
+  updateInboxWorkers: [value: number];
+  updateInboxRandom: [value: boolean];
 }>();
 
 const limitModel = computed({
   get: () => props.inboxLimit,
   set: (value: number) => emit("updateInboxLimit", value),
 });
+
+const workersModel = computed({
+  get: () => props.inboxWorkers,
+  set: (value: number) => emit("updateInboxWorkers", value),
+});
+
+const randomModel = computed({
+  get: () => props.inboxRandom,
+  set: (value: boolean) => emit("updateInboxRandom", value),
+});
 </script>
 
 <template>
-  <ZettelSection title="Inbox merge" description="Embed source notes, find semantic matches, judge targets, merge final notes, then validate before writing.">
+  <ZettelSection title="Inbox merge" description="Embed source notes, find semantic matches, and ask AI for final merged notes.">
     <template #actions>
       <button type="button" class="mod-cta" :disabled="!canRun" @click="emit('run')">Run Inbox Merge</button>
     </template>
@@ -53,7 +68,20 @@ const limitModel = computed({
       />
     </div>
 
-    <ZettelRunSizeControl v-model="limitModel" :disabled="busy" />
+    <div class="zettel-run-grid">
+      <ZettelRunSizeControl v-model="limitModel" :disabled="busy" />
+      <div class="field">
+        <label for="zettel-inbox-workers">Parallel calls</label>
+        <select id="zettel-inbox-workers" v-model.number="workersModel" :disabled="busy">
+          <option v-for="value in inboxWorkerOptions" :key="value" :value="value">{{ value }} at once</option>
+        </select>
+        <small>AI calls run in parallel; file writes stay serialized.</small>
+      </div>
+      <label class="zettel-checkbox">
+        <input v-model="randomModel" type="checkbox" :disabled="busy">
+        Random notes
+      </label>
+    </div>
 
     <div class="zettel-inline-actions">
       <button type="button" :disabled="busy" @click="emit('buildIndex')">Build Index</button>
@@ -81,8 +109,32 @@ const limitModel = computed({
   text-align: center;
 }
 
+.zettel-run-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(180px, 240px) minmax(140px, auto);
+  gap: 12px;
+  align-items: end;
+}
+
+.zettel-run-grid small {
+  color: #9aa4b2;
+}
+
+.zettel-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+}
+
 .mod-cta {
   border-color: #6ea8fe;
   background: #2d405e;
+}
+
+@media (max-width: 760px) {
+  .zettel-run-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

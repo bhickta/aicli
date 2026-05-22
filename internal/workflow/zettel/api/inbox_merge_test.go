@@ -285,6 +285,39 @@ func TestServiceInboxMergeRespectsInboxLimit(t *testing.T) {
 	}
 }
 
+func TestServiceInboxMergeRunsSelectedNotesWithParallelWorkers(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "seed.md"), "- **Seed**: candidate.\n")
+	for _, name := range []string{"a.md", "b.md", "c.md"} {
+		writeTestFile(t, filepath.Join(vaultDir, "in", name), "- **Source**: "+name+".\n")
+	}
+
+	provider := &fakeZettelProvider{chatResponse: "PENDING: test run\n"}
+	service := NewWithProviders(provider, provider)
+	options := inboxMergeTestOptions(vaultDir, "in")
+	options.InboxWorkers = 3
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.SelectedCount != 3 || resp.PendingCount != 3 || resp.ProcessedCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want three pending notes processed by worker pool", resp)
+	}
+	if len(provider.chatCalls) != 3 {
+		t.Fatalf("chat calls = %d, want one call per selected note", len(provider.chatCalls))
+	}
+	manifest := readInboxRunManifest(t, resp.ArchivePath)
+	if len(manifest.Items) != 3 {
+		t.Fatalf("manifest items = %d, want all parallel results archived", len(manifest.Items))
+	}
+}
+
 func TestServiceInboxMergeFailsFastWhenEmbeddingProviderUnavailable(t *testing.T) {
 	t.Parallel()
 

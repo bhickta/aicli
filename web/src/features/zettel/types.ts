@@ -7,6 +7,8 @@ export interface ZettelConfig {
   rootFolder: string;
   inboxFolder: string;
   inboxLimit: number;
+  inboxWorkers: number;
+  inboxRandom: boolean;
   dataFolder: string;
   shorthandPromptPath: string;
   mergeProviderId: string;

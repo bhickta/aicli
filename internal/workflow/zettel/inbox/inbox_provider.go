@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 
 	"github.com/bhickta/aicli/internal/provider"
 	archivepkg "github.com/bhickta/aicli/internal/workflow/zettel/archive"
@@ -18,6 +19,7 @@ func (r Runner) buildInboxFinalNotes(
 	candidates []scoredCandidate,
 	options Options,
 	shorthandPrompt string,
+	archiveMu *sync.Mutex,
 ) (inboxDestinationDecision, error) {
 	if len(candidates) == 0 {
 		return inboxDestinationDecision{}, errors.New("no semantic destination candidates found")
@@ -46,6 +48,10 @@ func (r Runner) buildInboxFinalNotes(
 		} else {
 			parsedFormat = "invalid-final-notes"
 		}
+	}
+	if archiveMu != nil {
+		archiveMu.Lock()
+		defer archiveMu.Unlock()
 	}
 	if traceErr := writeInboxLLMExchange(archive, runID, "merge-final-notes", sourcePath, r.mergeProvider, model, req, res, err, parsedFormat); traceErr != nil {
 		if err != nil {

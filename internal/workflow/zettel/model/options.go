@@ -9,6 +9,7 @@ const (
 	DefaultMaxMergeInputChars   = 120000
 	DefaultEmbeddingBatchSize   = 128
 	DefaultEmbeddingWorkers     = 4
+	DefaultInboxWorkers         = 1
 	DefaultInboxFolder          = "inbox-to-merge"
 	DefaultShorthandPromptPath  = "example_prompts.md"
 )
@@ -29,5 +30,7 @@ type Options struct {
 	EmbeddingWorkers     int    `json:"embedding_workers"`
 	InboxFolder          string `json:"inbox_folder"`
 	InboxLimit           int    `json:"inbox_limit"`
+	InboxWorkers         int    `json:"inbox_workers"`
+	InboxRandom          bool   `json:"inbox_random"`
 	ShorthandPromptPath  string `json:"shorthand_prompt_path"`
 }

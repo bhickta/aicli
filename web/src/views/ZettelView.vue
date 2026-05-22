@@ -18,6 +18,7 @@ const {
   promptOptions,
   embeddingBatchSizeOptions,
   embeddingWorkerOptions,
+  inboxWorkerOptions,
   canRunInboxMerge,
   canUseVaultFolders,
   rawResultSummary,
@@ -38,7 +39,7 @@ const {
     <div class="zettel-title-row">
       <div>
         <h2>Zettelkasten</h2>
-        <p class="muted">Simple inbox flow: embed, find semantic matches, judge targets, merge final notes, then validate before writing.</p>
+        <p class="muted">Simple inbox flow: embed, find semantic matches, then ask AI for final merged notes.</p>
       </div>
       <ZettelWorkflowTabs v-model="mode" />
     </div>
@@ -50,6 +51,9 @@ const {
       :inbox-folder="config.inboxFolder"
       :root-folder="config.rootFolder"
       :inbox-limit="config.inboxLimit"
+      :inbox-workers="config.inboxWorkers"
+      :inbox-random="config.inboxRandom"
+      :inbox-worker-options="inboxWorkerOptions"
       :busy="busy"
       :can-run="canRunInboxMerge"
       :can-use-folders="canUseVaultFolders"
@@ -58,6 +62,8 @@ const {
       @build-index="buildIndex"
       @pick-folder="pickZettelFolder"
       @update-inbox-limit="updateConfig('inboxLimit', $event)"
+      @update-inbox-workers="updateConfig('inboxWorkers', $event)"
+      @update-inbox-random="updateConfig('inboxRandom', $event)"
     />
 
     <ZettelSettingsPanel

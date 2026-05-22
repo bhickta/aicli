@@ -13,6 +13,8 @@ const DEFAULT_SETTINGS = {
   candidateLimit: 12,
   embeddingBatchSize: 128,
   embeddingWorkers: 4,
+  inboxWorkers: 1,
+  inboxRandom: false,
   shorthandPromptPath: "example_prompts.md"
 };
 
@@ -90,7 +92,9 @@ module.exports = class AICLIZettelMergePlugin extends Plugin {
       embedding_model: this.settings.embeddingModel,
       candidate_limit: Number(this.settings.candidateLimit) || DEFAULT_SETTINGS.candidateLimit,
       embedding_batch_size: Number(this.settings.embeddingBatchSize) || DEFAULT_SETTINGS.embeddingBatchSize,
-      embedding_workers: Number(this.settings.embeddingWorkers) || DEFAULT_SETTINGS.embeddingWorkers
+      embedding_workers: Number(this.settings.embeddingWorkers) || DEFAULT_SETTINGS.embeddingWorkers,
+      inbox_workers: Number(this.settings.inboxWorkers) || DEFAULT_SETTINGS.inboxWorkers,
+      inbox_random: Boolean(this.settings.inboxRandom)
     };
   }
 
@@ -159,6 +163,8 @@ class AICLIZettelMergeSettingTab extends PluginSettingTab {
     this.text("Embedding provider ID", "AICLI provider id used for note similarity embeddings.", "embeddingProviderId");
     this.text("Embedding model", "Model used for semantic search.", "embeddingModel");
     this.number("Candidate limit", "Number of semantic matches sent to the merge model.", "candidateLimit");
+    this.number("Parallel inbox calls", "Number of inbox notes to merge at once.", "inboxWorkers");
+    this.toggle("Random inbox notes", "Pick random inbox notes when using a run limit.", "inboxRandom");
     this.number("Embedding batch size", "Notes per embedding batch while building the index.", "embeddingBatchSize");
     this.number("Embedding workers", "Parallel embedding workers while building the index.", "embeddingWorkers");
     this.text("Prompt file", "Vault-relative prompt style file, or builtin.", "shorthandPromptPath");
@@ -184,6 +190,18 @@ class AICLIZettelMergeSettingTab extends PluginSettingTab {
         .setValue(String(this.plugin.settings[key] ?? ""))
         .onChange(async (value) => {
           this.plugin.settings[key] = Number(value);
+          await this.plugin.saveSettings();
+        }));
+  }
+
+  toggle(name, desc, key) {
+    new Setting(this.containerEl)
+      .setName(name)
+      .setDesc(desc)
+      .addToggle((toggle) => toggle
+        .setValue(Boolean(this.plugin.settings[key]))
+        .onChange(async (value) => {
+          this.plugin.settings[key] = value;
           await this.plugin.saveSettings();
         }));
   }

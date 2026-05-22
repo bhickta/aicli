@@ -91,6 +91,8 @@ The inbox merge engine lives in `aicli`, not Obsidian. The runtime flow is inten
 2. Find semantically similar destination notes from the zettelkasten index.
 3. Ask the merge model to return complete final atomic destination notes for those candidates.
 
+Use `Run size` to limit a test run, `Random notes` to sample from the inbox instead of always taking the first sorted notes, and `Parallel calls` to run multiple AI merge calls at once. Destination writes are still serialized so parallel runs do not overwrite each other.
+
 1. Start `aicli`.
 2. Open `http://127.0.0.1:8765`.
 3. Open the `Zettel` tab.

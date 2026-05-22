@@ -77,6 +77,43 @@ func parseBeginNoteLine(line string) (string, bool) {
 	return path, true
 }
 
+func pendingInboxDecision(sourcePath string, reason string) inboxDestinationDecision {
+	return inboxDestinationDecision{
+		Claims: []InboxClaim{{
+			ID:     finalNoteClaimID,
+			Text:   "Full source note must be represented losslessly in final destination note(s).",
+			Source: sourcePath,
+		}},
+		Pending: []InboxClaimLedger{{
+			ClaimID: finalNoteClaimID,
+			Status:  claimStatusPending,
+			Reason:  reason,
+		}},
+	}
+}
+
+func ensureInboxDestinationsCurrent(v vault, options Options, decision inboxDestinationDecision, candidates []scoredCandidate) error {
+	candidateContent := make(map[string]string, len(candidates))
+	for _, candidate := range candidates {
+		candidateContent[candidate.Path] = candidate.Content
+	}
+	for _, destination := range decision.Destinations {
+		path := strings.TrimSpace(destination.Path)
+		before, ok := candidateContent[path]
+		if !ok {
+			continue
+		}
+		current, err := readDestinationNote(v, options, path)
+		if err != nil {
+			return err
+		}
+		if current != before {
+			return fmt.Errorf("destination changed during parallel run: %s; retry this source", path)
+		}
+	}
+	return nil
+}
+
 func synthesizeFinalNoteLedger(path string, changed bool) InboxClaimLedger {
 	status := claimStatusMerged
 	reason := "final note preserves source and destination facts"
