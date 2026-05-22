@@ -94,11 +94,10 @@ func (idx *Index) save(cache embeddingCache) error {
 }
 
 func (idx *Index) cachePath(legacy bool) (string, error) {
-	dataFolder := idx.options.DataFolder
 	if legacy {
-		dataFolder = ".zettel-merge-ai"
+		return idx.vault.Abs(filepath.Join(".zettel-merge-ai", "index", "embeddings.json"))
 	}
-	return idx.vault.Abs(filepath.Join(dataFolder, "index", "embeddings.json"))
+	return idx.vault.DataPath(idx.options, "index", "embeddings.json")
 }
 
 func (idx *Index) embed(ctx context.Context, inputs []string) ([][]float64, error) {
