@@ -31,7 +31,7 @@ const limitModel = computed({
 </script>
 
 <template>
-  <ZettelSection title="Inbox merge" description="Embed source notes, find semantic matches, then let one AI merge call write final atomic notes.">
+  <ZettelSection title="Inbox merge" description="Embed source notes, find semantic matches, judge targets, merge final notes, then validate before writing.">
     <template #actions>
       <button type="button" class="mod-cta" :disabled="!canRun" @click="emit('run')">Run Inbox Merge</button>
     </template>

@@ -38,7 +38,7 @@ const {
     <div class="zettel-title-row">
       <div>
         <h2>Zettelkasten</h2>
-        <p class="muted">Simple inbox flow: embed, find semantic matches, then one AI merge call writes final notes.</p>
+        <p class="muted">Simple inbox flow: embed, find semantic matches, judge targets, merge final notes, then validate before writing.</p>
       </div>
       <ZettelWorkflowTabs v-model="mode" />
     </div>

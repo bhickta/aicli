@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	progressmodel "github.com/bhickta/aicli/internal/progress"
@@ -112,7 +113,9 @@ func (r Runner) InboxMerge(ctx context.Context, req InboxMergeRequest, progress 
 }
 
 func (r Runner) processInboxSource(ctx context.Context, v vault, archive archivepkg.Store, runID string, options Options, sourcePath string, shorthandPrompt string, progress ProgressFunc) (InboxSourceResult, error) {
-	reportInboxStage(progress, sourcePath, "checking exact duplicates", 0, 6)
+	const totalStages = 8
+
+	reportInboxStage(progress, sourcePath, "checking exact duplicates", 0, totalStages)
 	sourceAbs, err := v.Abs(sourcePath)
 	if err != nil {
 		return InboxSourceResult{}, err
@@ -129,27 +132,55 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		return processExactDuplicateInboxSource(v, archive, runID, options, sourcePath, sourceContent, destinationPath)
 	}
 
-	reportInboxStage(progress, sourcePath, "embedding source and finding candidates", 1, 6)
+	reportInboxStage(progress, sourcePath, "embedding source and finding candidates", 1, totalStages)
 	similar, err := indexer.New(v, options, r.embeddingProvider).Similar(ctx, sourcePath, sourceContent)
 	if err != nil {
 		return result, err
 	}
-	if options.AdoptUnmatchedInbox {
-		if adoptedPath, _, err := adoptInboxDestinationPath(v, options, sourcePath); err == nil {
-			similar = appendInboxCandidatePath(similar, adoptedPath)
-		}
-	}
-	reportInboxStage(progress, sourcePath, "building final destination notes", 2, 6)
-	decision, err := r.decideInboxSource(ctx, archive, runID, sourcePath, sourceContent, similar, options, shorthandPrompt)
+	adoptedPath, _, err := adoptInboxDestinationPath(v, options, sourcePath)
 	if err != nil {
 		return result, err
 	}
-	decision = constrainDecisionToCandidates(decision, similar)
+	similar = appendInboxCandidatePath(similar, adoptedPath)
+
+	reportInboxStage(progress, sourcePath, "judging destination notes", 2, totalStages)
+	judgement, err := r.judgeInboxDestinations(ctx, archive, runID, sourcePath, sourceContent, similar, options, shorthandPrompt)
+	if err != nil {
+		return result, err
+	}
+	selectedCandidates, rejectedTargets := selectJudgedCandidates(similar, judgement.Targets)
+	var decision inboxDestinationDecision
+	switch {
+	case judgement.PendingReason != "":
+		decision = pendingInboxDecision(sourcePath, judgement.PendingReason)
+	case len(selectedCandidates) == 0:
+		reason := "judge did not select a valid destination"
+		if len(rejectedTargets) > 0 {
+			reason = "judge selected destination outside semantic candidates: " + strings.Join(rejectedTargets, ", ")
+		}
+		decision = pendingInboxDecision(sourcePath, reason)
+	default:
+		reportInboxStage(progress, sourcePath, "merging final destination notes", 3, totalStages)
+		decision, err = r.buildInboxFinalNotes(ctx, archive, runID, sourcePath, sourceContent, selectedCandidates, options, shorthandPrompt)
+		if err != nil {
+			return result, err
+		}
+		decision = constrainDecisionToCandidates(decision, selectedCandidates)
+		if len(decision.Destinations) > 0 {
+			reportInboxStage(progress, sourcePath, "validating final destination notes", 4, totalStages)
+			if err := r.validateInboxFinalNotes(ctx, archive, runID, sourcePath, sourceContent, selectedCandidates, decision, options); err != nil {
+				decision = pendingInboxDecision(sourcePath, err.Error())
+			} else if err := validateInboxDecisionGuardrails(sourceContent, adoptedPath, decision); err != nil {
+				decision = pendingInboxDecision(sourcePath, err.Error())
+			}
+		}
+	}
 	claims := decision.Claims
 	result.Claims = claims
 	if len(claims) == 0 {
 		result.Status = inboxStatusPending
 		result.Reason = "no factual claims extracted"
+		reportInboxStage(progress, sourcePath, "archiving pending result", 5, totalStages)
 		if _, err := archive.WriteInboxItem(runID, result, sourceContent, nil, nil); err != nil {
 			return result, err
 		}
@@ -170,6 +201,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 	if result.MergedCount+result.DedupedCount == 0 {
 		result.Status = inboxStatusPending
 		result.Reason = firstPendingReason(ledger, "one or more claims could not be safely merged or deduped")
+		reportInboxStage(progress, sourcePath, "archiving pending result", 5, totalStages)
 		if _, err := archive.WriteInboxItem(runID, result, sourceContent, destinationBefore, destinationWrites); err != nil {
 			return result, err
 		}
@@ -181,11 +213,11 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		result.Status = inboxStatusPartial
 		result.Reason = "partial merge applied; unresolved claims preserved in pending folder: " + firstPendingReason(ledger, "one or more claims could not be safely merged or deduped")
 	}
-	reportInboxStage(progress, sourcePath, "archiving merge result", 3, 6)
+	reportInboxStage(progress, sourcePath, "archiving merge result", 5, totalStages)
 	if _, err := archive.WriteInboxItem(runID, result, sourceContent, destinationBefore, destinationWrites); err != nil {
 		return result, err
 	}
-	reportInboxStage(progress, sourcePath, "writing destination notes", 4, 6)
+	reportInboxStage(progress, sourcePath, "writing destination notes", 6, totalStages)
 	if err := writeDestinationNotes(v, options, destinationWrites); err != nil {
 		return result, err
 	}
@@ -193,7 +225,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 	if result.Status == inboxStatusPartial {
 		moveSource = moveInboxSourceToPending
 	}
-	reportInboxStage(progress, sourcePath, "moving source note", 5, 6)
+	reportInboxStage(progress, sourcePath, "moving source note", 7, totalStages)
 	processedPath, err := moveSource(v, options, sourcePath)
 	if err != nil {
 		return result, err

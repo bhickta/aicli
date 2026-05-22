@@ -89,7 +89,9 @@ The inbox merge engine lives in `aicli`, not Obsidian. The runtime flow is inten
 
 1. Embed the inbox source note.
 2. Find semantically similar destination notes from the zettelkasten index.
-3. Make one AI merge call that returns complete final atomic destination notes.
+3. Ask the merge model to judge the safest destination note paths.
+4. Ask the same model to return complete final atomic destination notes.
+5. Validate the proposed final notes before anything is written.
 
 1. Start `aicli`.
 2. Open `http://127.0.0.1:8765`.
@@ -110,13 +112,13 @@ For no-intervention source-note ingestion, put new atomic notes under the config
 <vault>/inbox-to-merge/**/*.md
 ```
 
-Then open the `Zettel` tab and click `Run Inbox Merge`. AICLI treats inbox notes as source notes and destination notes as the configured zettelkasten folder, excluding the inbox and `.aicli-zettel-merge`. For each source note it embeds the source, finds semantically similar destination notes, then asks the merge model to return complete atomic destination notes in `BEGIN_NOTE` / `END_NOTE` blocks. Fully processed sources move into `_processed/YYYY-MM-DD/`.
+Then open the `Zettel` tab and click `Run Inbox Merge`. AICLI treats inbox notes as source notes and destination notes as the configured zettelkasten folder, excluding the inbox and `.aicli-zettel-merge`. For each source note it embeds the source, finds semantically similar destination notes, judges the safest targets, asks the merge model to return complete atomic destination notes in `BEGIN_NOTE` / `END_NOTE` blocks, then validates the final notes before writing. Fully processed sources move into `_processed/YYYY-MM-DD/`.
 
-The run report shows source note -> destination note mappings, merged/deduped/pending counts, and diffs for the final notes returned by the model. If the model returns `PENDING`, the source note stays in place. Rollback with the inbox run id restores changed destination notes and moves processed source notes back.
+The run report shows source note -> destination note mappings, merged/deduped/pending counts, diffs, provider API calls, and the rollback id. If the model returns `PENDING` or validation fails, the source note stays in place. Rollback with the inbox run id restores changed destination notes and moves processed source notes back.
 
 ### Optional Obsidian workflow
 
-The plugin in `obsidian/aicli-zettel-merge` is a thin launcher over the same three-step inbox flow:
+The plugin in `obsidian/aicli-zettel-merge` is a thin launcher over the same inbox flow:
 
 1. Copy or symlink `obsidian/aicli-zettel-merge` into the vault plugin folder.
 2. Enable `AICLI Zettel Merge` in Obsidian.
