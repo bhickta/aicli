@@ -107,6 +107,8 @@ func inboxDecisionMessages(sourcePath string, sourceContent string, candidates [
 			"If no destination is safe, return: PENDING: <short reason>.",
 			"Each BEGIN_NOTE path must be one of the provided candidate paths.",
 			"Inside each note block, write the whole final note, not only the new lines.",
+			"Keep existing YAML frontmatter exactly. For a new note, include YAML frontmatter with Status: Read.",
+			"Use plain readable labels: `- **Label**: fact`. Never use `::`, snake_case, or underscore-separated headings.",
 			"Preserve every existing destination fact unless it is an exact duplicate of the source merge.",
 			"Preserve every useful source fact, number, qualifier, example, definition, and relationship.",
 			"Merge conceptually related source facts into the most appropriate final note.",

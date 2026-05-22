@@ -21,7 +21,8 @@ const fallbackShorthandPrompt = `**ROLE & GOAL**
 **OUTPUT FORMAT**
 * Use hyphen bullets.
 * Bold primary keyword/subject.
-* Use :: or -> to separate term from data.
+* Use a single colon after bold labels, or -> for causal/sequence relations.
+* Do not use double-colon labels or snake_case headings.
 * English only.`
 
 func LoadShorthandPrompt(options model.Options) string {

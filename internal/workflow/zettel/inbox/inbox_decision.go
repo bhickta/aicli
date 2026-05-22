@@ -97,7 +97,7 @@ func (a *inboxAppliedDecision) materializeFinalNoteDestination(v vault, options 
 		return nil
 	}
 	a.destinationBefore[path] = before
-	after := notetext.EnsureTrailingNewline(strings.Trim(destination.FinalNote, "\n"))
+	after := notetext.EnsureTrailingNewline(formatFinalNoteMarkdown(before, destination.FinalNote))
 	if strings.TrimSpace(after) == "" {
 		a.addDestinationPending(destination, claimSet, assigned, "final note was empty")
 		return nil

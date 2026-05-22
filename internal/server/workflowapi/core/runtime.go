@@ -13,6 +13,7 @@ import (
 type Dependencies struct {
 	Logger      *slog.Logger
 	Store       storage.Store
+	DataDir     string
 	Settings    func() config.Settings
 	ProviderFor func(id string) (provider.Provider, bool)
 }
@@ -20,6 +21,7 @@ type Dependencies struct {
 type Runtime struct {
 	logger      *slog.Logger
 	store       storage.Store
+	dataDir     string
 	settings    func() config.Settings
 	providerFor func(id string) (provider.Provider, bool)
 	cancelMu    sync.Mutex
@@ -30,6 +32,7 @@ func New(deps Dependencies) *Runtime {
 	return &Runtime{
 		logger:      deps.Logger,
 		store:       deps.Store,
+		dataDir:     deps.DataDir,
 		settings:    deps.Settings,
 		providerFor: deps.ProviderFor,
 		cancelers:   map[string]context.CancelFunc{},
@@ -38,6 +41,10 @@ func New(deps Dependencies) *Runtime {
 
 func (r *Runtime) Settings() config.Settings {
 	return r.settings()
+}
+
+func (r *Runtime) DataDir() string {
+	return r.dataDir
 }
 
 func (r *Runtime) ProviderFor(id string) (provider.Provider, bool) {

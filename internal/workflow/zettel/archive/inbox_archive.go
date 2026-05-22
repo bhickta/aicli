@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/workflow/zettel/model"
 )
 
@@ -30,6 +31,7 @@ type inboxRunManifest struct {
 	FailedCount    int                `json:"failed_count,omitempty"`
 	Limit          int                `json:"limit,omitempty"`
 	APICalls       model.APICallUsage `json:"api_calls,omitempty"`
+	LLMArchives    []string           `json:"llm_archives,omitempty"`
 	Items          []inboxArchiveItem `json:"items"`
 	RestoredAt     *time.Time         `json:"restored_at,omitempty"`
 }
@@ -54,11 +56,90 @@ type inboxArchiveDestination struct {
 	Created       bool   `json:"created,omitempty"`
 }
 
+type LLMExchange struct {
+	RunID        string                `json:"run_id"`
+	Workflow     string                `json:"workflow"`
+	Step         string                `json:"step"`
+	SourcePath   string                `json:"source_path,omitempty"`
+	ProviderID   string                `json:"provider_id,omitempty"`
+	Model        string                `json:"model,omitempty"`
+	CreatedAt    time.Time             `json:"created_at"`
+	Request      provider.ChatRequest  `json:"request"`
+	Response     provider.ChatResponse `json:"response"`
+	Error        string                `json:"error,omitempty"`
+	ParsedFormat string                `json:"parsed_format,omitempty"`
+}
+
 func (s Store) InboxRunPath(runID string) (string, error) {
 	if strings.TrimSpace(runID) == "" {
 		return "", errors.New("run id is required")
 	}
 	return s.vault.DataPath(s.options, "inbox-runs", sanitizeFileName(runID))
+}
+
+func (s Store) WriteInboxLLMExchange(runID string, exchange LLMExchange) (string, error) {
+	base, err := s.InboxRunPath(runID)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Join(base, "llm"), 0o755); err != nil {
+		return "", fmt.Errorf("create inbox llm archive folder: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(base, "training"), 0o755); err != nil {
+		return "", fmt.Errorf("create inbox training archive folder: %w", err)
+	}
+	now := time.Now().UTC()
+	exchange.RunID = runID
+	exchange.Workflow = "zettel-inbox-merge"
+	exchange.CreatedAt = now
+	if strings.TrimSpace(exchange.Step) == "" {
+		exchange.Step = "chat"
+	}
+	name := fmt.Sprintf(
+		"%s-%s-%s.json",
+		now.Format("20060102T150405.000000000Z"),
+		sanitizeFileName(strings.TrimSuffix(filepath.Base(exchange.SourcePath), ".md")),
+		sanitizeFileName(exchange.Step),
+	)
+	archivePath := filepath.Join("llm", name)
+	data, err := json.MarshalIndent(exchange, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal inbox llm exchange: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(base, archivePath), append(data, '\n'), 0o600); err != nil {
+		return "", fmt.Errorf("archive inbox llm exchange: %w", err)
+	}
+	if err := s.appendInboxTrainingExample(base, exchange); err != nil {
+		return "", err
+	}
+	manifest := s.readInboxManifestOrEmpty(runID)
+	if manifest.RunID == "" {
+		manifest.RunID = runID
+		manifest.CreatedAt = now
+		manifest.Status = "running"
+	}
+	manifest.LLMArchives = append(manifest.LLMArchives, archivePath)
+	if err := s.writeInboxManifest(base, manifest); err != nil {
+		return "", err
+	}
+	return archivePath, nil
+}
+
+func (s Store) appendInboxTrainingExample(base string, exchange LLMExchange) error {
+	path := filepath.Join(base, "training", "zettel-inbox-chat.jsonl")
+	data, err := json.Marshal(exchange)
+	if err != nil {
+		return fmt.Errorf("marshal inbox training example: %w", err)
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return fmt.Errorf("open inbox training examples: %w", err)
+	}
+	defer file.Close()
+	if _, err := file.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("write inbox training example: %w", err)
+	}
+	return nil
 }
 
 func (s Store) WriteInboxItem(runID string, result InboxSourceResult, sourceContent string, destinationBefore map[string]string, destinationAfter map[string]string) (string, error) {

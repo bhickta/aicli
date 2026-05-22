@@ -7,6 +7,7 @@ import (
 )
 
 func (s *Service) Suggest(ctx context.Context, req SuggestRequest, progress ProgressFunc) (SuggestResponse, error) {
+	req.Options = s.workflowOptions(req.Options)
 	tracker, candidateProvider, mergeProvider, validationProvider, embeddingProvider := s.trackedProviders()
 	response, err := manualpkg.New(
 		candidateProvider,
@@ -19,6 +20,7 @@ func (s *Service) Suggest(ctx context.Context, req SuggestRequest, progress Prog
 }
 
 func (s *Service) Propose(ctx context.Context, req ProposeRequest, progress ProgressFunc) (ProposeResponse, error) {
+	req.Options = s.workflowOptions(req.Options)
 	tracker, candidateProvider, mergeProvider, validationProvider, embeddingProvider := s.trackedProviders()
 	response, err := manualpkg.New(
 		candidateProvider,
@@ -32,10 +34,12 @@ func (s *Service) Propose(ctx context.Context, req ProposeRequest, progress Prog
 }
 
 func (s *Service) Apply(ctx context.Context, req ApplyRequest, progress ProgressFunc) (ApplyResponse, error) {
+	req.Options = s.workflowOptions(req.Options)
 	return s.manualRunner().Apply(ctx, req, progress)
 }
 
 func (s *Service) Rollback(ctx context.Context, req RollbackRequest, progress ProgressFunc) (RollbackResponse, error) {
+	req.Options = s.workflowOptions(req.Options)
 	return s.manualRunner().Rollback(ctx, req, progress)
 }
 

@@ -248,9 +248,23 @@ func TestServiceInboxMergeWritesFinalNoteEnvelope(t *testing.T) {
 	if processed.Validation.Verdict != "pass" || processed.Validation.Score != 1 {
 		t.Fatalf("validation = %#v, want mechanical final-note validation", processed.Validation)
 	}
-	want := "- **Economics**: Efficient use of scarce resources.\n- **Subject Nature**: Economics = technical + conceptual. Rote learning fails in UPSC.\n"
+	want := "---\nStatus: Read\n---\n- **Economics**: Efficient use of scarce resources.\n- **Subject Nature**: Economics = technical + conceptual. Rote learning fails in UPSC.\n"
 	if got := readTestFile(t, destinationPath); got != want {
 		t.Fatalf("destination = %q, want %q", got, want)
+	}
+	llmArchives, err := filepath.Glob(filepath.Join(resp.ArchivePath, "llm", "*.json"))
+	if err != nil {
+		t.Fatalf("glob llm archives: %v", err)
+	}
+	if len(llmArchives) != 1 {
+		t.Fatalf("llm archives = %v, want one saved request/response", llmArchives)
+	}
+	trainingData, err := os.ReadFile(filepath.Join(resp.ArchivePath, "training", "zettel-inbox-chat.jsonl"))
+	if err != nil {
+		t.Fatalf("read training jsonl: %v", err)
+	}
+	if !strings.Contains(string(trainingData), "Subject Nature") {
+		t.Fatalf("training jsonl = %q, want saved model response", string(trainingData))
 	}
 }
 

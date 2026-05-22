@@ -9,6 +9,7 @@ import (
 )
 
 func (s *Service) InboxMerge(ctx context.Context, req InboxMergeRequest, progress ProgressFunc) (InboxMergeResponse, error) {
+	req.Options = s.workflowOptions(req.Options)
 	tracker, _, mergeProvider, _, embeddingProvider := s.trackedProviders()
 	response, err := inboxpkg.New(
 		mergeProvider,
@@ -16,7 +17,7 @@ func (s *Service) InboxMerge(ctx context.Context, req InboxMergeRequest, progres
 	).InboxMerge(ctx, req, progress)
 	response.APICalls = tracker.Snapshot()
 	if err == nil && response.RunID != "" {
-		options := normalizeOptions(req.Options)
+		options := s.workflowOptions(req.Options)
 		v, vaultErr := vaultfs.New(options.VaultPath)
 		if vaultErr != nil {
 			return response, vaultErr

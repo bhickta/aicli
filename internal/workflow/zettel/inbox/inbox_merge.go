@@ -142,7 +142,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		}
 	}
 	reportInboxStage(progress, sourcePath, "building final destination notes", 2, 6)
-	decision, err := r.decideInboxSource(ctx, sourcePath, sourceContent, similar, options, shorthandPrompt)
+	decision, err := r.decideInboxSource(ctx, archive, runID, sourcePath, sourceContent, similar, options, shorthandPrompt)
 	if err != nil {
 		return result, err
 	}

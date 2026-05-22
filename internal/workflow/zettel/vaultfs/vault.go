@@ -69,6 +69,10 @@ func (v Vault) Rel(abs string) (string, error) {
 }
 
 func (v Vault) DataPath(options model.Options, parts ...string) (string, error) {
+	if filepath.IsAbs(options.DataFolder) {
+		all := append([]string{options.DataFolder}, parts...)
+		return filepath.Join(all...), nil
+	}
 	all := append([]string{options.DataFolder}, parts...)
 	return v.Abs(filepath.Join(all...))
 }

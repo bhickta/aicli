@@ -157,7 +157,12 @@ func (h *Handler) service(options zettel.Options) (*zettel.Service, error) {
 	if !ok {
 		return nil, errors.New("embedding provider not found")
 	}
-	return zettel.NewWithProviders(candidateProvider, mergeProvider, validationProvider, embeddingProvider), nil
+	return zettel.NewWithProviders(
+		candidateProvider,
+		mergeProvider,
+		validationProvider,
+		embeddingProvider,
+	).WithDataDir(h.runtime.DataDir()), nil
 }
 
 type embeddingProvider interface {

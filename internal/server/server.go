@@ -57,6 +57,7 @@ func (s *Server) routes() {
 	workflowapi.New(workflowapi.Dependencies{
 		Logger:      s.deps.Logger,
 		Store:       s.deps.Store,
+		DataDir:     s.deps.DataDir,
 		Settings:    func() config.Settings { return s.deps.Settings },
 		ProviderFor: s.providerFor,
 	}).Register(s.mux)

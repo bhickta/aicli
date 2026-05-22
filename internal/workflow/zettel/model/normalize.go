@@ -1,6 +1,9 @@
 package model
 
-import "strings"
+import (
+	"path/filepath"
+	"strings"
+)
 
 func NormalizeOptions(options Options) Options {
 	if strings.TrimSpace(options.RootFolder) == "" {
@@ -46,7 +49,10 @@ func NormalizeOptions(options Options) Options {
 		options.ShorthandPromptPath = DefaultShorthandPromptPath
 	}
 	options.RootFolder = strings.Trim(strings.TrimSpace(options.RootFolder), "/")
-	options.DataFolder = strings.Trim(strings.TrimSpace(options.DataFolder), "/")
+	options.DataFolder = strings.TrimSpace(options.DataFolder)
+	if !filepath.IsAbs(options.DataFolder) {
+		options.DataFolder = strings.Trim(options.DataFolder, "/")
+	}
 	options.InboxFolder = strings.Trim(strings.TrimSpace(options.InboxFolder), "/")
 	options.ShorthandPromptPath = strings.TrimSpace(options.ShorthandPromptPath)
 	options.VaultPath = strings.TrimSpace(options.VaultPath)
