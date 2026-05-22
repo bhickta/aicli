@@ -8,6 +8,8 @@ import (
 	"github.com/bhickta/aicli/internal/workflow/zettel/notetext"
 )
 
+const newDestinationPassthroughMarker = "[NEW EMPTY DESTINATION - SOURCE PASSTHROUGH REQUIRED]"
+
 type inboxDestinationDecision struct {
 	Claims       []InboxClaim                 `json:"claims,omitempty"`
 	Destinations []inboxDestinationAssignment `json:"destinations"`
@@ -89,6 +91,10 @@ func inboxMergeMessages(sourcePath string, sourceContent string, candidates []sc
 			"Each BEGIN_NOTE path must be one of the approved destination paths.",
 			"Inside each note block, write the whole final note, not only the new lines.",
 			"Keep existing YAML frontmatter exactly. For a new note, include YAML frontmatter with Status: Read.",
+			"If an approved destination contains `" + newDestinationPassthroughMarker + "`, it is a new adopted note.",
+			"For a new adopted note, output the SOURCE NOTE exactly for that BEGIN_NOTE path.",
+			"For a new adopted note, do not paraphrase, expand abbreviations, rename labels, change quotes, reflow lines, collapse lists, adjust indentation, or remove parenthetical wording.",
+			"For a new adopted note, only add YAML frontmatter if the source note has none.",
 			"Use plain readable labels: `- **Concept Label**: fact`. Never use `::`, snake_case, underscore-separated headings, or vague abbreviations.",
 			"Do not create generic labels such as `**Label**`, `**Topic**`, `**Heading**`, `**Title**`, or `**Note**`; write the real concept label.",
 			"Preserve every existing destination fact unless it is an exact duplicate of the source merge.",
@@ -137,6 +143,10 @@ func inboxValidationMessages(sourcePath string, sourceContent string, candidates
 			"Return exactly PASS or FAIL: <short reason>. Do not return JSON, bullets, or commentary.",
 			"PASS only if every useful source fact, number, qualifier, example, definition, and relationship is represented in the proposed final notes.",
 			"PASS only if every existing destination fact is preserved unless it is an exact duplicate.",
+			"If an approved destination before merge contains `" + newDestinationPassthroughMarker + "`, it is a new adopted note.",
+			"For a new adopted note, PASS only if the proposed final note preserves the SOURCE NOTE exactly: labels, quoted text, line breaks, indentation, abbreviations, parenthetical wording, and order.",
+			"For a new adopted note, FAIL if the source was paraphrased, expanded, compressed, reordered, reformatted, or collapsed into one long line.",
+			"For a new adopted note, adding YAML frontmatter is allowed only when the source note had none.",
 			"FAIL if a quoted phrase from the source is paraphrased or removed.",
 			"FAIL if contextual numbers are lost: years, percentages, rupee amounts, star ratings, marks, question references, hours, or stated counts.",
 			"Ignore markdown list numbering such as `1.` or `2.` when it is only formatting.",
@@ -156,7 +166,7 @@ func formatInboxCandidateNotes(candidates []scoredCandidate, options Options) st
 	for i, candidate := range candidates {
 		excerpt, _ := notetext.NumberedExcerpt(candidate.Path, candidate.Content, charLimit)
 		if strings.TrimSpace(candidate.Content) == "" {
-			excerpt = "PATH: " + candidate.Path + "\n[new empty destination allowed]"
+			excerpt = "PATH: " + candidate.Path + "\n" + newDestinationPassthroughMarker
 		}
 		candidateText = append(candidateText, strings.Join([]string{
 			fmt.Sprintf("CANDIDATE %d", i+1),
