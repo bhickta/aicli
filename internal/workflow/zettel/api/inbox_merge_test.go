@@ -20,7 +20,6 @@ func TestServiceInboxMergeWritesFinalNoteAndRollbackRestores(t *testing.T) {
 	writeTestFile(t, sourcePath, "Inflation rose to 7% due to oil prices.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		"TARGET zettelkasten/economy.md\n",
 		strings.Join([]string{
 			"BEGIN_NOTE zettelkasten/economy.md",
 			"- **Inflation**: 6%.",
@@ -28,7 +27,6 @@ func TestServiceInboxMergeWritesFinalNoteAndRollbackRestores(t *testing.T) {
 			"END_NOTE",
 			"",
 		}, "\n"),
-		"PASS\n",
 	}}
 	service := NewWithProviders(provider, provider)
 	options := inboxMergeTestOptions(vaultDir, "inbox-to-merge")
@@ -43,10 +41,10 @@ func TestServiceInboxMergeWritesFinalNoteAndRollbackRestores(t *testing.T) {
 	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
 		t.Fatalf("InboxMerge() = %#v, want one processed note", resp)
 	}
-	if len(provider.chatCalls) != 3 {
-		t.Fatalf("chat calls = %d, want judge, merge, and validation calls", len(provider.chatCalls))
+	if len(provider.chatCalls) != 1 {
+		t.Fatalf("chat calls = %d, want one AI merge call", len(provider.chatCalls))
 	}
-	systemPrompt := provider.chatCalls[1].Messages[0].Content
+	systemPrompt := provider.chatCalls[0].Messages[0].Content
 	if !strings.Contains(systemPrompt, "Return final destination notes only") || !strings.Contains(systemPrompt, "Do not return JSON") {
 		t.Fatalf("system prompt does not require final-note response: %s", systemPrompt)
 	}
@@ -63,8 +61,8 @@ func TestServiceInboxMergeWritesFinalNoteAndRollbackRestores(t *testing.T) {
 	if err != nil {
 		t.Fatalf("glob llm archives: %v", err)
 	}
-	if len(llmArchives) != 3 {
-		t.Fatalf("llm archives = %v, want saved judge, merge, and validation request/response", llmArchives)
+	if len(llmArchives) != 1 {
+		t.Fatalf("llm archives = %v, want saved merge request/response", llmArchives)
 	}
 
 	rollback, err := service.Rollback(context.Background(), RollbackRequest{Options: options}, nil)
@@ -128,7 +126,6 @@ func TestServiceInboxMergeWritesMultipleAtomicFinalNotes(t *testing.T) {
 	writeTestFile(t, sourcePath, "- **Microeconomics**: Microscope view.\n- **Macroeconomics**: Telescope view.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		"TARGET zettelkasten/microeconomics.md\nTARGET zettelkasten/macroeconomics.md\n",
 		strings.Join([]string{
 			"BEGIN_NOTE zettelkasten/microeconomics.md",
 			"- **Microeconomics**: Study of a firm or household.",
@@ -140,7 +137,6 @@ func TestServiceInboxMergeWritesMultipleAtomicFinalNotes(t *testing.T) {
 			"END_NOTE",
 			"",
 		}, "\n"),
-		"PASS\n",
 	}}
 	service := NewWithProviders(provider, provider)
 	options := inboxMergeTestOptions(vaultDir, "in")
@@ -160,7 +156,7 @@ func TestServiceInboxMergeWritesMultipleAtomicFinalNotes(t *testing.T) {
 	}
 }
 
-func TestServiceInboxMergeCanAdoptNewFinalNote(t *testing.T) {
+func TestServiceInboxMergeDoesNotAdoptNewFinalNote(t *testing.T) {
 	t.Parallel()
 
 	vaultDir := t.TempDir()
@@ -169,14 +165,12 @@ func TestServiceInboxMergeCanAdoptNewFinalNote(t *testing.T) {
 	writeTestFile(t, sourcePath, "- **Prelims Syllabus**: Poverty, inclusion, and demographics.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		"TARGET zettelkasten/Economy Shivin/003.md\n",
 		strings.Join([]string{
 			"BEGIN_NOTE zettelkasten/Economy Shivin/003.md",
 			"- **Prelims Syllabus**: Poverty, inclusion, and demographics.",
 			"END_NOTE",
 			"",
 		}, "\n"),
-		"PASS\n",
 	}}
 	service := NewWithProviders(provider, provider)
 	options := inboxMergeTestOptions(vaultDir, "in")
@@ -188,12 +182,12 @@ func TestServiceInboxMergeCanAdoptNewFinalNote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InboxMerge() error = %v", err)
 	}
-	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want adopted final-note merge", resp)
+	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want non-candidate new note kept pending", resp)
 	}
-	adoptedPath := filepath.Join(vaultDir, "zettelkasten", "Economy Shivin", "003.md")
-	if got := readTestFile(t, adoptedPath); !strings.Contains(got, "Poverty") || !strings.Contains(got, "demographics") {
-		t.Fatalf("adopted note = %q, want source facts", got)
+	newPath := filepath.Join(vaultDir, "zettelkasten", "Economy Shivin", "003.md")
+	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
+		t.Fatalf("new destination was created or stat error: %v", err)
 	}
 }
 
@@ -235,7 +229,6 @@ func TestServiceInboxMergeRejectsNonCandidateFinalNote(t *testing.T) {
 	writeTestFile(t, sourcePath, "Inflation rose to 7% due to oil prices.\n")
 
 	provider := &fakeZettelProvider{chatResponses: []string{
-		"TARGET zettelkasten/economy.md\n",
 		strings.Join([]string{
 			"BEGIN_NOTE zettelkasten/not-a-candidate.md",
 			"- **Inflation Spike**: 7% due to oil prices.",
@@ -261,134 +254,6 @@ func TestServiceInboxMergeRejectsNonCandidateFinalNote(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(vaultDir, "zettelkasten", "not-a-candidate.md")); !os.IsNotExist(err) {
 		t.Fatalf("non-candidate note was created or stat error: %v", err)
-	}
-}
-
-func TestServiceInboxMergeKeepsPendingWhenValidatorRejectsBadShorthand(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	destinationPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "syllabus.md")
-	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "syllabus.md")
-	writeTestFile(t, destinationPath, "- **Prelims Syllabus**: Poverty.\n")
-	writeTestFile(t, sourcePath, "- **Prelims Syllabus**: Sustainable Development and Social Sector Initiatives.\n")
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		"TARGET zettelkasten/Economy/syllabus.md\n",
-		strings.Join([]string{
-			"BEGIN_NOTE zettelkasten/Economy/syllabus.md",
-			"- **Prelims Syllabus**:: Poverty, Sust Dev, Social Sector Init.",
-			"END_NOTE",
-			"",
-		}, "\n"),
-		"FAIL: final note uses double-colon shorthand\n",
-	}}
-	service := NewWithProviders(provider, provider)
-	options := inboxMergeTestOptions(vaultDir, "in")
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want validator to keep source pending", resp)
-	}
-	if got := readTestFile(t, destinationPath); got != "- **Prelims Syllabus**: Poverty.\n" {
-		t.Fatalf("destination changed = %q, want unchanged", got)
-	}
-	if !strings.Contains(resp.Pending[0].Reason, "validation failed") {
-		t.Fatalf("pending reason = %q, want validator rejection", resp.Pending[0].Reason)
-	}
-}
-
-func TestServiceInboxMergeKeepsPendingWhenValidatorRejectsDuplicateFact(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	microPath := filepath.Join(vaultDir, "zettelkasten", "microeconomics.md")
-	macroPath := filepath.Join(vaultDir, "zettelkasten", "macroeconomics.md")
-	sourcePath := filepath.Join(vaultDir, "in", "economics.md")
-	longExample := "The AC market example states that high summer demand raises equilibrium prices when supply cannot immediately adjust."
-	writeTestFile(t, microPath, "- **Microeconomics**: Firm and household choices.\n")
-	writeTestFile(t, macroPath, "- **Macroeconomics**: Whole economy aggregates.\n")
-	writeTestFile(t, sourcePath, longExample+"\n")
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		"TARGET zettelkasten/microeconomics.md\nTARGET zettelkasten/macroeconomics.md\n",
-		strings.Join([]string{
-			"BEGIN_NOTE zettelkasten/microeconomics.md",
-			"- **Microeconomics**: Firm and household choices.",
-			"- **AC Market Example**: " + longExample,
-			"END_NOTE",
-			"BEGIN_NOTE zettelkasten/macroeconomics.md",
-			"- **Macroeconomics**: Whole economy aggregates.",
-			"- **AC Market Example**: " + longExample,
-			"END_NOTE",
-			"",
-		}, "\n"),
-		"FAIL: AC market example is duplicated across multiple final notes\n",
-	}}
-	service := NewWithProviders(provider, provider)
-	options := inboxMergeTestOptions(vaultDir, "in")
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want validator to keep source pending", resp)
-	}
-	if got := readTestFile(t, microPath); strings.Contains(got, "AC Market Example") {
-		t.Fatalf("micro destination changed = %q, want unchanged", got)
-	}
-	if got := readTestFile(t, macroPath); strings.Contains(got, "AC Market Example") {
-		t.Fatalf("macro destination changed = %q, want unchanged", got)
-	}
-}
-
-func TestServiceInboxMergeKeepsPendingWhenValidatorRejectsWrongDestination(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	economySeedPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "seed.md")
-	governancePath := filepath.Join(vaultDir, "zettelkasten", "Governance", "pyq.md")
-	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "008_economy_pyq.md")
-	writeTestFile(t, economySeedPath, "- **Economy**: seed.\n")
-	writeTestFile(t, governancePath, "- **Governance PYQ**: ethics and accountability.\n")
-	writeTestFile(t, sourcePath, "- **Economy PYQ**: 2022 growth question asked about jobless growth.\n")
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		"TARGET zettelkasten/Governance/pyq.md\n",
-		strings.Join([]string{
-			"BEGIN_NOTE zettelkasten/Governance/pyq.md",
-			"- **Governance PYQ**: ethics and accountability.",
-			"- **Economy PYQ**: 2022 growth question asked about jobless growth.",
-			"END_NOTE",
-			"",
-		}, "\n"),
-		"FAIL: destination is the wrong subject folder\n",
-	}}
-	service := NewWithProviders(provider, provider)
-	options := inboxMergeTestOptions(vaultDir, "in")
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want validator to keep source pending", resp)
-	}
-	if got := readTestFile(t, governancePath); strings.Contains(got, "Economy PYQ") {
-		t.Fatalf("governance destination changed = %q, want unchanged", got)
 	}
 }
 

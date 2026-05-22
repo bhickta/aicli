@@ -29,6 +29,5 @@ type Options struct {
 	EmbeddingWorkers     int    `json:"embedding_workers"`
 	InboxFolder          string `json:"inbox_folder"`
 	InboxLimit           int    `json:"inbox_limit"`
-	AdoptUnmatchedInbox  bool   `json:"adopt_unmatched_inbox"`
 	ShorthandPromptPath  string `json:"shorthand_prompt_path"`
 }

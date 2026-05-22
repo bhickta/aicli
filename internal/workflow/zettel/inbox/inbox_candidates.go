@@ -27,16 +27,3 @@ func constrainDecisionToCandidates(decision inboxDestinationDecision, candidates
 	}
 	return out
 }
-
-func appendInboxCandidatePath(candidates []scoredCandidate, path string) []scoredCandidate {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return candidates
-	}
-	for _, candidate := range candidates {
-		if candidate.Path == path {
-			return candidates
-		}
-	}
-	return append(candidates, scoredCandidate{Path: path, Similarity: 0})
-}

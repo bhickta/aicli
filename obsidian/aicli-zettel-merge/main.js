@@ -154,8 +154,8 @@ class AICLIZettelMergeSettingTab extends PluginSettingTab {
     this.text("Source inbox folder", "Vault-relative folder containing new atomic notes.", "inboxFolder");
     this.text("Destination notes folder", "Vault-relative zettelkasten folder receiving final notes.", "rootFolder");
     this.text("Data folder", "Vault-relative archive/cache folder used by aicli.", "dataFolder");
-    this.text("AI merge provider ID", "AICLI provider id for judge, merge, and validation calls.", "providerId");
-    this.text("AI merge model", "Model that judges targets, returns final notes, and validates them.", "mergeModel");
+    this.text("AI merge provider ID", "AICLI provider id for the final-note merge call.", "providerId");
+    this.text("AI merge model", "Model that chooses candidate targets and returns final notes.", "mergeModel");
     this.text("Embedding provider ID", "AICLI provider id used for note similarity embeddings.", "embeddingProviderId");
     this.text("Embedding model", "Model used for semantic search.", "embeddingModel");
     this.number("Candidate limit", "Number of semantic matches sent to the merge model.", "candidateLimit");

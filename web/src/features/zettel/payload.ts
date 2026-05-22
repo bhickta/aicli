@@ -7,7 +7,6 @@ export function buildZettelPayload(config: ZettelConfig) {
     root_folder: config.rootFolder,
     inbox_folder: config.inboxFolder,
     inbox_limit: readNumberValue(config.inboxLimit, 0, 0),
-    adopt_unmatched_inbox: config.adoptUnmatchedInbox,
     data_folder: config.dataFolder,
     shorthand_prompt_path: config.shorthandPromptPath,
     provider_id: config.mergeProviderId,
