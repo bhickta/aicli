@@ -24,6 +24,8 @@ const {
   thresholdOptions,
   validationThresholdOptions,
   promptOptions,
+  embeddingBatchSizeOptions,
+  embeddingWorkerOptions,
   canSuggest,
   canPreview,
   canApply,
@@ -104,6 +106,8 @@ const {
       :threshold-options="thresholdOptions"
       :validation-threshold-options="validationThresholdOptions"
       :prompt-options="promptOptions"
+      :embedding-batch-size-options="embeddingBatchSizeOptions"
+      :embedding-worker-options="embeddingWorkerOptions"
       @update-provider-settings="updateProviderSettings"
       @pick-folder="pickZettelFolder"
       @update-config="updateConfig"

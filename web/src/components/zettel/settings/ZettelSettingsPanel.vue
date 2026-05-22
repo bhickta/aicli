@@ -11,6 +11,8 @@ defineProps<{
   thresholdOptions: SelectOption<number>[];
   validationThresholdOptions: SelectOption<number>[];
   promptOptions: SelectOption<string>[];
+  embeddingBatchSizeOptions: number[];
+  embeddingWorkerOptions: number[];
 }>();
 
 const emit = defineEmits<{
@@ -75,6 +77,26 @@ const emit = defineEmits<{
               @change="emit('updateConfig', 'shorthandPromptPath', ($event.target as HTMLSelectElement).value)"
             >
               <option v-for="option in promptOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="zettel-embedding-batch-size">Embedding batch</label>
+            <select
+              id="zettel-embedding-batch-size"
+              :value="config.embeddingBatchSize"
+              @change="emit('updateConfig', 'embeddingBatchSize', Number(($event.target as HTMLSelectElement).value))"
+            >
+              <option v-for="value in embeddingBatchSizeOptions" :key="value" :value="value">{{ value }} notes</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="zettel-embedding-workers">Embedding workers</label>
+            <select
+              id="zettel-embedding-workers"
+              :value="config.embeddingWorkers"
+              @change="emit('updateConfig', 'embeddingWorkers', Number(($event.target as HTMLSelectElement).value))"
+            >
+              <option v-for="value in embeddingWorkerOptions" :key="value" :value="value">{{ value }} workers</option>
             </select>
           </div>
         </div>

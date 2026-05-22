@@ -45,6 +45,7 @@ type WorkerDefaults struct {
 	OCRWorkers              int `json:"ocr_workers"`
 	ZettelReadWorkers       int `json:"zettel_read_workers"`
 	EmbeddingBatchSize      int `json:"embedding_batch_size"`
+	EmbeddingWorkers        int `json:"embedding_workers"`
 }
 
 func Collect(ctx context.Context) Snapshot {

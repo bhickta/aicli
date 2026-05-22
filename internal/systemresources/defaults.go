@@ -12,7 +12,22 @@ func Defaults(snapshot Snapshot) WorkerDefaults {
 		PDFRenderWorkers:        DefaultPDFRenderWorkers(12, snapshot),
 		OCRWorkers:              DefaultOCRWorkers(12, snapshot),
 		ZettelReadWorkers:       DefaultZettelReadWorkers(snapshot),
-		EmbeddingBatchSize:      64,
+		EmbeddingBatchSize:      128,
+		EmbeddingWorkers:        DefaultEmbeddingWorkers(snapshot),
+	}
+}
+
+func DefaultEmbeddingWorkers(snapshot Snapshot) int {
+	freeVRAM := maxFreeVRAM(snapshot)
+	switch {
+	case freeVRAM >= 18000:
+		return 4
+	case freeVRAM >= 8000:
+		return 3
+	case freeVRAM >= 4000:
+		return 2
+	default:
+		return 2
 	}
 }
 

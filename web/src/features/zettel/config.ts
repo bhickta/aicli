@@ -16,6 +16,8 @@ export const promptOptions: SelectOption<string>[] = [
   { value: "example_prompts.md", label: "Extreme shorthand" },
   { value: "builtin", label: "Built-in fallback" },
 ];
+export const embeddingBatchSizeOptions = [64, 128, 256, 512];
+export const embeddingWorkerOptions = [1, 2, 3, 4, 6, 8];
 
 export function createZettelConfig(): ZettelConfig {
   const legacyProviderId = localStorage.getItem("aicli.zettel.providerId") || "lms";
@@ -40,6 +42,8 @@ export function createZettelConfig(): ZettelConfig {
     mergeModel: localStorage.getItem("aicli.zettel.mergeModel") || "deepseek-reasoner",
     validationModel: localStorage.getItem("aicli.zettel.validationModel") || legacyJudgeModel,
     embeddingModel: localStorage.getItem("aicli.zettel.embeddingModel") || "text-embedding-nomic-embed-text-v1.5",
+    embeddingBatchSize: Number(localStorage.getItem("aicli.zettel.embeddingBatchSize") || 128),
+    embeddingWorkers: Number(localStorage.getItem("aicli.zettel.embeddingWorkers") || 4),
     candidateLimit: Number(localStorage.getItem("aicli.zettel.candidateLimit") || 12),
     reviewThreshold: Number(localStorage.getItem("aicli.zettel.reviewThreshold") || 0.85),
     validationThreshold: Number(localStorage.getItem("aicli.zettel.validationThreshold") || 0.98),
@@ -70,6 +74,8 @@ export function persistZettelConfig(config: ZettelConfig) {
   localStorage.setItem("aicli.zettel.mergeModel", config.mergeModel);
   localStorage.setItem("aicli.zettel.validationModel", config.validationModel);
   localStorage.setItem("aicli.zettel.embeddingModel", config.embeddingModel);
+  localStorage.setItem("aicli.zettel.embeddingBatchSize", String(config.embeddingBatchSize));
+  localStorage.setItem("aicli.zettel.embeddingWorkers", String(config.embeddingWorkers));
   localStorage.setItem("aicli.zettel.candidateLimit", String(config.candidateLimit));
   localStorage.setItem("aicli.zettel.reviewThreshold", String(config.reviewThreshold));
   localStorage.setItem("aicli.zettel.validationThreshold", String(config.validationThreshold));

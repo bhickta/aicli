@@ -20,6 +20,8 @@ export function buildZettelPayload(config: ZettelConfig) {
     merge_model: config.mergeModel,
     validation_model: config.validationModel,
     embedding_model: config.embeddingModel,
+    embedding_batch_size: readNumberValue(config.embeddingBatchSize, 128, 1),
+    embedding_workers: readNumberValue(config.embeddingWorkers, 4, 1),
     candidate_limit: readNumberValue(config.candidateLimit, 12, 1),
     review_threshold: readNumberValue(config.reviewThreshold, 0.85, 0),
     validation_threshold: readNumberValue(config.validationThreshold, 0.98, 0),

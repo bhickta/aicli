@@ -5,6 +5,8 @@ import type { ApiCallUsage, InboxMergeReport } from "../types";
 import {
   candidateLimitOptions,
   createZettelConfig,
+  embeddingBatchSizeOptions,
+  embeddingWorkerOptions,
   persistZettelConfig,
   persistZettelMode,
   promptOptions,
@@ -251,6 +253,8 @@ export function useZettelWorkflow() {
     thresholdOptions,
     validationThresholdOptions,
     promptOptions,
+    embeddingBatchSizeOptions,
+    embeddingWorkerOptions,
     canSuggest,
     canPreview,
     canApply,

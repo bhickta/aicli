@@ -51,6 +51,7 @@ export interface SystemResources {
     ocr_workers: number;
     zettel_read_workers: number;
     embedding_batch_size: number;
+    embedding_workers: number;
   };
 }
 

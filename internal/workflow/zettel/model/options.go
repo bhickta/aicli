@@ -11,7 +11,8 @@ const (
 	DefaultCandidateJudgeChars  = 2500
 	DefaultMaxMergeInputChars   = 120000
 	DefaultMaxMergeRetries      = 2
-	DefaultEmbeddingBatchSize   = 64
+	DefaultEmbeddingBatchSize   = 128
+	DefaultEmbeddingWorkers     = 4
 	DefaultInboxFolder          = "inbox-to-merge"
 	DefaultShorthandPromptPath  = "example_prompts.md"
 )
@@ -38,6 +39,7 @@ type Options struct {
 	MaxMergeInputChars   int     `json:"max_merge_input_chars"`
 	MaxMergeRetries      int     `json:"max_merge_retries"`
 	EmbeddingBatchSize   int     `json:"embedding_batch_size"`
+	EmbeddingWorkers     int     `json:"embedding_workers"`
 	InboxFolder          string  `json:"inbox_folder"`
 	InboxLimit           int     `json:"inbox_limit"`
 	AdoptUnmatchedInbox  bool    `json:"adopt_unmatched_inbox"`

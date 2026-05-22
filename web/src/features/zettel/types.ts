@@ -50,6 +50,8 @@ export interface ZettelConfig {
   mergeModel: string;
   validationModel: string;
   embeddingModel: string;
+  embeddingBatchSize: number;
+  embeddingWorkers: number;
   candidateLimit: number;
   reviewThreshold: number;
   validationThreshold: number;

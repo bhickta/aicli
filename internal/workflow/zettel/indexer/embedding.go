@@ -49,6 +49,18 @@ type preparedEmbeddingSource struct {
 	err    error
 }
 
+type embeddingBatch struct {
+	inputs []string
+	paths  []string
+	hashes []string
+}
+
+type embeddingBatchResult struct {
+	batch   embeddingBatch
+	vectors [][]float64
+	err     error
+}
+
 type Index struct {
 	vault    vaultfs.Vault
 	options  Options
@@ -81,69 +93,158 @@ func (idx *Index) Build(ctx context.Context, progress ProgressFunc) (IndexRespon
 			pending++
 		}
 	}
-	batch := make([]string, 0, idx.options.EmbeddingBatchSize)
-	batchPaths := make([]string, 0, idx.options.EmbeddingBatchSize)
-	batchHashes := make([]string, 0, idx.options.EmbeddingBatchSize)
-	flushes := 0
-	flush := func(forceSave bool) error {
-		if len(batch) == 0 {
-			return nil
-		}
-		vectors, err := idx.embed(ctx, batch)
-		if err != nil {
-			return err
-		}
-		for i, path := range batchPaths {
-			cache.Items[path] = embeddingItem{
-				Hash:      batchHashes[i],
-				Embedding: vectors[i],
-				UpdatedAt: time.Now().UTC().Format(time.RFC3339),
-			}
-			resp.Updated++
-		}
-		batch = batch[:0]
-		batchPaths = batchPaths[:0]
-		batchHashes = batchHashes[:0]
-		flushes++
-		if forceSave || flushes%4 == 0 {
-			return idx.save(cache)
-		}
-		return nil
-	}
-	for i, item := range prepared {
-		if progress != nil && i%250 == 0 {
-			progress(progressmodel.Units(
-				fmt.Sprintf("indexing zettelkasten embeddings (%d/%d)", resp.Updated, pending),
-				resp.Updated,
-				pending,
-				"embedding",
-			))
-		}
-		if item.reused {
-			continue
-		}
-		batch = append(batch, item.source)
-		batchPaths = append(batchPaths, item.path)
-		batchHashes = append(batchHashes, item.hash)
-		if len(batch) >= idx.options.EmbeddingBatchSize {
-			if err := flush(false); err != nil {
-				return IndexResponse{}, err
-			}
-		}
-	}
-	if err := flush(true); err != nil {
+	batches := buildEmbeddingBatches(prepared, idx.options.EmbeddingBatchSize)
+	if err := idx.embedBatches(ctx, batches, &cache, &resp, pending, progress); err != nil {
 		return IndexResponse{}, err
 	}
 	cache.FullIndex = map[string]any{
-		"completed":   true,
-		"built_at":    time.Now().UTC().Format(time.RFC3339),
-		"root_folder": idx.options.RootFolder,
-		"file_count":  len(notes),
+		"completed":         true,
+		"built_at":          time.Now().UTC().Format(time.RFC3339),
+		"root_folder":       idx.options.RootFolder,
+		"file_count":        len(notes),
+		"embedding_batch":   idx.options.EmbeddingBatchSize,
+		"embedding_workers": idx.options.EmbeddingWorkers,
 	}
 	if err := idx.save(cache); err != nil {
 		return IndexResponse{}, err
 	}
 	return resp, nil
+}
+
+func buildEmbeddingBatches(prepared []preparedEmbeddingSource, batchSize int) []embeddingBatch {
+	if batchSize < 1 {
+		batchSize = model.DefaultEmbeddingBatchSize
+	}
+	batches := []embeddingBatch{}
+	current := embeddingBatch{
+		inputs: make([]string, 0, batchSize),
+		paths:  make([]string, 0, batchSize),
+		hashes: make([]string, 0, batchSize),
+	}
+	for _, item := range prepared {
+		if item.reused {
+			continue
+		}
+		current.inputs = append(current.inputs, item.source)
+		current.paths = append(current.paths, item.path)
+		current.hashes = append(current.hashes, item.hash)
+		if len(current.inputs) >= batchSize {
+			batches = append(batches, current)
+			current = embeddingBatch{
+				inputs: make([]string, 0, batchSize),
+				paths:  make([]string, 0, batchSize),
+				hashes: make([]string, 0, batchSize),
+			}
+		}
+	}
+	if len(current.inputs) > 0 {
+		batches = append(batches, current)
+	}
+	return batches
+}
+
+func (idx *Index) embedBatches(
+	ctx context.Context,
+	batches []embeddingBatch,
+	cache *embeddingCache,
+	resp *IndexResponse,
+	pending int,
+	progress ProgressFunc,
+) error {
+	if len(batches) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	workers := idx.embeddingWorkers(len(batches))
+	jobs := make(chan embeddingBatch)
+	results := make(chan embeddingBatchResult, len(batches))
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for batch := range jobs {
+				vectors, err := idx.embed(ctx, batch.inputs)
+				results <- embeddingBatchResult{
+					batch:   batch,
+					vectors: vectors,
+					err:     err,
+				}
+				if err != nil {
+					cancel()
+				}
+			}
+		}()
+	}
+	go func() {
+		defer close(jobs)
+		for _, batch := range batches {
+			select {
+			case <-ctx.Done():
+				return
+			case jobs <- batch:
+			}
+		}
+	}()
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	flushes := 0
+	for result := range results {
+		if result.err != nil {
+			return result.err
+		}
+		now := time.Now().UTC().Format(time.RFC3339)
+		for i, path := range result.batch.paths {
+			cache.Items[path] = embeddingItem{
+				Hash:      result.batch.hashes[i],
+				Embedding: result.vectors[i],
+				UpdatedAt: now,
+			}
+			resp.Updated++
+		}
+		flushes++
+		if progress != nil {
+			progress(progressmodel.Units(
+				fmt.Sprintf(
+					"indexing zettelkasten embeddings (%d/%d, %d workers)",
+					resp.Updated,
+					pending,
+					workers,
+				),
+				resp.Updated,
+				pending,
+				"embedding",
+			))
+		}
+		if flushes%4 == 0 {
+			if err := idx.save(*cache); err != nil {
+				return err
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (idx *Index) embeddingWorkers(batchCount int) int {
+	workers := idx.options.EmbeddingWorkers
+	if workers < 1 {
+		workers = model.DefaultEmbeddingWorkers
+	}
+	if workers > batchCount {
+		workers = batchCount
+	}
+	if workers < 1 {
+		return 1
+	}
+	return workers
 }
 
 func pruneMissingCacheItems(cache *embeddingCache, notes []string) int {

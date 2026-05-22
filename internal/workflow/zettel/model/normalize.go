@@ -39,6 +39,9 @@ func NormalizeOptions(options Options) Options {
 	if options.EmbeddingBatchSize <= 0 {
 		options.EmbeddingBatchSize = DefaultEmbeddingBatchSize
 	}
+	if options.EmbeddingWorkers <= 0 {
+		options.EmbeddingWorkers = DefaultEmbeddingWorkers
+	}
 	if strings.TrimSpace(options.InboxFolder) == "" {
 		options.InboxFolder = DefaultInboxFolder
 	}

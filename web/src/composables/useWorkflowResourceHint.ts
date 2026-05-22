@@ -13,7 +13,7 @@ export function useWorkflowResourceHint() {
       return `Auto workers: ${defaults.pdf_render_workers} render, ${defaults.ocr_workers} OCR`;
     }
     if (appState.workflow.category === "Zettel") {
-      return `Auto workers: ${defaults.zettel_read_workers} note readers`;
+      return `Auto workers: ${defaults.zettel_read_workers} readers, ${defaults.embedding_workers} embedding workers, batch ${defaults.embedding_batch_size}`;
     }
     return "";
   });

@@ -14,6 +14,7 @@ const (
 	DefaultMaxMergeInputChars   = model.DefaultMaxMergeInputChars
 	DefaultMaxMergeRetries      = model.DefaultMaxMergeRetries
 	DefaultEmbeddingBatchSize   = model.DefaultEmbeddingBatchSize
+	DefaultEmbeddingWorkers     = model.DefaultEmbeddingWorkers
 	DefaultInboxFolder          = model.DefaultInboxFolder
 	DefaultShorthandPromptPath  = model.DefaultShorthandPromptPath
 )

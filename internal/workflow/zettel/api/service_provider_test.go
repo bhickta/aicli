@@ -3,9 +3,12 @@ package zettel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/workflow/zettel/indexer"
@@ -13,13 +16,17 @@ import (
 )
 
 type fakeZettelProvider struct {
-	id             string
-	embeddingCalls int
-	embeddingErr   error
-	chatCalls      []provider.ChatRequest
-	chatResponse   string
-	chatResponses  []string
-	onChat         func(provider.ChatRequest)
+	mu              sync.Mutex
+	id              string
+	embeddingCalls  int
+	embeddingActive int
+	embeddingMax    int
+	embeddingDelay  time.Duration
+	embeddingErr    error
+	chatCalls       []provider.ChatRequest
+	chatResponse    string
+	chatResponses   []string
+	onChat          func(provider.ChatRequest)
 }
 
 func (f *fakeZettelProvider) ID() string {
@@ -36,6 +43,8 @@ func (f *fakeZettelProvider) ListModels(context.Context) ([]provider.Model, erro
 }
 
 func (f *fakeZettelProvider) Chat(_ context.Context, req provider.ChatRequest) (provider.ChatResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.chatCalls = append(f.chatCalls, req)
 	if f.onChat != nil {
 		f.onChat(req)
@@ -60,9 +69,26 @@ func (f *fakeZettelProvider) Vision(context.Context, provider.VisionRequest) (pr
 }
 
 func (f *fakeZettelProvider) Embeddings(_ context.Context, req provider.EmbeddingRequest) (provider.EmbeddingResponse, error) {
+	f.mu.Lock()
 	f.embeddingCalls++
-	if f.embeddingErr != nil {
-		return provider.EmbeddingResponse{}, f.embeddingErr
+	f.embeddingActive++
+	if f.embeddingActive > f.embeddingMax {
+		f.embeddingMax = f.embeddingActive
+	}
+	delay := f.embeddingDelay
+	embeddingErr := f.embeddingErr
+	f.mu.Unlock()
+
+	if delay > 0 {
+		time.Sleep(delay)
+	}
+	defer func() {
+		f.mu.Lock()
+		f.embeddingActive--
+		f.mu.Unlock()
+	}()
+	if embeddingErr != nil {
+		return provider.EmbeddingResponse{}, embeddingErr
 	}
 	vectors := make([][]float64, len(req.Inputs))
 	for i := range req.Inputs {
@@ -97,6 +123,36 @@ func TestServiceIndexUsesSeparateEmbeddingProvider(t *testing.T) {
 	}
 	if resp.APICalls.Total != 1 || resp.APICalls.Embeddings != 1 || resp.APICalls.Chat != 0 {
 		t.Fatalf("api calls = %#v, want one embedding call", resp.APICalls)
+	}
+}
+
+func TestServiceIndexRunsEmbeddingBatchesConcurrently(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	for i := 0; i < 8; i++ {
+		writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", fmt.Sprintf("note-%02d.md", i)), "# Active\n")
+	}
+
+	embeddingProvider := &fakeZettelProvider{embeddingDelay: 20 * time.Millisecond}
+	resp, err := NewWithEmbedding(nil, embeddingProvider).Index(context.Background(), IndexRequest{
+		Options: Options{
+			VaultPath:          vaultDir,
+			RootFolder:         "zettelkasten",
+			DataFolder:         ".aicli-zettel-merge",
+			EmbeddingModel:     "text-embedding-nomic-embed-text-v1.5",
+			EmbeddingBatchSize: 1,
+			EmbeddingWorkers:   4,
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+	if resp.Updated != 8 {
+		t.Fatalf("Index() = %#v, want eight updated notes", resp)
+	}
+	if embeddingProvider.embeddingMax < 2 {
+		t.Fatalf("max concurrent embedding calls = %d, want concurrent batches", embeddingProvider.embeddingMax)
 	}
 }
 
