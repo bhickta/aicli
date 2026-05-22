@@ -16,17 +16,19 @@ type Settings struct {
 }
 
 type ProviderConfig struct {
-	ID              string            `json:"id"`
-	Type            string            `json:"type"`
-	Name            string            `json:"name"`
-	BaseURL         string            `json:"base_url"`
-	APIKey          string            `json:"api_key"`
-	APIKeyEnv       string            `json:"api_key_env,omitempty"`
-	Model           string            `json:"model"`
-	ModelFilter     string            `json:"model_filter,omitempty"`
-	ReasoningEffort string            `json:"reasoning_effort,omitempty"`
-	TextVerbosity   string            `json:"text_verbosity,omitempty"`
-	Headers         map[string]string `json:"headers"`
+	ID                   string            `json:"id"`
+	Type                 string            `json:"type"`
+	Name                 string            `json:"name"`
+	BaseURL              string            `json:"base_url"`
+	APIKey               string            `json:"api_key"`
+	APIKeyEnv            string            `json:"api_key_env,omitempty"`
+	Model                string            `json:"model"`
+	ModelFilter          string            `json:"model_filter,omitempty"`
+	ReasoningEffort      string            `json:"reasoning_effort,omitempty"`
+	TextVerbosity        string            `json:"text_verbosity,omitempty"`
+	PromptCacheKey       string            `json:"prompt_cache_key,omitempty"`
+	PromptCacheRetention string            `json:"prompt_cache_retention,omitempty"`
+	Headers              map[string]string `json:"headers"`
 }
 
 type ToolConfig struct {
@@ -80,13 +82,16 @@ func DefaultSettings() Settings {
 				Model:           "gpt-5.2-codex",
 				ModelFilter:     "codex",
 				ReasoningEffort: "medium",
-				TextVerbosity:   "medium",
+				TextVerbosity:   "low",
+				PromptCacheKey:  "aicli-codex",
 			},
 			{
-				ID:    "codex-cli",
-				Type:  "codex-cli",
-				Name:  "Codex CLI / Pro",
-				Model: "gpt-5.5",
+				ID:              "codex-cli",
+				Type:            "codex-cli",
+				Name:            "Codex CLI / Pro",
+				Model:           "gpt-5.5",
+				ReasoningEffort: "medium",
+				TextVerbosity:   "low",
 			},
 		},
 		Tools: ToolConfig{
@@ -183,7 +188,16 @@ func withDefaults(settings Settings) Settings {
 
 func mergeDefaultProviders(providers []ProviderConfig, defaults []ProviderConfig) []ProviderConfig {
 	seen := make(map[string]bool, len(providers))
-	for _, provider := range providers {
+	defaultByID := make(map[string]ProviderConfig, len(defaults))
+	for _, provider := range defaults {
+		if provider.ID != "" {
+			defaultByID[provider.ID] = provider
+		}
+	}
+	for i, provider := range providers {
+		if defaults, ok := defaultByID[provider.ID]; ok {
+			providers[i] = mergeProviderDefaults(provider, defaults)
+		}
 		if provider.ID != "" {
 			seen[provider.ID] = true
 		}
@@ -196,4 +210,38 @@ func mergeDefaultProviders(providers []ProviderConfig, defaults []ProviderConfig
 		seen[provider.ID] = true
 	}
 	return providers
+}
+
+func mergeProviderDefaults(provider ProviderConfig, defaults ProviderConfig) ProviderConfig {
+	if provider.Type == "" {
+		provider.Type = defaults.Type
+	}
+	if provider.Name == "" {
+		provider.Name = defaults.Name
+	}
+	if provider.BaseURL == "" {
+		provider.BaseURL = defaults.BaseURL
+	}
+	if provider.APIKeyEnv == "" {
+		provider.APIKeyEnv = defaults.APIKeyEnv
+	}
+	if provider.Model == "" {
+		provider.Model = defaults.Model
+	}
+	if provider.ModelFilter == "" {
+		provider.ModelFilter = defaults.ModelFilter
+	}
+	if provider.ReasoningEffort == "" {
+		provider.ReasoningEffort = defaults.ReasoningEffort
+	}
+	if provider.TextVerbosity == "" {
+		provider.TextVerbosity = defaults.TextVerbosity
+	}
+	if provider.PromptCacheKey == "" {
+		provider.PromptCacheKey = defaults.PromptCacheKey
+	}
+	if provider.PromptCacheRetention == "" {
+		provider.PromptCacheRetention = defaults.PromptCacheRetention
+	}
+	return provider
 }

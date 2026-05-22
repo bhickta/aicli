@@ -11,6 +11,8 @@ export interface ProviderConfig {
   model_filter?: string;
   reasoning_effort?: string;
   text_verbosity?: string;
+  prompt_cache_key?: string;
+  prompt_cache_retention?: string;
   headers?: Record<string, string>;
 }
 
@@ -64,6 +66,14 @@ export interface WhatsAppContact {
 export interface Model {
   id: string;
   name: string;
+}
+
+export interface TokenUsage {
+  input_tokens?: number;
+  cached_input_tokens?: number;
+  output_tokens?: number;
+  reasoning_output_tokens?: number;
+  total_tokens?: number;
 }
 
 export type ProgressMode = "determinate" | "indeterminate" | "timed";

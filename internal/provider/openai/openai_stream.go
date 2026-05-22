@@ -31,13 +31,14 @@ func (p *OpenAICompatible) ChatStream(ctx context.Context, req provider.ChatRequ
 	}
 	body := map[string]any{
 		"model":       model,
-		"messages":    req.Messages,
+		"messages":    normalizedMessages(req.Messages),
 		"temperature": req.Temperature,
 		"stream":      true,
 	}
 	if req.MaxTokens > 0 {
 		body["max_tokens"] = req.MaxTokens
 	}
+	applyPromptCacheOptions(body, req, p.cfg, false, model)
 	data, err := json.Marshal(body)
 	if err != nil {
 		return err

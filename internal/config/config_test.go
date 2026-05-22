@@ -74,6 +74,12 @@ func TestDefaultCodexProviderUsesAPIKeyEnv(t *testing.T) {
 	if codex.ModelFilter != "codex" {
 		t.Fatalf("codex ModelFilter = %q, want codex", codex.ModelFilter)
 	}
+	if codex.TextVerbosity != "low" {
+		t.Fatalf("codex TextVerbosity = %q, want low", codex.TextVerbosity)
+	}
+	if codex.PromptCacheKey != "aicli-codex" || codex.PromptCacheRetention != "" {
+		t.Fatalf("codex prompt cache = %q/%q, want aicli-codex without extended retention", codex.PromptCacheKey, codex.PromptCacheRetention)
+	}
 	if settings.Tools.CodexCLI != "codex" {
 		t.Fatalf("CodexCLI = %q, want codex", settings.Tools.CodexCLI)
 	}
@@ -104,6 +110,9 @@ func TestDefaultCodexCLIProviderUsesLocalCLI(t *testing.T) {
 	}
 	if codexCLI.Model == "" {
 		t.Fatal("codex-cli default model is empty")
+	}
+	if codexCLI.ReasoningEffort != "medium" || codexCLI.TextVerbosity != "low" {
+		t.Fatalf("codex-cli controls = %q/%q, want medium/low", codexCLI.ReasoningEffort, codexCLI.TextVerbosity)
 	}
 }
 

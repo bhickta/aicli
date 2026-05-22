@@ -85,7 +85,7 @@ func TestChatUsesCodexExec(t *testing.T) {
 
 	runner := &fakeRunner{}
 	res, err := New(
-		config.ProviderConfig{ID: "codex-cli", Model: "gpt-5.5"},
+		config.ProviderConfig{ID: "codex-cli", Model: "gpt-5.5", ReasoningEffort: "medium", TextVerbosity: "low"},
 		config.ToolConfig{CodexCLI: "codex"},
 		runner,
 	).Chat(context.Background(), provider.ChatRequest{
@@ -103,6 +103,11 @@ func TestChatUsesCodexExec(t *testing.T) {
 	for _, want := range []string{"-a", "never", "exec", "--color", "never", "--output-last-message", "--sandbox", "read-only", "--model", "gpt-5.5", "--skip-git-repo-check", "-"} {
 		if !slices.Contains(runner.args, want) {
 			t.Fatalf("args = %#v, missing %q", runner.args, want)
+		}
+	}
+	for _, want := range []string{`model_reasoning_effort="medium"`, `model_verbosity="low"`} {
+		if !slices.Contains(runner.args, want) {
+			t.Fatalf("args = %#v, missing config override %q", runner.args, want)
 		}
 	}
 	if !strings.Contains(runner.stdin, "System:\nBe exact.") || !strings.Contains(runner.stdin, "User:\nReply with ok.") {

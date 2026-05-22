@@ -114,11 +114,14 @@ func (p *Provider) command() (string, error) {
 func (p *Provider) chatArgs(req provider.ChatRequest, outputPath string) []string {
 	args := []string{
 		"-a", "never",
+	}
+	args = appendCodexConfigOverrides(args, req.ReasoningEffort, req.TextVerbosity, p.cfg)
+	args = append(args,
 		"exec",
 		"--color", "never",
 		"--output-last-message", outputPath,
 		"--sandbox", "read-only",
-	}
+	)
 	if model := textutil.FirstNonBlank(req.Model, p.cfg.Model); model != "" {
 		args = append(args, "--model", model)
 	}
@@ -202,4 +205,22 @@ func messageRoleLabel(role string) string {
 	default:
 		return "User"
 	}
+}
+
+func appendCodexConfigOverrides(args []string, reasoningEffort string, textVerbosity string, cfg config.ProviderConfig) []string {
+	if effort := textutil.FirstNonBlank(reasoningEffort, cfg.ReasoningEffort); effort != "" {
+		args = append(args, "-c", "model_reasoning_effort="+quoteCodexConfigValue(effort))
+	}
+	if verbosity := textutil.FirstNonBlank(textVerbosity, cfg.TextVerbosity); verbosity != "" {
+		args = append(args, "-c", "model_verbosity="+quoteCodexConfigValue(verbosity))
+	}
+	return args
+}
+
+func quoteCodexConfigValue(value string) string {
+	data, err := json.Marshal(strings.TrimSpace(value))
+	if err != nil {
+		return `""`
+	}
+	return string(data)
 }

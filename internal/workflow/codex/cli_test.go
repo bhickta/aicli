@@ -38,6 +38,8 @@ func TestCLIRunBuildsCodexExecCommand(t *testing.T) {
 		Sandbox:          "workspace-write",
 		ApprovalPolicy:   "never",
 		Profile:          "pro",
+		ReasoningEffort:  "low",
+		TextVerbosity:    "low",
 		Search:           true,
 		SkipGitRepoCheck: true,
 	})
@@ -53,6 +55,11 @@ func TestCLIRunBuildsCodexExecCommand(t *testing.T) {
 	for _, want := range []string{"-a", "never", "exec", "--color", "never", "--output-last-message", "--sandbox", "workspace-write", "--model", "gpt-5.5", "--profile", "pro", "--cd", "/tmp/project", "--skip-git-repo-check", "--search", "-"} {
 		if !slices.Contains(runner.args, want) {
 			t.Fatalf("args = %#v, missing %q", runner.args, want)
+		}
+	}
+	for _, want := range []string{`model_reasoning_effort="low"`, `model_verbosity="low"`} {
+		if !slices.Contains(runner.args, want) {
+			t.Fatalf("args = %#v, missing config override %q", runner.args, want)
 		}
 	}
 	if slices.Index(runner.args, "--search") > slices.Index(runner.args, "exec") {

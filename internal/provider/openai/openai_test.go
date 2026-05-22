@@ -129,6 +129,8 @@ func TestOpenAIResponsesChat(t *testing.T) {
 			Text struct {
 				Verbosity string `json:"verbosity"`
 			} `json:"text"`
+			PromptCacheKey       string `json:"prompt_cache_key"`
+			PromptCacheRetention string `json:"prompt_cache_retention"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
@@ -141,6 +143,12 @@ func TestOpenAIResponsesChat(t *testing.T) {
 		}
 		if body.MaxOutputTokens != 256 || body.Reasoning.Effort != "high" || body.Text.Verbosity != "low" {
 			t.Fatalf("responses controls = %#v", body)
+		}
+		if body.PromptCacheKey != "aicli-codex-gpt-5-2-codex" {
+			t.Fatalf("prompt_cache_key = %q, want default model-aware key", body.PromptCacheKey)
+		}
+		if body.PromptCacheRetention != "" {
+			t.Fatalf("prompt_cache_retention = %q, want empty without config", body.PromptCacheRetention)
 		}
 		w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"done"}]}]}`))
 	}))
@@ -164,6 +172,63 @@ func TestOpenAIResponsesChat(t *testing.T) {
 	}
 	if res.Content != "done" {
 		t.Fatalf("content = %q, want done", res.Content)
+	}
+}
+
+func TestOpenAIResponsesChatAppliesPromptCacheConfigAndUsage(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			PromptCacheKey       string             `json:"prompt_cache_key"`
+			PromptCacheRetention string             `json:"prompt_cache_retention"`
+			Input                []provider.Message `json:"input"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.PromptCacheKey != "aicli-codex" || body.PromptCacheRetention != "24h" {
+			t.Fatalf("prompt cache = %q/%q, want configured cache", body.PromptCacheKey, body.PromptCacheRetention)
+		}
+		if len(body.Input) != 1 || body.Input[0].Content != " hello\n" || body.Input[0].Role != "user" {
+			t.Fatalf("normalized input = %#v, want one nonblank user message with content preserved", body.Input)
+		}
+		w.Write([]byte(`{
+			"output_text":"cached",
+			"usage":{
+				"input_tokens":100,
+				"input_tokens_details":{"cached_tokens":80},
+				"output_tokens":20,
+				"output_tokens_details":{"reasoning_tokens":7},
+				"total_tokens":120
+			}
+		}`))
+	}))
+	defer srv.Close()
+
+	p := NewCompatible(config.ProviderConfig{
+		ID:                   "codex",
+		Type:                 "openai-responses",
+		BaseURL:              srv.URL + "/v1",
+		Model:                "gpt-5.2-codex",
+		PromptCacheKey:       "aicli-codex",
+		PromptCacheRetention: "24h",
+	}, srv.Client())
+
+	res, err := p.Chat(context.Background(), provider.ChatRequest{
+		Messages: []provider.Message{
+			{Role: "user", Content: "   "},
+			{Role: "", Content: " hello\n"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if res.Content != "cached" {
+		t.Fatalf("content = %q, want cached", res.Content)
+	}
+	if res.Usage == nil || res.Usage.CachedInputTokens != 80 || res.Usage.ReasoningOutputTokens != 7 {
+		t.Fatalf("usage = %#v, want cached/reasoning token usage", res.Usage)
 	}
 }
 

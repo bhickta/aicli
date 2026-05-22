@@ -76,12 +76,13 @@ func (p *OpenAICompatible) Chat(ctx context.Context, req provider.ChatRequest) (
 	}
 	body := map[string]any{
 		"model":       model,
-		"messages":    req.Messages,
+		"messages":    normalizedMessages(req.Messages),
 		"temperature": req.Temperature,
 	}
 	if req.MaxTokens > 0 {
 		body["max_tokens"] = req.MaxTokens
 	}
+	applyPromptCacheOptions(body, req, p.cfg, false, model)
 	return p.chatRaw(ctx, body)
 }
 
@@ -116,6 +117,7 @@ func (p *OpenAICompatible) chatRaw(ctx context.Context, body map[string]any) (pr
 		Choices []struct {
 			Message provider.Message `json:"message"`
 		} `json:"choices"`
+		Usage chatCompletionUsage `json:"usage"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
 		return provider.ChatResponse{}, err
@@ -123,7 +125,7 @@ func (p *OpenAICompatible) chatRaw(ctx context.Context, body map[string]any) (pr
 	if len(payload.Choices) == 0 {
 		return provider.ChatResponse{}, errors.New("chat response has no choices")
 	}
-	return provider.ChatResponse{Content: payload.Choices[0].Message.Content}, nil
+	return provider.ChatResponse{Content: payload.Choices[0].Message.Content, Usage: payload.Usage.providerUsage()}, nil
 }
 
 func (p *OpenAICompatible) chatModel(model string) string {
@@ -197,4 +199,107 @@ func openAIURL(baseURL string, path string) string {
 		return baseURL + path
 	}
 	return baseURL + "/v1" + path
+}
+
+func normalizedMessages(messages []provider.Message) []provider.Message {
+	out := make([]provider.Message, 0, len(messages))
+	for _, message := range messages {
+		if strings.TrimSpace(message.Content) == "" {
+			continue
+		}
+		role := strings.TrimSpace(message.Role)
+		if role == "" {
+			role = "user"
+		}
+		out = append(out, provider.Message{Role: role, Content: message.Content})
+	}
+	return out
+}
+
+func applyPromptCacheOptions(body map[string]any, req provider.ChatRequest, cfg config.ProviderConfig, useDefault bool, model string) {
+	cacheKey := firstNonBlank(req.PromptCacheKey, cfg.PromptCacheKey)
+	if cacheKey == "" && useDefault {
+		cacheKey = defaultPromptCacheKey(cfg.ID, model)
+	}
+	if cacheKey != "" {
+		body["prompt_cache_key"] = cacheKey
+	}
+	if retention := firstNonBlank(req.PromptCacheRetention, cfg.PromptCacheRetention); retention != "" {
+		body["prompt_cache_retention"] = retention
+	}
+}
+
+func defaultPromptCacheKey(providerID string, model string) string {
+	providerID = cacheKeyPart(providerID)
+	model = cacheKeyPart(model)
+	if providerID == "" && model == "" {
+		return ""
+	}
+	if providerID == "" {
+		return "aicli-" + model
+	}
+	if model == "" {
+		return "aicli-" + providerID
+	}
+	return "aicli-" + providerID + "-" + model
+}
+
+func cacheKeyPart(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" {
+		return ""
+	}
+	var out strings.Builder
+	lastDash := false
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			out.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			out.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(out.String(), "-")
+}
+
+func firstNonBlank(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+type chatCompletionUsage struct {
+	PromptTokens            int                      `json:"prompt_tokens"`
+	CompletionTokens        int                      `json:"completion_tokens"`
+	TotalTokens             int                      `json:"total_tokens"`
+	PromptTokensDetails     chatCompletionDetails    `json:"prompt_tokens_details"`
+	CompletionTokensDetails chatCompletionOutDetails `json:"completion_tokens_details"`
+}
+
+func (u chatCompletionUsage) providerUsage() *provider.TokenUsage {
+	if u.PromptTokens == 0 && u.CompletionTokens == 0 && u.TotalTokens == 0 &&
+		u.PromptTokensDetails.CachedTokens == 0 && u.CompletionTokensDetails.ReasoningTokens == 0 {
+		return nil
+	}
+	return &provider.TokenUsage{
+		InputTokens:           u.PromptTokens,
+		CachedInputTokens:     u.PromptTokensDetails.CachedTokens,
+		OutputTokens:          u.CompletionTokens,
+		ReasoningOutputTokens: u.CompletionTokensDetails.ReasoningTokens,
+		TotalTokens:           u.TotalTokens,
+	}
+}
+
+type chatCompletionDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
+type chatCompletionOutDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
 }

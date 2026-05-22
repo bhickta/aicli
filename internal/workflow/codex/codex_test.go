@@ -19,7 +19,10 @@ func (f *fakeProvider) ListModels(context.Context) ([]provider.Model, error) { r
 
 func (f *fakeProvider) Chat(_ context.Context, req provider.ChatRequest) (provider.ChatResponse, error) {
 	f.req = req
-	return provider.ChatResponse{Content: " patch plan "}, nil
+	return provider.ChatResponse{
+		Content: " patch plan ",
+		Usage:   &provider.TokenUsage{InputTokens: 10, CachedInputTokens: 4, OutputTokens: 3, TotalTokens: 13},
+	}, nil
 }
 
 func (f *fakeProvider) ChatStream(context.Context, provider.ChatRequest, func(string) error) error {
@@ -46,6 +49,9 @@ func TestRunBuildsCodexRequest(t *testing.T) {
 	}
 	if res.Output != "patch plan" {
 		t.Fatalf("Output = %q, want patch plan", res.Output)
+	}
+	if res.Usage == nil || res.Usage.CachedInputTokens != 4 {
+		t.Fatalf("usage = %#v, want cached token usage", res.Usage)
 	}
 	if fp.req.Model != "gpt-5.2-codex" || fp.req.ReasoningEffort != "high" || fp.req.TextVerbosity != "low" {
 		t.Fatalf("chat request = %#v", fp.req)

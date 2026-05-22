@@ -15,16 +15,27 @@ type Message struct {
 }
 
 type ChatRequest struct {
-	Model           string    `json:"model"`
-	Messages        []Message `json:"messages"`
-	Temperature     float64   `json:"temperature"`
-	MaxTokens       int       `json:"max_tokens"`
-	ReasoningEffort string    `json:"reasoning_effort,omitempty"`
-	TextVerbosity   string    `json:"text_verbosity,omitempty"`
+	Model                string    `json:"model"`
+	Messages             []Message `json:"messages"`
+	Temperature          float64   `json:"temperature"`
+	MaxTokens            int       `json:"max_tokens"`
+	ReasoningEffort      string    `json:"reasoning_effort,omitempty"`
+	TextVerbosity        string    `json:"text_verbosity,omitempty"`
+	PromptCacheKey       string    `json:"prompt_cache_key,omitempty"`
+	PromptCacheRetention string    `json:"prompt_cache_retention,omitempty"`
 }
 
 type ChatResponse struct {
-	Content string `json:"content"`
+	Content string      `json:"content"`
+	Usage   *TokenUsage `json:"usage,omitempty"`
+}
+
+type TokenUsage struct {
+	InputTokens           int `json:"input_tokens,omitempty"`
+	CachedInputTokens     int `json:"cached_input_tokens,omitempty"`
+	OutputTokens          int `json:"output_tokens,omitempty"`
+	ReasoningOutputTokens int `json:"reasoning_output_tokens,omitempty"`
+	TotalTokens           int `json:"total_tokens,omitempty"`
 }
 
 type EmbeddingRequest struct {

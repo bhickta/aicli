@@ -51,17 +51,17 @@ func (p *OpenAICompatible) responsesChat(ctx context.Context, req provider.ChatR
 		return provider.ChatResponse{}, p.apiStatusError("responses chat", res.Status, msg)
 	}
 
-	content, err := decodeResponseText(res.Body)
+	chat, err := decodeResponse(res.Body)
 	if err != nil {
 		return provider.ChatResponse{}, err
 	}
-	return provider.ChatResponse{Content: content}, nil
+	return chat, nil
 }
 
 func (p *OpenAICompatible) responsesBody(model string, req provider.ChatRequest) map[string]any {
 	body := map[string]any{
 		"model": model,
-		"input": req.Messages,
+		"input": normalizedMessages(req.Messages),
 		"store": false,
 	}
 	if req.MaxTokens > 0 {
@@ -73,10 +73,16 @@ func (p *OpenAICompatible) responsesBody(model string, req provider.ChatRequest)
 	if verbosity := textutil.FirstNonBlank(req.TextVerbosity, p.cfg.TextVerbosity); verbosity != "" {
 		body["text"] = map[string]any{"verbosity": verbosity}
 	}
+	if cacheKey := textutil.FirstNonBlank(req.PromptCacheKey, p.cfg.PromptCacheKey, defaultPromptCacheKey(p.cfg.ID, model)); cacheKey != "" {
+		body["prompt_cache_key"] = cacheKey
+	}
+	if retention := textutil.FirstNonBlank(req.PromptCacheRetention, p.cfg.PromptCacheRetention); retention != "" {
+		body["prompt_cache_retention"] = retention
+	}
 	return body
 }
 
-func decodeResponseText(body io.Reader) (string, error) {
+func decodeResponse(body io.Reader) (provider.ChatResponse, error) {
 	var payload struct {
 		OutputText string `json:"output_text"`
 		Output     []struct {
@@ -86,12 +92,13 @@ func decodeResponseText(body io.Reader) (string, error) {
 				Text string `json:"text"`
 			} `json:"content"`
 		} `json:"output"`
+		Usage responseUsage `json:"usage"`
 	}
 	if err := json.NewDecoder(body).Decode(&payload); err != nil {
-		return "", err
+		return provider.ChatResponse{}, err
 	}
 	if strings.TrimSpace(payload.OutputText) != "" {
-		return payload.OutputText, nil
+		return provider.ChatResponse{Content: payload.OutputText, Usage: payload.Usage.providerUsage()}, nil
 	}
 
 	var text strings.Builder
@@ -110,7 +117,34 @@ func decodeResponseText(body io.Reader) (string, error) {
 		}
 	}
 	if text.Len() == 0 {
-		return "", errors.New("response has no output text")
+		return provider.ChatResponse{}, errors.New("response has no output text")
 	}
-	return text.String(), nil
+	return provider.ChatResponse{Content: text.String(), Usage: payload.Usage.providerUsage()}, nil
+}
+
+type responseUsage struct {
+	InputTokens        int          `json:"input_tokens"`
+	OutputTokens       int          `json:"output_tokens"`
+	TotalTokens        int          `json:"total_tokens"`
+	InputTokenDetails  tokenDetails `json:"input_tokens_details"`
+	OutputTokenDetails tokenDetails `json:"output_tokens_details"`
+}
+
+func (u responseUsage) providerUsage() *provider.TokenUsage {
+	if u.InputTokens == 0 && u.OutputTokens == 0 && u.TotalTokens == 0 &&
+		u.InputTokenDetails.CachedTokens == 0 && u.OutputTokenDetails.ReasoningTokens == 0 {
+		return nil
+	}
+	return &provider.TokenUsage{
+		InputTokens:           u.InputTokens,
+		CachedInputTokens:     u.InputTokenDetails.CachedTokens,
+		OutputTokens:          u.OutputTokens,
+		ReasoningOutputTokens: u.OutputTokenDetails.ReasoningTokens,
+		TotalTokens:           u.TotalTokens,
+	}
+}
+
+type tokenDetails struct {
+	CachedTokens    int `json:"cached_tokens"`
+	ReasoningTokens int `json:"reasoning_tokens"`
 }

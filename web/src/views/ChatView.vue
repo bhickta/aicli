@@ -3,6 +3,7 @@ import { shallowReactive, shallowRef, watch } from "vue";
 import ProviderModelControl from "../components/ProviderModelControl.vue";
 import { api } from "../lib/api";
 import { readStoredString, writeStoredString } from "../lib/persistence";
+import type { TokenUsage } from "../types";
 
 const providerModel = shallowReactive({
   provider_id: readStoredString("aicli.chat.providerId"),
@@ -11,6 +12,7 @@ const providerModel = shallowReactive({
 const prompt = shallowRef("");
 const status = shallowRef("Ready");
 const answer = shallowRef("");
+const usage = shallowRef<TokenUsage | null>(null);
 const busy = shallowRef(false);
 
 watch(providerModel, () => {
@@ -22,8 +24,9 @@ async function sendChat() {
   busy.value = true;
   status.value = "Thinking...";
   answer.value = "";
+  usage.value = null;
   try {
-    const result = await api<{ content: string }>("/api/chat", {
+    const result = await api<{ content: string; usage?: TokenUsage }>("/api/chat", {
       method: "POST",
       body: JSON.stringify({
         provider_id: providerModel.provider_id,
@@ -33,6 +36,7 @@ async function sendChat() {
       }),
     });
     answer.value = result.content;
+    usage.value = result.usage || null;
     status.value = "Done";
   } catch (error) {
     answer.value = error instanceof Error ? error.message : "Chat failed";
@@ -64,6 +68,10 @@ async function sendChat() {
     </div>
     <div class="field">
       <h3>Answer</h3>
+      <p v-if="usage" class="status-line">
+        Tokens: {{ usage.total_tokens || 0 }} total, {{ usage.input_tokens || 0 }} input,
+        {{ usage.cached_input_tokens || 0 }} cached, {{ usage.output_tokens || 0 }} output
+      </p>
       <pre id="chat-answer" role="status" aria-live="polite">{{ answer }}</pre>
     </div>
   </div>

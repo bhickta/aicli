@@ -19,6 +19,8 @@ type CLIRequest struct {
 	Sandbox          string `json:"sandbox"`
 	ApprovalPolicy   string `json:"approval_policy"`
 	Profile          string `json:"profile"`
+	ReasoningEffort  string `json:"reasoning_effort"`
+	TextVerbosity    string `json:"text_verbosity"`
 	Search           bool   `json:"search"`
 	SkipGitRepoCheck bool   `json:"skip_git_repo_check"`
 }
@@ -91,6 +93,7 @@ func codexExecArgs(req CLIRequest, outputPath string) ([]string, error) {
 		return nil, err
 	}
 	args := []string{"-a", approval}
+	args = appendCLIConfigOverrides(args, req.ReasoningEffort, req.TextVerbosity)
 	if req.Search {
 		args = append(args, "--search")
 	}
@@ -114,6 +117,20 @@ func codexExecArgs(req CLIRequest, outputPath string) ([]string, error) {
 	}
 	args = append(args, "-")
 	return args, nil
+}
+
+func appendCLIConfigOverrides(args []string, reasoningEffort string, textVerbosity string) []string {
+	if effort := strings.TrimSpace(reasoningEffort); effort != "" {
+		args = append(args, "-c", "model_reasoning_effort="+quoteConfigValue(effort))
+	}
+	if verbosity := strings.TrimSpace(textVerbosity); verbosity != "" {
+		args = append(args, "-c", "model_verbosity="+quoteConfigValue(verbosity))
+	}
+	return args
+}
+
+func quoteConfigValue(value string) string {
+	return fmt.Sprintf("%q", strings.TrimSpace(value))
 }
 
 func cliPrompt(req CLIRequest) string {

@@ -17,7 +17,8 @@ type Request struct {
 }
 
 type Response struct {
-	Output string `json:"output"`
+	Output string               `json:"output"`
+	Usage  *provider.TokenUsage `json:"usage,omitempty"`
 }
 
 type Service struct {
@@ -51,7 +52,7 @@ func (s *Service) Run(ctx context.Context, req Request) (Response, error) {
 	if err != nil {
 		return Response{}, err
 	}
-	return Response{Output: strings.TrimSpace(res.Content)}, nil
+	return Response{Output: strings.TrimSpace(res.Content), Usage: res.Usage}, nil
 }
 
 func codexMessages(userPrompt string) []provider.Message {
