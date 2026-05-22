@@ -117,8 +117,9 @@ func unsupportedFinalNoteAdditions(sourceContent string, destinationBefore map[s
 	var unsupported []string
 	for path, after := range destinationAfter {
 		before := destinationBefore[path]
+		supportText := sourceContent + "\n" + before
 		for _, line := range addedSubstantiveLines(before, after) {
-			if factSupportedByText(line, sourceContent) || factSupportedByText(line, before) {
+			if factSupportedByText(line, supportText) {
 				continue
 			}
 			unsupported = append(unsupported, fmt.Sprintf("%s: %s", path, line))

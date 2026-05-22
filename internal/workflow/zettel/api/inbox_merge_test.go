@@ -491,6 +491,77 @@ func TestServiceInboxMergeAdoptsWhenFinalNoteDestinationTooNarrow(t *testing.T) 
 	}
 }
 
+func TestServiceInboxMergeUsesEarlierRunDestinationAsLaterCandidate(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "Economy", "seed.md"), "- **Economy**: seed.\n")
+	firstSourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "010.md")
+	secondSourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "011.md")
+	firstSource := "- **Factors of Production**: Land, Labor, Capital, Entrepreneurship.\n"
+	secondSource := "- **Factors of Production**: Also called resources; Land, Labor, Capital, Entrepreneurship.\n" +
+		"- **Scarcity**: Fresh water and coal are scarce resources.\n"
+	destinationRel := "zettelkasten/Economy/Economy Shivin/010.md"
+	writeTestFile(t, firstSourcePath, firstSource)
+	writeTestFile(t, secondSourcePath, secondSource)
+
+	provider := &fakeZettelProvider{chatResponses: []string{
+		"BEGIN_NOTE " + destinationRel + "\n" +
+			firstSource +
+			"END_NOTE\n",
+		"BEGIN_NOTE " + destinationRel + "\n" +
+			"- **Factors of Production**: Also called resources; Land, Labor, Capital, Entrepreneurship.\n" +
+			"- **Scarcity**: Fresh water and coal are scarce resources.\n" +
+			"END_NOTE\n",
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "in",
+		InboxLimit:           2,
+		AdoptUnmatchedInbox:  true,
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 2 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want both notes processed into same run destination", resp)
+	}
+	destinationPath := filepath.Join(vaultDir, filepath.FromSlash(destinationRel))
+	got := readTestFile(t, destinationPath)
+	if !strings.Contains(got, "Factors of Production") || !strings.Contains(got, "Scarcity") {
+		t.Fatalf("destination = %q, want first and second source facts", got)
+	}
+	if strings.Count(got, "Factors of Production") != 1 {
+		t.Fatalf("destination = %q, want deduped factors of production line", got)
+	}
+	if _, err := os.Stat(filepath.Join(vaultDir, "zettelkasten", "Economy", "Economy Shivin", "011.md")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected duplicate adopted destination for second source: %v", err)
+	}
+	if len(provider.chatCalls) != 2 {
+		t.Fatalf("chat calls = %d, want two decision calls", len(provider.chatCalls))
+	}
+	secondPrompt := provider.chatCalls[1].Messages[len(provider.chatCalls[1].Messages)-1].Content
+	if !strings.Contains(secondPrompt, "PATH: "+destinationRel) {
+		t.Fatalf("second prompt missing prior run destination candidate: %s", secondPrompt)
+	}
+}
+
 func TestServiceInboxMergeActionDoesNotInventFrontmatterForPlainDestination(t *testing.T) {
 	t.Parallel()
 

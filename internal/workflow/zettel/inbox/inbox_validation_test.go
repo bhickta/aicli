@@ -40,6 +40,25 @@ func TestFinalNoteInboxValidationRejectsUnsupportedCandidateContamination(t *tes
 	}
 }
 
+func TestFinalNoteInboxValidationAllowsLineSupportedBySourceAndDestinationTogether(t *testing.T) {
+	t.Parallel()
+
+	source := "- **Microeconomics**: \"Microscope\" view -> individual decisions.\n"
+	applied := inboxAppliedDecision{
+		destinationBefore: map[string]string{
+			"zettelkasten/micro.md": "- **Microeconomics**: Study of a particular firm or household.\n",
+		},
+		destinationAfter: map[string]string{
+			"zettelkasten/micro.md": "- **Microeconomics**: \"Microscope\" view -> individual decisions. Study of a particular firm or household.\n",
+		},
+	}
+
+	got := finalNoteInboxValidation(source, applied)
+	if got.Verdict != "pass" {
+		t.Fatalf("validation = %#v, want combined source+destination line accepted", got)
+	}
+}
+
 func TestFinalNoteInboxValidationAcceptsMultiDestinationCoverage(t *testing.T) {
 	t.Parallel()
 

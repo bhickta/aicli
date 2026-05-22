@@ -60,6 +60,7 @@ func (r Runner) InboxMerge(ctx context.Context, req InboxMergeRequest, progress 
 	}
 
 	shorthandPrompt := prompt.LoadShorthandPrompt(options)
+	runCandidates := inboxRunCandidates{}
 	for i, sourcePath := range sourceNotes {
 		if progress != nil {
 			progress(progressmodel.Units(
@@ -69,7 +70,7 @@ func (r Runner) InboxMerge(ctx context.Context, req InboxMergeRequest, progress 
 				"note",
 			))
 		}
-		result, err := r.processInboxSource(ctx, v, archive, runID, options, sourcePath, shorthandPrompt, progress)
+		result, err := r.processInboxSource(ctx, v, archive, runID, options, sourcePath, shorthandPrompt, runCandidates, progress)
 		if err != nil {
 			result = InboxSourceResult{SourcePath: sourcePath, Status: inboxStatusFailed, Reason: err.Error()}
 			if !archive.InboxItemExists(runID, sourcePath) {
@@ -91,6 +92,7 @@ func (r Runner) InboxMerge(ctx context.Context, req InboxMergeRequest, progress 
 			}
 			response.Pending = append(response.Pending, result)
 		}
+		rememberInboxRunCandidates(runCandidates, result)
 		if progress != nil {
 			progress(progressmodel.Units(
 				fmt.Sprintf("finished inbox note %d/%d: %s", i+1, len(sourceNotes), filepath.Base(sourcePath)),
@@ -112,7 +114,7 @@ func (r Runner) InboxMerge(ctx context.Context, req InboxMergeRequest, progress 
 	return response, nil
 }
 
-func (r Runner) processInboxSource(ctx context.Context, v vault, archive archivepkg.Store, runID string, options Options, sourcePath string, shorthandPrompt string, progress ProgressFunc) (InboxSourceResult, error) {
+func (r Runner) processInboxSource(ctx context.Context, v vault, archive archivepkg.Store, runID string, options Options, sourcePath string, shorthandPrompt string, runCandidates inboxRunCandidates, progress ProgressFunc) (InboxSourceResult, error) {
 	reportInboxStage(progress, sourcePath, "checking exact duplicates", 0, 6)
 	sourceAbs, err := v.Abs(sourcePath)
 	if err != nil {
@@ -136,6 +138,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		return result, err
 	}
 	similar = augmentInboxCandidates(ctx, v, options, sourcePath, sourceContent, similar)
+	similar = augmentInboxCandidatesFromRun(sourcePath, sourceContent, similar, runCandidates)
 	if options.AdoptUnmatchedInbox {
 		if adoptedPath, _, err := adoptInboxDestinationPath(v, options, sourcePath); err == nil {
 			similar = appendInboxCandidatePath(similar, adoptedPath)

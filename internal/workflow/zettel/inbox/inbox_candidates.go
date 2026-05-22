@@ -16,6 +16,8 @@ type lexicalInboxCandidate struct {
 	score     int
 }
 
+type inboxRunCandidates map[string]string
+
 func augmentInboxCandidates(ctx context.Context, v vault, options Options, sourcePath string, sourceContent string, candidates []scoredCandidate) []scoredCandidate {
 	phrases := inboxLexicalPhrases(sourceContent)
 	if len(phrases) == 0 {
@@ -67,6 +69,64 @@ func augmentInboxCandidates(ctx context.Context, v vault, options Options, sourc
 		out = append(out, match.candidate)
 	}
 	return out
+}
+
+func augmentInboxCandidatesFromRun(sourcePath string, sourceContent string, candidates []scoredCandidate, runCandidates inboxRunCandidates) []scoredCandidate {
+	if len(runCandidates) == 0 {
+		return candidates
+	}
+	phrases := inboxLexicalPhrases(sourceContent)
+	if len(phrases) == 0 {
+		return candidates
+	}
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		seen[candidate.Path] = true
+	}
+	matches := make([]lexicalInboxCandidate, 0, len(runCandidates))
+	for path, content := range runCandidates {
+		if path == sourcePath || seen[path] {
+			continue
+		}
+		score := inboxLexicalScore(content, phrases)
+		if score == 0 {
+			continue
+		}
+		matches = append(matches, lexicalInboxCandidate{
+			candidate: scoredCandidate{Path: path, Content: content, Similarity: 2 + float64(score)/100},
+			score:     score,
+		})
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].score == matches[j].score {
+			return matches[i].candidate.Path < matches[j].candidate.Path
+		}
+		return matches[i].score > matches[j].score
+	})
+	if len(matches) > maxLexicalInboxCandidates {
+		matches = matches[:maxLexicalInboxCandidates]
+	}
+	out := make([]scoredCandidate, 0, len(candidates)+len(matches))
+	for _, match := range matches {
+		out = append(out, match.candidate)
+	}
+	out = append(out, candidates...)
+	return out
+}
+
+func rememberInboxRunCandidates(runCandidates inboxRunCandidates, result InboxSourceResult) {
+	if len(result.Diffs) == 0 {
+		return
+	}
+	if result.Status != inboxStatusProcessed && result.Status != inboxStatusPartial {
+		return
+	}
+	for _, diff := range result.Diffs {
+		if strings.TrimSpace(diff.Path) == "" || strings.TrimSpace(diff.After) == "" {
+			continue
+		}
+		runCandidates[diff.Path] = diff.After
+	}
 }
 
 func constrainDecisionToCandidates(decision inboxDestinationDecision, candidates []scoredCandidate) inboxDestinationDecision {
