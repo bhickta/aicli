@@ -7,7 +7,6 @@ import (
 
 	"github.com/bhickta/aicli/internal/provider"
 	archivepkg "github.com/bhickta/aicli/internal/workflow/zettel/archive"
-	"github.com/bhickta/aicli/internal/workflow/zettel/llmjson"
 )
 
 func (r Runner) decideInboxSource(
@@ -42,7 +41,7 @@ func (r Runner) decideInboxSource(
 		if _, ok := parseInboxFinalNotes(sourcePath, res.Content); ok {
 			parsedFormat = "final-notes"
 		} else {
-			parsedFormat = "json"
+			parsedFormat = "invalid-final-notes"
 		}
 	}
 	if _, traceErr := archive.WriteInboxLLMExchange(runID, archivepkg.LLMExchange{
@@ -66,12 +65,7 @@ func (r Runner) decideInboxSource(
 	if decision, ok := parseInboxFinalNotes(sourcePath, res.Content); ok {
 		return decision, nil
 	}
-	resp, err := llmjson.Parse[inboxDestinationDecision](res.Content)
-	if err != nil {
-		return inboxDestinationDecision{}, err
-	}
-	resp.Claims = normalizeClaims(resp.Claims)
-	return resp, nil
+	return inboxDestinationDecision{}, errors.New("merge model response must use BEGIN_NOTE/END_NOTE blocks or PENDING")
 }
 
 func errorString(err error) string {

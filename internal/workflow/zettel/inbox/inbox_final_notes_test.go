@@ -9,7 +9,7 @@ func TestParseInboxFinalNotes(t *testing.T) {
 	if !ok {
 		t.Fatal("parseInboxFinalNotes() did not recognize final note envelope")
 	}
-	if !decision.FinalNotes || len(decision.Claims) != 1 || len(decision.Destinations) != 1 {
+	if len(decision.Claims) != 1 || len(decision.Destinations) != 1 {
 		t.Fatalf("decision = %#v, want one final-note destination and one source claim", decision)
 	}
 	if decision.Destinations[0].Path != "zettelkasten/economics.md" {

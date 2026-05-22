@@ -47,7 +47,7 @@ func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	service, err := h.service(req.Options)
+	service, err := h.serviceFor(req.Options, providerNeeds{embedding: true})
 	if err != nil {
 		core.WriteError(w, http.StatusNotFound, err)
 		return
@@ -62,7 +62,12 @@ func (h *Handler) suggest(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	service, err := h.service(req.Options)
+	service, err := h.serviceFor(req.Options, providerNeeds{
+		candidate:  true,
+		merge:      true,
+		validation: true,
+		embedding:  true,
+	})
 	if err != nil {
 		core.WriteError(w, http.StatusNotFound, err)
 		return
@@ -77,7 +82,12 @@ func (h *Handler) propose(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	service, err := h.service(req.Options)
+	service, err := h.serviceFor(req.Options, providerNeeds{
+		candidate:  true,
+		merge:      true,
+		validation: true,
+		embedding:  true,
+	})
 	if err != nil {
 		core.WriteError(w, http.StatusNotFound, err)
 		return
@@ -92,7 +102,7 @@ func (h *Handler) apply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	service, err := h.service(req.Options)
+	service, err := h.serviceFor(req.Options, providerNeeds{})
 	if err != nil {
 		core.WriteError(w, http.StatusNotFound, err)
 		return
@@ -107,7 +117,7 @@ func (h *Handler) rollback(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	service, err := h.service(req.Options)
+	service, err := h.serviceFor(req.Options, providerNeeds{})
 	if err != nil {
 		core.WriteError(w, http.StatusNotFound, err)
 		return
@@ -122,7 +132,7 @@ func (h *Handler) inboxMerge(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	service, err := h.service(req.Options)
+	service, err := h.serviceFor(req.Options, providerNeeds{merge: true, embedding: true})
 	if err != nil {
 		core.WriteError(w, http.StatusNotFound, err)
 		return
@@ -132,30 +142,53 @@ func (h *Handler) inboxMerge(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handler) service(options zettel.Options) (*zettel.Service, error) {
+type providerNeeds struct {
+	candidate  bool
+	merge      bool
+	validation bool
+	embedding  bool
+}
+
+func (h *Handler) serviceFor(options zettel.Options, needs providerNeeds) (*zettel.Service, error) {
 	requestedEmbeddingProviderID := strings.TrimSpace(options.EmbeddingProviderID)
 	options = zettel.NormalizeOptions(options)
-	candidateProvider, ok := h.runtime.ProviderFor(options.CandidateProviderID)
-	if !ok {
-		return nil, errors.New("candidate judge provider not found")
-	}
-	mergeProvider, ok := h.runtime.ProviderFor(options.MergeProviderID)
-	if !ok {
-		return nil, errors.New("merge provider not found")
-	}
-	validationProvider, ok := h.runtime.ProviderFor(options.ValidationProviderID)
-	if !ok {
-		return nil, errors.New("validation judge provider not found")
-	}
-	embeddingProviderID := options.EmbeddingProviderID
-	if requestedEmbeddingProviderID == "" && !supportsEmbeddings(candidateProvider) {
-		if fallback := strings.TrimSpace(h.runtime.Settings().DefaultProvider); fallback != "" {
-			embeddingProviderID = fallback
+	var candidateProvider provider.Provider
+	var mergeProvider provider.Provider
+	var validationProvider provider.Provider
+	var embeddingProvider provider.Provider
+	if needs.candidate {
+		var ok bool
+		candidateProvider, ok = h.runtime.ProviderFor(options.CandidateProviderID)
+		if !ok {
+			return nil, errors.New("candidate judge provider not found")
 		}
 	}
-	embeddingProvider, ok := h.runtime.ProviderFor(embeddingProviderID)
-	if !ok {
-		return nil, errors.New("embedding provider not found")
+	if needs.merge {
+		var ok bool
+		mergeProvider, ok = h.runtime.ProviderFor(options.MergeProviderID)
+		if !ok {
+			return nil, errors.New("merge provider not found")
+		}
+	}
+	if needs.validation {
+		var ok bool
+		validationProvider, ok = h.runtime.ProviderFor(options.ValidationProviderID)
+		if !ok {
+			return nil, errors.New("validation judge provider not found")
+		}
+	}
+	if needs.embedding {
+		embeddingProviderID := options.EmbeddingProviderID
+		if requestedEmbeddingProviderID == "" && (embeddingProviderID == "" || !supportsEmbeddings(candidateProvider)) {
+			if fallback := strings.TrimSpace(h.runtime.Settings().DefaultProvider); fallback != "" {
+				embeddingProviderID = fallback
+			}
+		}
+		var ok bool
+		embeddingProvider, ok = h.runtime.ProviderFor(embeddingProviderID)
+		if !ok {
+			return nil, errors.New("embedding provider not found")
+		}
 	}
 	return zettel.NewWithProviders(
 		candidateProvider,

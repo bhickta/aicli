@@ -66,17 +66,3 @@ func matchedRootCategory(v vault, options Options, relInside string) string {
 	}
 	return best
 }
-
-func adoptedInboxLedger(claims []InboxClaim, destinationPath string) []InboxClaimLedger {
-	ledger := make([]InboxClaimLedger, 0, len(claims))
-	for _, claim := range claims {
-		ledger = append(ledger, InboxClaimLedger{
-			ClaimID:         claim.ID,
-			Status:          claimStatusMerged,
-			DestinationPath: destinationPath,
-			Evidence:        "source note adopted as a new destination note",
-			Reason:          "no confident existing destination; preserved losslessly as a new zettelkasten note",
-		})
-	}
-	return ledger
-}

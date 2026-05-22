@@ -1,50 +1,12 @@
 package inbox
 
-import (
-	"fmt"
-	"strings"
-)
-
-func normalizeClaims(claims []InboxClaim) []InboxClaim {
-	out := make([]InboxClaim, 0, len(claims))
-	seen := map[string]int{}
-	for i, claim := range claims {
-		claim.Text = strings.TrimSpace(claim.Text)
-		if claim.Text == "" {
-			continue
-		}
-		claim.ID = strings.TrimSpace(claim.ID)
-		if claim.ID == "" {
-			claim.ID = fmt.Sprintf("c%d", i+1)
-		}
-		if count := seen[claim.ID]; count > 0 {
-			claim.ID = fmt.Sprintf("%s-%d", claim.ID, count+1)
-		}
-		seen[claim.ID]++
-		out = append(out, claim)
-	}
-	return out
-}
+import "strings"
 
 func destinationClaimIDs(destination inboxDestinationAssignment) []string {
-	ids := make([]string, 0, len(destination.ClaimIDs)+len(destination.Ledger)+len(destination.Actions))
+	ids := make([]string, 0, len(destination.ClaimIDs))
 	seen := map[string]bool{}
 	for _, id := range destination.ClaimIDs {
 		id = strings.TrimSpace(id)
-		if id != "" && !seen[id] {
-			ids = append(ids, id)
-			seen[id] = true
-		}
-	}
-	for _, item := range destination.Ledger {
-		id := strings.TrimSpace(item.ClaimID)
-		if id != "" && !seen[id] {
-			ids = append(ids, id)
-			seen[id] = true
-		}
-	}
-	for _, action := range destination.Actions {
-		id := strings.TrimSpace(action.ClaimID)
 		if id != "" && !seen[id] {
 			ids = append(ids, id)
 			seen[id] = true
@@ -57,19 +19,6 @@ func claimIDSet(claims []InboxClaim) map[string]bool {
 	out := make(map[string]bool, len(claims))
 	for _, claim := range claims {
 		out[claim.ID] = true
-	}
-	return out
-}
-
-func normalizeRouteLedger(ledger []InboxClaimLedger, destinationPath string, claims []InboxClaim) []InboxClaimLedger {
-	claimSet := claimIDSet(claims)
-	out := make([]InboxClaimLedger, 0, len(ledger))
-	for _, item := range ledger {
-		item.ClaimID = strings.TrimSpace(item.ClaimID)
-		if !claimSet[item.ClaimID] {
-			continue
-		}
-		out = append(out, normalizeLedgerItem(item, destinationPath))
 	}
 	return out
 }
@@ -87,14 +36,6 @@ func normalizeLedgerItem(item InboxClaimLedger, destinationPath string) InboxCla
 		item.DestinationPath = destinationPath
 	}
 	return item
-}
-
-func pendingLedgerForClaims(claims []InboxClaim, reason string) []InboxClaimLedger {
-	out := make([]InboxClaimLedger, 0, len(claims))
-	for _, claim := range claims {
-		out = append(out, InboxClaimLedger{ClaimID: claim.ID, Status: claimStatusPending, Reason: reason})
-	}
-	return out
 }
 
 func ensureAllClaimsAccounted(claims []InboxClaim, ledger []InboxClaimLedger) []InboxClaimLedger {
@@ -160,11 +101,4 @@ func firstPendingReason(ledger []InboxClaimLedger, fallback string) string {
 		}
 	}
 	return fallback
-}
-
-func mergeJudgePassed(judge MergeJudge, threshold float64) bool {
-	return strings.EqualFold(judge.Verdict, "pass") &&
-		judge.Score >= threshold &&
-		len(judge.MissingFacts) == 0 &&
-		len(judge.UnsupportedAdditions) == 0
 }

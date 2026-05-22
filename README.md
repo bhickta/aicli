@@ -126,9 +126,9 @@ For no-intervention source-note ingestion, put new atomic notes under the config
 <vault>/inbox-to-merge/**/*.md
 ```
 
-Then open the `Zettel` tab and click `Run Inbox Merge`. AICLI treats inbox notes as source notes and destination notes as the configured zettelkasten folder, excluding the inbox and `.aicli-zettel-merge`. For each source note it extracts English concept units, finds destination notes through embeddings plus the merge model, asks the model for deduplicated insert actions rather than a rewritten full note, applies those actions mechanically, and moves fully processed sources into `_processed/YYYY-MM-DD/`.
+Then open the `Zettel` tab and click `Run Inbox Merge`. AICLI treats inbox notes as source notes and destination notes as the configured zettelkasten folder, excluding the inbox and `.aicli-zettel-merge`. For each source note it embeds the source, finds semantically similar destination notes, then asks the merge model to return complete atomic destination notes in `BEGIN_NOTE` / `END_NOTE` blocks. Fully processed sources move into `_processed/YYYY-MM-DD/`.
 
-The run report shows source note -> destination note mappings, merged/deduped/pending claim counts, claim ledger entries, and diffs. Facts already present are marked deduped, new facts are inserted into the best existing atomic note, and unsafe concepts stay pending. Rollback with the inbox run id restores changed destination notes and moves processed source notes back.
+The run report shows source note -> destination note mappings, merged/deduped/pending counts, and diffs for the final notes returned by the model. If the model returns `PENDING`, the source note stays in place. Rollback with the inbox run id restores changed destination notes and moves processed source notes back.
 
 ### Optional Obsidian workflow
 

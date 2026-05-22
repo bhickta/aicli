@@ -46,7 +46,6 @@ func parseInboxFinalNotes(sourcePath string, text string) (inboxDestinationDecis
 	if len(decision.Destinations) == 0 && pendingReason == "" {
 		return inboxDestinationDecision{}, false
 	}
-	decision.FinalNotes = true
 	decision.Claims = []InboxClaim{{
 		ID:     finalNoteClaimID,
 		Text:   "Full source note must be represented losslessly in final destination note(s).",
@@ -59,7 +58,7 @@ func parseInboxFinalNotes(sourcePath string, text string) (inboxDestinationDecis
 			Reason:  pendingReason,
 		})
 	}
-	decision.Validation = MergeJudge{Verdict: "pass", Score: 1, Notes: "Final-note response parsed; local validation runs before writing."}
+	decision.Validation = MergeJudge{Verdict: "pass", Score: 1, Notes: "Final-note response parsed and accepted."}
 	return decision, true
 }
 

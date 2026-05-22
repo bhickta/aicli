@@ -8,35 +8,26 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/bhickta/aicli/internal/provider"
 )
 
-func TestServiceInboxMergeProcessesSourceAndRollbackRestores(t *testing.T) {
+func TestServiceInboxMergeWritesFinalNoteAndRollbackRestores(t *testing.T) {
 	t.Parallel()
 
 	vaultDir := t.TempDir()
-	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "economy.md"), "- **Inflation**:: 6%\n")
-	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "batch", "inflation.md"), "Inflation rose to 7% due to oil prices.\n")
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "economy.md")
+	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "batch", "inflation.md")
+	writeTestFile(t, destinationPath, "- **Inflation**: 6%.\n")
+	writeTestFile(t, sourcePath, "Inflation rose to 7% due to oil prices.\n")
 
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Inflation = 7% due to oil prices","source":"Inflation rose to 7% due to oil prices."}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"- **Inflation**:: 6%","line_number":1,"lines":["- **Inflation Spike**:: 7% (Oil prices ^)"],"reason":"new fact"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added 7% oil price line","reason":"new fact"}],"reason":"inflation destination"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
-	}}
+	provider := &fakeZettelProvider{chatResponse: strings.Join([]string{
+		"BEGIN_NOTE zettelkasten/economy.md",
+		"- **Inflation**: 6%.",
+		"- **Inflation Spike**: 7% due to oil prices.",
+		"END_NOTE",
+		"",
+	}, "\n")}
 	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "inbox-to-merge",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
+	options := inboxMergeTestOptions(vaultDir, "inbox-to-merge")
 	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
 		t.Fatalf("Index() error = %v", err)
 	}
@@ -48,18 +39,28 @@ func TestServiceInboxMergeProcessesSourceAndRollbackRestores(t *testing.T) {
 	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
 		t.Fatalf("InboxMerge() = %#v, want one processed note", resp)
 	}
-	processed := resp.Processed[0]
-	if processed.ProcessedPath == "" || !strings.HasPrefix(processed.ProcessedPath, "inbox-to-merge/_processed/") {
-		t.Fatalf("processed path = %q, want processed folder path", processed.ProcessedPath)
+	if len(provider.chatCalls) != 1 {
+		t.Fatalf("chat calls = %d, want one final-note merge call", len(provider.chatCalls))
 	}
-	if _, err := os.Stat(filepath.Join(vaultDir, "inbox-to-merge", "batch", "inflation.md")); !os.IsNotExist(err) {
+	systemPrompt := provider.chatCalls[0].Messages[0].Content
+	if !strings.Contains(systemPrompt, "Return final destination notes only") || !strings.Contains(systemPrompt, "Do not return JSON") {
+		t.Fatalf("system prompt does not require final-note response: %s", systemPrompt)
+	}
+	if got := readTestFile(t, destinationPath); !strings.Contains(got, "Inflation Spike") {
+		t.Fatalf("destination content = %q, want merged final note", got)
+	}
+	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
 		t.Fatalf("source still exists or unexpected stat error: %v", err)
-	}
-	if got := readTestFile(t, filepath.Join(vaultDir, "zettelkasten", "economy.md")); !strings.Contains(got, "Inflation Spike") {
-		t.Fatalf("destination content = %q, want shorthand merged fact", got)
 	}
 	if _, err := os.Stat(filepath.Join(resp.ArchivePath, "manifest.json")); err != nil {
 		t.Fatalf("inbox manifest missing: %v", err)
+	}
+	llmArchives, err := filepath.Glob(filepath.Join(resp.ArchivePath, "llm", "*.json"))
+	if err != nil {
+		t.Fatalf("glob llm archives: %v", err)
+	}
+	if len(llmArchives) != 1 {
+		t.Fatalf("llm archives = %v, want one saved request/response", llmArchives)
 	}
 
 	rollback, err := service.Rollback(context.Background(), RollbackRequest{Options: options, JobID: resp.RunID}, nil)
@@ -69,10 +70,10 @@ func TestServiceInboxMergeProcessesSourceAndRollbackRestores(t *testing.T) {
 	if rollback.JobID != resp.RunID {
 		t.Fatalf("rollback job id = %q, want %q", rollback.JobID, resp.RunID)
 	}
-	if got := readTestFile(t, filepath.Join(vaultDir, "zettelkasten", "economy.md")); got != "- **Inflation**:: 6%\n" {
+	if got := readTestFile(t, destinationPath); got != "- **Inflation**: 6%.\n" {
 		t.Fatalf("restored destination = %q", got)
 	}
-	if got := readTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "batch", "inflation.md")); got != "Inflation rose to 7% due to oil prices.\n" {
+	if got := readTestFile(t, sourcePath); got != "Inflation rose to 7% due to oil prices.\n" {
 		t.Fatalf("restored source = %q", got)
 	}
 }
@@ -88,23 +89,8 @@ func TestServiceInboxMergeProcessesExactDuplicateWithoutProviders(t *testing.T) 
 	writeTestFile(t, sourcePath, content)
 
 	provider := &fakeZettelProvider{}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "in",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	options := inboxMergeTestOptions(vaultDir, "in")
+	resp, err := NewWithProviders(provider, provider, provider, provider).InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
 	if err != nil {
 		t.Fatalf("InboxMerge() error = %v", err)
 	}
@@ -114,18 +100,11 @@ func TestServiceInboxMergeProcessesExactDuplicateWithoutProviders(t *testing.T) 
 	if len(provider.chatCalls) != 0 || provider.embeddingCalls != 0 {
 		t.Fatalf("provider calls chat=%d embedding=%d, want exact duplicate path to avoid providers", len(provider.chatCalls), provider.embeddingCalls)
 	}
-	processed := resp.Processed[0]
-	if processed.DedupedCount != 1 || len(processed.DestinationPaths) != 1 {
-		t.Fatalf("processed result = %#v, want one deduped destination", processed)
-	}
-	if processed.DestinationPaths[0] != "zettelkasten/Economy/Economy Shivin/002.md" {
-		t.Fatalf("destination path = %q, want original matching note", processed.DestinationPaths[0])
+	if got := readTestFile(t, destinationPath); got != content {
+		t.Fatalf("destination changed = %q, want exact original content", got)
 	}
 	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
 		t.Fatalf("source still exists or unexpected stat error: %v", err)
-	}
-	if got := readTestFile(t, destinationPath); got != content {
-		t.Fatalf("destination changed = %q, want exact original content", got)
 	}
 	manifest := readInboxRunManifest(t, resp.ArchivePath)
 	if manifest.Status != "completed" || manifest.ProcessedCount != 1 || manifest.PendingCount != 0 || manifest.FailedCount != 0 {
@@ -133,239 +112,30 @@ func TestServiceInboxMergeProcessesExactDuplicateWithoutProviders(t *testing.T) 
 	}
 }
 
-func TestServiceInboxMergeAcceptsConceptLevelEconomicsMerge(t *testing.T) {
+func TestServiceInboxMergeWritesMultipleAtomicFinalNotes(t *testing.T) {
 	t.Parallel()
 
 	vaultDir := t.TempDir()
-	destinationPath := filepath.Join(vaultDir, "zettelkasten", "Economics Definition.md")
-	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "002_Conceptual_Clarity.md")
-	writeTestFile(t, destinationPath, strings.Join([]string{
-		"---",
-		"Status: Read",
-		"---",
-		"- **Economics (Etymology)**: Oikos (Household) + Nomos (Management).",
-		"- **Economics (Definition)**: Household management using limited resources to satisfy unlimited wants.",
-		"",
-	}, "\n"))
-	writeTestFile(t, sourcePath, strings.Join([]string{
-		"---",
-		"Status: Read",
-		"---",
-		"- **Subject Nature**: Economics = technical + conceptual. Rote learning fails in UPSC.",
-		"  - **Example**: 2022 Mains statement \"Economic growth led by labor productivity\" -> answer = Jobless Growth.",
-		"- **Conceptual Clarity**: Understanding roots > memorizing definitions.",
-		"  - **Roots**: Anthrop=man, Phil/Phile=love, Mis=hate, Ology=study, Ped=child, Gyne=woman.",
-		"",
-	}, "\n"))
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"concept-1","text":"Economics definition and conceptual clarity: technical+conceptual nature, rote learning fails, 2022 Jobless Growth example, and root-word method.","source":"whole source note"}],"destinations":[{"path":"zettelkasten/Economics Definition.md","confidence":0.99,"actions":[{"claim_id":"concept-1","type":"insert_after_exact_line","anchor":"- **Economics (Definition)**: Household management using limited resources to satisfy unlimited wants.","line_number":5,"lines":["  - **Preparation Lens**: Economics = technical + conceptual; rote learning fails, so roots/logic > memorized definitions.","  - **Example**: 2022 Mains statement \"Economic growth led by labor productivity\" -> answer = Jobless Growth.","  - **Root Examples**: Anthrop=man, Phil/Phile=love, Mis=hate, Ology=study, Ped=child, Gyne=woman."],"reason":"same overall Economics definition/conceptual clarity note"}],"ledger":[{"claim_id":"concept-1","status":"merged","destination_path":"zettelkasten/Economics Definition.md","evidence":"Preparation Lens, Example, and Root Examples bullets","reason":"same overall Economics definition/conceptual clarity note"}],"reason":"same economics definition concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"concept represented"},"notes":"merged as one concept unit"}`,
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "in",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want concept-level processed note", resp)
-	}
-	processed := resp.Processed[0]
-	if processed.MergedCount != 1 || len(processed.Claims) != 1 {
-		t.Fatalf("processed result = %#v, want one merged concept unit", processed)
-	}
-	systemPrompt := provider.chatCalls[0].Messages[0].Content
-	if !strings.Contains(systemPrompt, "Return final destination notes only") || !strings.Contains(systemPrompt, "Do not return JSON") {
-		t.Fatalf("system prompt does not require final-note response: %s", systemPrompt)
-	}
-	if !strings.Contains(systemPrompt, "BEGIN_NOTE <candidate path>") {
-		t.Fatalf("system prompt does not describe final-note envelope: %s", systemPrompt)
-	}
-	if got := readTestFile(t, destinationPath); !strings.Contains(got, "Economics = technical + conceptual") || !strings.Contains(got, "Jobless Growth") {
-		t.Fatalf("destination content = %q, want economics concept details merged", got)
-	}
-}
-
-func TestServiceInboxMergeWritesFinalNoteEnvelope(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	destinationPath := filepath.Join(vaultDir, "zettelkasten", "economics.md")
-	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "concept.md")
-	writeTestFile(t, destinationPath, "- **Economics**: Efficient use of scarce resources.\n")
-	writeTestFile(t, sourcePath, "- **Subject Nature**: Economics = technical + conceptual. Rote learning fails in UPSC.\n")
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		"BEGIN_NOTE zettelkasten/economics.md\n" +
-			"- **Economics**: Efficient use of scarce resources.\n" +
-			"- **Subject Nature**: Economics = technical + conceptual. Rote learning fails in UPSC.\n" +
-			"END_NOTE\n",
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "inbox-to-merge",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want final-note processed result", resp)
-	}
-	processed := resp.Processed[0]
-	if processed.Validation.Verdict != "pass" || processed.Validation.Score != 1 {
-		t.Fatalf("validation = %#v, want mechanical final-note validation", processed.Validation)
-	}
-	want := "---\nStatus: Read\n---\n- **Economics**: Efficient use of scarce resources.\n- **Subject Nature**: Economics = technical + conceptual. Rote learning fails in UPSC.\n"
-	if got := readTestFile(t, destinationPath); got != want {
-		t.Fatalf("destination = %q, want %q", got, want)
-	}
-	llmArchives, err := filepath.Glob(filepath.Join(resp.ArchivePath, "llm", "*.json"))
-	if err != nil {
-		t.Fatalf("glob llm archives: %v", err)
-	}
-	if len(llmArchives) != 1 {
-		t.Fatalf("llm archives = %v, want one saved request/response", llmArchives)
-	}
-	trainingData, err := os.ReadFile(filepath.Join(resp.ArchivePath, "training", "zettel-inbox-chat.jsonl"))
-	if err != nil {
-		t.Fatalf("read training jsonl: %v", err)
-	}
-	if !strings.Contains(string(trainingData), "Subject Nature") {
-		t.Fatalf("training jsonl = %q, want saved model response", string(trainingData))
-	}
-}
-
-func TestServiceInboxMergeRejectsFinalNoteMissingMacroFacts(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	microPath := filepath.Join(vaultDir, "zettelkasten", "Rajput_Agriculture_Optional", "Modern Approach_ Microeconomics.md")
-	macroPath := filepath.Join(vaultDir, "zettelkasten", "Rajput_Agriculture_Optional", "Modern Approach_ Macroeconomics.md")
-	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "004.md")
-	sourceContent := "- **Microeconomics**: \"Microscope\" view -> individual/firm decisions. Focus: Demand/Supply, Price, Market Workings, Efficiency, Allocation, Production.\n" +
-		"- **Macroeconomics**: \"Telescope\" view -> country-level decisions. Focus: National impact, Employment, \"Make in India,\" International relations.\n"
-	microBefore := "- **Microeconomics**: Study of a particular firm or household.\n"
-	writeTestFile(t, microPath, microBefore)
+	microPath := filepath.Join(vaultDir, "zettelkasten", "microeconomics.md")
+	macroPath := filepath.Join(vaultDir, "zettelkasten", "macroeconomics.md")
+	sourcePath := filepath.Join(vaultDir, "in", "economics.md")
+	writeTestFile(t, microPath, "- **Microeconomics**: Study of a firm or household.\n")
 	writeTestFile(t, macroPath, "- **Macroeconomics**: Whole economy and national income.\n")
-	writeTestFile(t, sourcePath, sourceContent)
+	writeTestFile(t, sourcePath, "- **Microeconomics**: Microscope view.\n- **Macroeconomics**: Telescope view.\n")
 
-	provider := &fakeZettelProvider{chatResponses: []string{
-		"BEGIN_NOTE zettelkasten/Rajput_Agriculture_Optional/Modern Approach_ Microeconomics.md\n" +
-			microBefore +
-			"- **Microeconomics**: \"Microscope\" view -> individual/firm decisions. Focus: Demand/Supply, Price, Market Workings, Efficiency, Allocation, Production.\n" +
-			"END_NOTE\n",
-	}}
+	provider := &fakeZettelProvider{chatResponse: strings.Join([]string{
+		"BEGIN_NOTE zettelkasten/microeconomics.md",
+		"- **Microeconomics**: Study of a firm or household.",
+		"- **Microeconomics**: Microscope view.",
+		"END_NOTE",
+		"BEGIN_NOTE zettelkasten/macroeconomics.md",
+		"- **Macroeconomics**: Whole economy and national income.",
+		"- **Macroeconomics**: Telescope view.",
+		"END_NOTE",
+		"",
+	}, "\n")}
 	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "in",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want pending due to missing macro facts", resp)
-	}
-	pending := resp.Pending[0]
-	if pending.Validation.Verdict != "fail" || len(pending.Validation.MissingFacts) == 0 {
-		t.Fatalf("validation = %#v, want missing facts", pending.Validation)
-	}
-	if got := readTestFile(t, microPath); got != microBefore {
-		t.Fatalf("micro destination changed = %q, want original", got)
-	}
-	if got := readTestFile(t, sourcePath); got != sourceContent {
-		t.Fatalf("source changed = %q, want original", got)
-	}
-}
-
-func TestServiceInboxMergeAcceptsFinalNoteMultiDestinationCoverage(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	microPath := filepath.Join(vaultDir, "zettelkasten", "Rajput_Agriculture_Optional", "Modern Approach_ Microeconomics.md")
-	macroPath := filepath.Join(vaultDir, "zettelkasten", "Rajput_Agriculture_Optional", "Modern Approach_ Macroeconomics.md")
-	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "004.md")
-	sourceContent := "- **Microeconomics**: \"Microscope\" view -> individual/firm decisions.\n" +
-		"- **Macroeconomics**: \"Telescope\" view -> country-level decisions and international relations.\n"
-	microBefore := "- **Microeconomics**: Study of a particular firm or household.\n"
-	macroBefore := "- **Macroeconomics**: Whole economy and national income.\n"
-	writeTestFile(t, microPath, microBefore)
-	writeTestFile(t, macroPath, macroBefore)
-	writeTestFile(t, sourcePath, sourceContent)
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		"BEGIN_NOTE zettelkasten/Rajput_Agriculture_Optional/Modern Approach_ Microeconomics.md\n" +
-			microBefore +
-			"- **Microeconomics**: \"Microscope\" view -> individual/firm decisions.\n" +
-			"END_NOTE\n" +
-			"BEGIN_NOTE zettelkasten/Rajput_Agriculture_Optional/Modern Approach_ Macroeconomics.md\n" +
-			macroBefore +
-			"- **Macroeconomics**: \"Telescope\" view -> country-level decisions and international relations.\n" +
-			"END_NOTE\n",
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "in",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
+	options := inboxMergeTestOptions(vaultDir, "in")
 	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
 		t.Fatalf("Index() error = %v", err)
 	}
@@ -380,45 +150,54 @@ func TestServiceInboxMergeAcceptsFinalNoteMultiDestinationCoverage(t *testing.T)
 	if !strings.Contains(readTestFile(t, microPath), "Microscope") || !strings.Contains(readTestFile(t, macroPath), "Telescope") {
 		t.Fatalf("destinations did not receive source facts")
 	}
-	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
-		t.Fatalf("source still exists or unexpected stat error: %v", err)
-	}
 }
 
-func TestServiceInboxMergeRejectsFinalNoteCandidateContamination(t *testing.T) {
+func TestServiceInboxMergeCanAdoptNewFinalNoteWhenEnabled(t *testing.T) {
 	t.Parallel()
 
 	vaultDir := t.TempDir()
-	destinationPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "UPSC Prelims Syllabus Overview.md")
 	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "003.md")
-	sourceContent := "- **Prelims Syllabus**: Poverty, inclusion, and demographics.\n"
-	destinationBefore := "- **Microeconomics for Prelims**: Low priority.\n"
-	writeTestFile(t, destinationPath, destinationBefore)
-	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "Economy", "0978 Study Material Roadmap and Next Topics.md"), "- **Mains Answer Writing Topics**: FDI in insurance and farm loan waiver.\n")
+	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "seed.md"), "- **Economy**: seed.\n")
+	writeTestFile(t, sourcePath, "- **Prelims Syllabus**: Poverty, inclusion, and demographics.\n")
+
+	provider := &fakeZettelProvider{chatResponse: strings.Join([]string{
+		"BEGIN_NOTE zettelkasten/Economy Shivin/003.md",
+		"- **Prelims Syllabus**: Poverty, inclusion, and demographics.",
+		"END_NOTE",
+		"",
+	}, "\n")}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := inboxMergeTestOptions(vaultDir, "in")
+	options.AdoptUnmatchedInbox = true
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want adopted final-note merge", resp)
+	}
+	adoptedPath := filepath.Join(vaultDir, "zettelkasten", "Economy Shivin", "003.md")
+	if got := readTestFile(t, adoptedPath); !strings.Contains(got, "Poverty") || !strings.Contains(got, "demographics") {
+		t.Fatalf("adopted note = %q, want source facts", got)
+	}
+}
+
+func TestServiceInboxMergeKeepsSourcePendingWhenModelDeclines(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	sourcePath := filepath.Join(vaultDir, "in", "misc.md")
+	sourceContent := "- **Unmatched**: unrelated inbox fact.\n"
+	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "seed.md"), "- **Economy**: seed.\n")
 	writeTestFile(t, sourcePath, sourceContent)
 
-	provider := &fakeZettelProvider{chatResponses: []string{
-		"BEGIN_NOTE zettelkasten/Economy/UPSC Prelims Syllabus Overview.md\n" +
-			destinationBefore +
-			"- **Prelims Syllabus**: Poverty, inclusion, and demographics.\n" +
-			"- **Mains Answer Writing Topics**: FDI in insurance and farm loan waiver.\n" +
-			"END_NOTE\n",
-	}}
+	provider := &fakeZettelProvider{chatResponse: "PENDING: no semantically similar destination note\n"}
 	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "in",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
+	options := inboxMergeTestOptions(vaultDir, "in")
 	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
 		t.Fatalf("Index() error = %v", err)
 	}
@@ -428,800 +207,30 @@ func TestServiceInboxMergeRejectsFinalNoteCandidateContamination(t *testing.T) {
 		t.Fatalf("InboxMerge() error = %v", err)
 	}
 	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want pending contaminated final note", resp)
-	}
-	if len(resp.Pending[0].Validation.UnsupportedAdditions) == 0 {
-		t.Fatalf("validation = %#v, want unsupported addition", resp.Pending[0].Validation)
-	}
-	if got := readTestFile(t, destinationPath); got != destinationBefore {
-		t.Fatalf("destination changed = %q, want original", got)
-	}
-}
-
-func TestServiceInboxMergeAdoptsWhenFinalNoteDestinationTooNarrow(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	narrowPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "0330 Microeconomics Priority Note.md")
-	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "003.md")
-	sourceContent := "- **Prelims Syllabus**: Econ/Social Development, Poverty, Inclusion, Demographics.\n"
-	narrowBefore := "- **Microeconomics for Prelims**: Low priority.\n"
-	writeTestFile(t, narrowPath, narrowBefore)
-	writeTestFile(t, sourcePath, sourceContent)
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		"BEGIN_NOTE zettelkasten/Economy/0330 Microeconomics Priority Note.md\n" +
-			narrowBefore +
-			"- **Prelims Syllabus**: Econ/Social Development, Poverty, Inclusion, Demographics.\n" +
-			"END_NOTE\n",
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "in",
-		AdoptUnmatchedInbox:  true,
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want adopted source after narrow route rejection", resp)
-	}
-	if got := readTestFile(t, narrowPath); got != narrowBefore {
-		t.Fatalf("narrow destination changed = %q, want original", got)
-	}
-	adoptedPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "Economy Shivin", "003.md")
-	if got := readTestFile(t, adoptedPath); got != sourceContent {
-		t.Fatalf("adopted destination = %q, want source content", got)
-	}
-}
-
-func TestServiceInboxMergeUsesEarlierRunDestinationAsLaterCandidate(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "Economy", "seed.md"), "- **Economy**: seed.\n")
-	firstSourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "010.md")
-	secondSourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "011.md")
-	firstSource := "- **Factors of Production**: Land, Labor, Capital, Entrepreneurship.\n"
-	secondSource := "- **Factors of Production**: Also called resources; Land, Labor, Capital, Entrepreneurship.\n" +
-		"- **Scarcity**: Fresh water and coal are scarce resources.\n"
-	destinationRel := "zettelkasten/Economy/Economy Shivin/010.md"
-	writeTestFile(t, firstSourcePath, firstSource)
-	writeTestFile(t, secondSourcePath, secondSource)
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		"BEGIN_NOTE " + destinationRel + "\n" +
-			firstSource +
-			"END_NOTE\n",
-		"BEGIN_NOTE " + destinationRel + "\n" +
-			"- **Factors of Production**: Also called resources; Land, Labor, Capital, Entrepreneurship.\n" +
-			"- **Scarcity**: Fresh water and coal are scarce resources.\n" +
-			"END_NOTE\n",
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "in",
-		InboxLimit:           2,
-		AdoptUnmatchedInbox:  true,
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 2 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want both notes processed into same run destination", resp)
-	}
-	destinationPath := filepath.Join(vaultDir, filepath.FromSlash(destinationRel))
-	got := readTestFile(t, destinationPath)
-	if !strings.Contains(got, "Factors of Production") || !strings.Contains(got, "Scarcity") {
-		t.Fatalf("destination = %q, want first and second source facts", got)
-	}
-	if strings.Count(got, "Factors of Production") != 1 {
-		t.Fatalf("destination = %q, want deduped factors of production line", got)
-	}
-	if _, err := os.Stat(filepath.Join(vaultDir, "zettelkasten", "Economy", "Economy Shivin", "011.md")); !os.IsNotExist(err) {
-		t.Fatalf("unexpected duplicate adopted destination for second source: %v", err)
-	}
-	if len(provider.chatCalls) != 2 {
-		t.Fatalf("chat calls = %d, want two decision calls", len(provider.chatCalls))
-	}
-	secondPrompt := provider.chatCalls[1].Messages[len(provider.chatCalls[1].Messages)-1].Content
-	if !strings.Contains(secondPrompt, "PATH: "+destinationRel) {
-		t.Fatalf("second prompt missing prior run destination candidate: %s", secondPrompt)
-	}
-}
-
-func TestServiceInboxMergeActionDoesNotInventFrontmatterForPlainDestination(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	destinationPath := filepath.Join(vaultDir, "zettelkasten", "economics.md")
-	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "jobless.md")
-	writeTestFile(t, destinationPath, "- **Economics**: Existing concept.\n")
-	writeTestFile(t, sourcePath, "Economics is technical and conceptual in UPSC.\n")
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Economics is technical and conceptual in UPSC.","source":"source note"}],"destinations":[{"path":"zettelkasten/economics.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"- **Economics**: Existing concept.","line_number":1,"lines":["- **Economics as Exam Domain**: Economics is technical + conceptual in UPSC."],"reason":"same UPSC economics context"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economics.md","evidence":"Economics as Exam Domain bullet","reason":"same UPSC economics context"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "inbox-to-merge",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want processed note", resp)
-	}
-	got := readTestFile(t, destinationPath)
-	if strings.HasPrefix(got, "---\n") {
-		t.Fatalf("destination starts with generated frontmatter marker: %q", got)
-	}
-	if !strings.Contains(got, "Economics as Exam Domain") {
-		t.Fatalf("destination content = %q, want merged concept", got)
-	}
-}
-
-func TestServiceInboxMergeAdoptsWhenModelSelectsNonCandidateDestination(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "Economy", "existing.md"), "- **Economy**: existing seed.\n")
-	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "002.md")
-	sourceContent := "- **Conceptual Clarity**: Economics = technical + conceptual; rote learning fails.\n"
-	writeTestFile(t, sourcePath, sourceContent)
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Economics is technical and conceptual; rote learning fails.","source":"source note"}],"destinations":[{"path":"zettelkasten/Economy/Rajput_Agriculture_Optional/Etymology and Core Definition of Economics.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"append_to_end","lines":["- **Conceptual Clarity**: Economics = technical + conceptual; rote learning fails."],"reason":"same concept"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/Economy/Rajput_Agriculture_Optional/Etymology and Core Definition of Economics.md","evidence":"conceptual clarity line","reason":"same concept"}],"reason":"hallucinated stale destination"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "in",
-		AdoptUnmatchedInbox:  true,
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want stale non-candidate destination adopted without failure", resp)
-	}
-	adoptedPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "Economy Shivin", "002.md")
-	if got := readTestFile(t, adoptedPath); got != sourceContent {
-		t.Fatalf("adopted destination = %q, want source content", got)
-	}
-	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
-		t.Fatalf("source still exists or unexpected stat error: %v", err)
-	}
-}
-
-func TestServiceInboxMergeAdoptsWhenCandidateDestinationDisappears(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	destinationPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "existing.md")
-	writeTestFile(t, destinationPath, "- **Economy**: existing seed.\n")
-	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "003.md")
-	sourceContent := "- **Conceptual Clarity**: Economics requires logic.\n"
-	writeTestFile(t, sourcePath, sourceContent)
-
-	provider := &fakeZettelProvider{
-		chatResponses: []string{
-			`{"claims":[{"id":"c1","text":"Economics requires logic.","source":"source note"}],"destinations":[{"path":"zettelkasten/Economy/existing.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"append_to_end","lines":["- **Conceptual Clarity**: Economics requires logic."],"reason":"same concept"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/Economy/existing.md","evidence":"logic line","reason":"same concept"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
-		},
-		onChat: func(provider.ChatRequest) {
-			if err := os.Remove(destinationPath); err != nil {
-				t.Fatalf("remove candidate destination: %v", err)
-			}
-		},
-	}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "in",
-		AdoptUnmatchedInbox:  true,
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want disappeared candidate adopted without failure", resp)
-	}
-	adoptedPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "Economy Shivin", "003.md")
-	if got := readTestFile(t, adoptedPath); got != sourceContent {
-		t.Fatalf("adopted destination = %q, want source content", got)
-	}
-	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
-		t.Fatalf("source still exists or unexpected stat error: %v", err)
-	}
-}
-
-func TestServiceInboxMergeAppliesActionWithoutFormattingChurn(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	destinationPath := filepath.Join(vaultDir, "zettelkasten", "micro.md")
-	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "micro-focus.md")
-	destinationContent := "- **Microeconomics**: Study of individual decision units.\n\t- **Focus**: Price, demand, supply.\n"
-	writeTestFile(t, destinationPath, destinationContent)
-	writeTestFile(t, sourcePath, "Microeconomics uses microscope view for individual choices.\n")
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Microeconomics uses microscope view for individual choices.","source":"source note"}],"destinations":[{"path":"zettelkasten/micro.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"\t- **Focus**: Price, demand, supply.","line_number":2,"lines":["\t- **Microscope View**: individual choices."],"reason":"same microeconomics concept"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/micro.md","evidence":"Microscope View bullet","reason":"same microeconomics concept"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "inbox-to-merge",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want processed note through mechanical action", resp)
-	}
-	want := "- **Microeconomics**: Study of individual decision units.\n\t- **Focus**: Price, demand, supply.\n\t- **Microscope View**: individual choices.\n"
-	if got := readTestFile(t, destinationPath); got != want {
-		t.Fatalf("destination content = %q, want %q", got, want)
-	}
-	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
-		t.Fatalf("source still exists or unexpected stat error: %v", err)
-	}
-}
-
-func TestServiceInboxMergeDedupesActionLinesAlreadyInDestination(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	destinationPath := filepath.Join(vaultDir, "zettelkasten", "pds.md")
-	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "pds.md")
-	destinationContent := strings.Join([]string{
-		"- **Public Distribution System (PDS)**: Operated under joint responsibility.",
-		"- **Public Distribution System (PDS)**: Distributes subsidized food grains through ration cards.",
-		"",
-	}, "\n")
-	writeTestFile(t, destinationPath, destinationContent)
-	writeTestFile(t, sourcePath, "PDS distributes subsidized food grains through ration cards.\n")
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"PDS distributes subsidized food grains through ration cards.","source":"source note"}],"destinations":[{"path":"zettelkasten/pds.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"- **Public Distribution System (PDS)**: Operated under joint responsibility.","line_number":1,"lines":["- **Public Distribution System (PDS)**: Distributes subsidized food grains through ration cards."],"reason":"same concept"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/pds.md","evidence":"PDS food grain line","reason":"same concept"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "inbox-to-merge",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want processed dedupe when action line already exists", resp)
-	}
-	processed := resp.Processed[0]
-	if processed.MergedCount != 0 || processed.DedupedCount != 1 {
-		t.Fatalf("processed result = %#v, want action represented as deduped without writing duplicate line", processed)
-	}
-	if got := readTestFile(t, destinationPath); got != destinationContent {
-		t.Fatalf("destination content = %q, want unchanged %q", got, destinationContent)
-	}
-	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
-		t.Fatalf("source still exists or unexpected stat error: %v", err)
-	}
-}
-
-func TestServiceInboxMergeAppliesFactPreservingProseAction(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	destinationPath := filepath.Join(vaultDir, "zettelkasten", "economy.md")
-	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "strategy.md")
-	destinationContent := "- **Economy**: Existing concept.\n"
-	writeTestFile(t, destinationPath, destinationContent)
-	writeTestFile(t, sourcePath, "Economics preparation needs conceptual clarity.\n")
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Economics preparation needs conceptual clarity.","source":"source note"}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"- **Economy**: Existing concept.","line_number":1,"lines":["Economics preparation needs conceptual clarity and cannot be mugged up."],"reason":"same concept"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added prose line","reason":"same concept"}],"reason":"same concept"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "inbox-to-merge",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want fact-preserving prose action accepted", resp)
-	}
-	want := destinationContent + "Economics preparation needs conceptual clarity and cannot be mugged up.\n"
-	if got := readTestFile(t, destinationPath); got != want {
-		t.Fatalf("destination content = %q, want %q", got, want)
-	}
-	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
-		t.Fatalf("source still exists or unexpected stat error: %v", err)
-	}
-}
-
-func TestServiceInboxMergeDoesNotWriteDedupedOnlyDestination(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	destinationPath := filepath.Join(vaultDir, "zettelkasten", "polity.md")
-	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "rote.md")
-	destinationContent := "- **UPSC**: Rote learning fails; independent thinking needed.\n"
-	writeTestFile(t, destinationPath, destinationContent)
-	writeTestFile(t, sourcePath, "Rote learning fails in UPSC.\n")
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Rote learning fails in UPSC","source":"Rote learning fails in UPSC."}],"destinations":[{"path":"zettelkasten/polity.md","confidence":0.99,"ledger":[{"claim_id":"c1","status":"deduped","destination_path":"zettelkasten/polity.md","evidence":"existing rote learning line","reason":"already represented"}],"reason":"already represented"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"dedupe verified"},"notes":"deduped"}`,
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "inbox-to-merge",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want deduped note processed", resp)
-	}
-	processed := resp.Processed[0]
-	if processed.MergedCount != 0 || processed.DedupedCount != 1 || len(processed.Diffs) != 0 {
-		t.Fatalf("processed result = %#v, want dedupe-only no-write result", processed)
-	}
-	if got := readTestFile(t, destinationPath); got != destinationContent {
-		t.Fatalf("deduped destination changed = %q, want %q", got, destinationContent)
-	}
-	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
-		t.Fatalf("source still exists or unexpected stat error: %v", err)
-	}
-	if processed.ProcessedPath == "" || !strings.HasPrefix(processed.ProcessedPath, "inbox-to-merge/_processed/") {
-		t.Fatalf("processed path = %q, want processed folder path", processed.ProcessedPath)
-	}
-	if resp.APICalls.Total != 2 || resp.APICalls.Chat != 1 || resp.APICalls.Embeddings != 1 {
-		t.Fatalf("api calls = %#v, want one chat call and one embedding call", resp.APICalls)
-	}
-}
-
-func TestServiceInboxMergeUsesRouteLevelDedupeWithoutRewrite(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	destinationPath := filepath.Join(vaultDir, "zettelkasten", "polity.md")
-	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "rote.md")
-	destinationContent := "- **UPSC**: Rote learning fails; independent thinking needed.\n"
-	writeTestFile(t, destinationPath, destinationContent)
-	writeTestFile(t, sourcePath, "Rote learning fails in UPSC.\n")
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Rote learning fails in UPSC","source":"Rote learning fails in UPSC."}],"destinations":[{"path":"zettelkasten/polity.md","confidence":0.99,"ledger":[{"claim_id":"c1","status":"deduped","destination_path":"zettelkasten/polity.md","evidence":"excerpt already says rote learning fails","reason":"already represented"}],"reason":"already represented"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"route dedupe verified"},"notes":"ok"}`,
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "inbox-to-merge",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want route-deduped note processed", resp)
-	}
-	if got := readTestFile(t, destinationPath); got != destinationContent {
-		t.Fatalf("deduped destination changed = %q, want %q", got, destinationContent)
-	}
-	if len(provider.chatCalls) != 1 {
-		t.Fatalf("chat calls = %d, want one decision call", len(provider.chatCalls))
-	}
-	if provider.chatCalls[0].Model != "merge-model" {
-		t.Fatalf("chat model = %q, want merge-model for one-shot inbox decision", provider.chatCalls[0].Model)
-	}
-	if resp.APICalls.Total != 2 || resp.APICalls.Chat != 1 || resp.APICalls.Embeddings != 1 {
-		t.Fatalf("api calls = %#v, want one chat call and one embedding call", resp.APICalls)
-	}
-}
-
-func TestServiceInboxMergeAddsLexicalCandidatesBeyondEmbeddingLimit(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	joblessPath := filepath.Join(vaultDir, "zettelkasten", "zzz_jobless.md")
-	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "aaa_unrelated.md"), "- **Inflation**:: WPI basket changed.\n")
-	writeTestFile(t, joblessPath, "- **Jobless Growth**: Services = high value/low labor.\n")
-	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "mixed.md"), "- **Example**: 2022 Mains answer = **Jobless Growth**.\n- **Root**: Anthrop = man.\n")
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"2022 Mains answer is Jobless Growth","source":"Example"},{"id":"c2","text":"Anthrop means man","source":"Root"}],"destinations":[{"path":"zettelkasten/zzz_jobless.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"- **Jobless Growth**: Services = high value/low labor.","line_number":1,"lines":["- **2022 Mains**: answer = Jobless Growth."],"reason":"same concept"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/zzz_jobless.md","evidence":"added 2022 mains answer","reason":"same concept"}],"reason":"lexical candidate matched Jobless Growth"}],"pending":[{"claim_id":"c2","status":"pending","reason":"no destination for root word"}],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"partial"}`,
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "inbox-to-merge",
-		CandidateLimit:       1,
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.PendingCount != 1 || resp.ProcessedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want partial result with one merged lexical candidate", resp)
-	}
-	if len(provider.chatCalls) != 1 {
-		t.Fatalf("chat calls = %d, want one decision call", len(provider.chatCalls))
-	}
-	decisionPayload := provider.chatCalls[0].Messages[len(provider.chatCalls[0].Messages)-1].Content
-	if !strings.Contains(decisionPayload, "zettelkasten/zzz_jobless.md") {
-		t.Fatalf("decision payload missing lexical jobless candidate: %s", decisionPayload)
-	}
-	if got := readTestFile(t, joblessPath); !strings.Contains(got, "2022 Mains") {
-		t.Fatalf("jobless destination = %q, want merged mains example", got)
-	}
-	if resp.APICalls.Total != 2 || resp.APICalls.Chat != 1 || resp.APICalls.Embeddings != 1 {
-		t.Fatalf("api calls = %#v, want one chat call and one embedding call", resp.APICalls)
-	}
-}
-
-func TestServiceInboxMergeAdoptsUnmatchedSourceWhenEnabled(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "Economy", "existing.md"), "- **Economy**: existing index seed.\n")
-	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "002.md")
-	sourceContent := "- **Conceptual Clarity**: Understanding roots > memorizing definitions.\n"
-	writeTestFile(t, sourcePath, sourceContent)
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Understanding roots is better than memorizing definitions","source":"Conceptual Clarity"}],"destinations":[],"pending":[{"claim_id":"c1","status":"pending","reason":"no confident destination"}],"notes":"pending"}`,
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "in",
-		AdoptUnmatchedInbox:  true,
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want adopted source processed", resp)
-	}
-	adoptedPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "Economy Shivin", "002.md")
-	if got := readTestFile(t, adoptedPath); got != sourceContent {
-		t.Fatalf("adopted destination = %q, want source content", got)
-	}
-	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
-		t.Fatalf("source still exists or unexpected stat error: %v", err)
-	}
-	processed := resp.Processed[0]
-	if processed.MergedCount != 1 || processed.PendingCount != 0 || len(processed.Diffs) != 1 || !processed.Diffs[0].Created {
-		t.Fatalf("processed result = %#v, want one created destination merge", processed)
-	}
-	if len(provider.chatCalls) != 1 {
-		t.Fatalf("chat calls = %d, want one decision call", len(provider.chatCalls))
-	}
-	if provider.chatCalls[0].Model != "merge-model" {
-		t.Fatalf("chat model = %q, want merge-model for one-shot inbox decision", provider.chatCalls[0].Model)
-	}
-	if resp.APICalls.Total != 2 || resp.APICalls.Chat != 1 || resp.APICalls.Embeddings != 1 {
-		t.Fatalf("api calls = %#v, want one chat call and one embedding call", resp.APICalls)
-	}
-
-	if _, err := service.Rollback(context.Background(), RollbackRequest{Options: options, JobID: resp.RunID}, nil); err != nil {
-		t.Fatalf("Rollback() error = %v", err)
-	}
-	if _, err := os.Stat(adoptedPath); !os.IsNotExist(err) {
-		t.Fatalf("rollback left adopted destination or unexpected stat error: %v", err)
+		t.Fatalf("InboxMerge() = %#v, want pending source", resp)
 	}
 	if got := readTestFile(t, sourcePath); got != sourceContent {
-		t.Fatalf("rollback source = %q, want original content", got)
+		t.Fatalf("source changed = %q, want unchanged pending source", got)
 	}
 }
 
-func TestServiceInboxMergeAdoptsWhenCandidateIsTooNarrow(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	narrowDestinationPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "UPSC Prelims Concepts on Debt and Deficit.md")
-	writeTestFile(t, narrowDestinationPath, "- **Debt and Deficit**: Existing prelims PYQ facts.\n")
-	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "003.md")
-	sourceContent := "- **Prelims Syllabus**: Econ/Social Development, Sustainable Development, Poverty, Inclusion, Demographics, Social Sector Initiatives.\n"
-	writeTestFile(t, sourcePath, sourceContent)
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"UPSC Prelims syllabus includes Econ/Social Development, Sustainable Development, Poverty, Inclusion, Demographics, and Social Sector Initiatives.","source":"Prelims Syllabus"}],"destinations":[{"path":"zettelkasten/Economy/UPSC Prelims Concepts on Debt and Deficit.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"append_to_end","lines":["- **UPSC Prelims Syllabus**: Econ/Social Development, Sustainable Development, Poverty, Inclusion, Demographics, Social Sector Initiatives."],"reason":"same prelims context"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/Economy/UPSC Prelims Concepts on Debt and Deficit.md","evidence":"prelims syllabus line","reason":"same prelims context"}],"reason":"same prelims context"}],"pending":[],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"},"notes":"ok"}`,
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "in",
-		AdoptUnmatchedInbox:  true,
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want too-narrow candidate adopted as new note", resp)
-	}
-	if got := readTestFile(t, narrowDestinationPath); got != "- **Debt and Deficit**: Existing prelims PYQ facts.\n" {
-		t.Fatalf("narrow destination changed = %q", got)
-	}
-	adoptedPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "Economy Shivin", "003.md")
-	if got := readTestFile(t, adoptedPath); got != sourceContent {
-		t.Fatalf("adopted destination = %q, want source content", got)
-	}
-}
-
-func TestServiceInboxMergeKeepsPendingSourceUnchanged(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "economy.md"), "- **Inflation**:: 6%\n")
-	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "stray.md"), "Ambiguous note with no safe destination.\n")
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Ambiguous note with no safe destination","source":"Ambiguous note with no safe destination."}],"destinations":[],"pending":[{"claim_id":"c1","status":"pending","reason":"no confident destination"}],"notes":"pending"}`,
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "inbox-to-merge",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.PendingCount != 1 || resp.ProcessedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want one pending note", resp)
-	}
-	if got := readTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "stray.md")); got != "Ambiguous note with no safe destination.\n" {
-		t.Fatalf("pending source changed = %q", got)
-	}
-	if got := readTestFile(t, filepath.Join(vaultDir, "zettelkasten", "economy.md")); got != "- **Inflation**:: 6%\n" {
-		t.Fatalf("destination changed for pending note = %q", got)
-	}
-	if resp.Pending[0].Reason != "no confident destination" {
-		t.Fatalf("pending reason = %q, want judge reason", resp.Pending[0].Reason)
-	}
-}
-
-func TestServiceInboxMergeAppliesPartialAndPreservesPendingSource(t *testing.T) {
+func TestServiceInboxMergeRejectsNonCandidateFinalNote(t *testing.T) {
 	t.Parallel()
 
 	vaultDir := t.TempDir()
 	destinationPath := filepath.Join(vaultDir, "zettelkasten", "economy.md")
-	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "mixed.md")
-	writeTestFile(t, destinationPath, "- **Inflation**:: 6%\n")
-	writeTestFile(t, sourcePath, "Inflation rose to 7%.\nUnclear prelims range.\n")
+	sourcePath := filepath.Join(vaultDir, "in", "inflation.md")
+	writeTestFile(t, destinationPath, "- **Inflation**: 6%.\n")
+	writeTestFile(t, sourcePath, "Inflation rose to 7% due to oil prices.\n")
 
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Inflation rose to 7%","source":"Inflation rose to 7%."},{"id":"c2","text":"Unclear prelims range","source":"Unclear prelims range."}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"actions":[{"claim_id":"c1","type":"insert_after_exact_line","anchor":"- **Inflation**:: 6%","line_number":1,"lines":["- **Inflation Level**:: 7%"],"reason":"new fact"}],"ledger":[{"claim_id":"c1","status":"merged","destination_path":"zettelkasten/economy.md","evidence":"added inflation 7%","reason":"new fact"}],"reason":"inflation destination"}],"pending":[{"claim_id":"c2","status":"pending","reason":"no confident destination"}],"validation":{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"partial applied facts are represented"},"notes":"partial"}`,
-	}}
+	provider := &fakeZettelProvider{chatResponse: strings.Join([]string{
+		"BEGIN_NOTE zettelkasten/not-a-candidate.md",
+		"- **Inflation Spike**: 7% due to oil prices.",
+		"END_NOTE",
+		"",
+	}, "\n")}
 	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "inbox-to-merge",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
+	options := inboxMergeTestOptions(vaultDir, "in")
 	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
 		t.Fatalf("Index() error = %v", err)
 	}
@@ -1231,87 +240,13 @@ func TestServiceInboxMergeAppliesPartialAndPreservesPendingSource(t *testing.T) 
 		t.Fatalf("InboxMerge() error = %v", err)
 	}
 	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want one partial pending note", resp)
+		t.Fatalf("InboxMerge() = %#v, want pending non-candidate destination", resp)
 	}
-	if resp.APICalls.Total != 2 || resp.APICalls.Chat != 1 || resp.APICalls.Embeddings != 1 {
-		t.Fatalf("api calls = %#v, want one chat call and one embedding call", resp.APICalls)
+	if got := readTestFile(t, destinationPath); got != "- **Inflation**: 6%.\n" {
+		t.Fatalf("destination changed = %q, want unchanged", got)
 	}
-	partial := resp.Pending[0]
-	if partial.Status != "partial" || partial.ProcessedPath == "" || !strings.HasPrefix(partial.ProcessedPath, "inbox-to-merge/_pending/") {
-		t.Fatalf("partial result = %#v, want pending folder path", partial)
-	}
-	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
-		t.Fatalf("source still exists or unexpected stat error: %v", err)
-	}
-	if got := readTestFile(t, destinationPath); got != "- **Inflation**:: 6%\n- **Inflation Level**:: 7%\n" {
-		t.Fatalf("destination content = %q, want partial applied merge", got)
-	}
-	manifest := readInboxRunManifest(t, resp.ArchivePath)
-	if manifest.Status != "partial" || manifest.PendingCount != 1 {
-		t.Fatalf("manifest = %#v, want partial run", manifest)
-	}
-	if manifest.APICalls.Total != 2 || manifest.APICalls.Chat != 1 || manifest.APICalls.Embeddings != 1 {
-		t.Fatalf("manifest api calls = %#v, want recorded usage", manifest.APICalls)
-	}
-
-	if _, err := service.Rollback(context.Background(), RollbackRequest{Options: options, JobID: resp.RunID}, nil); err != nil {
-		t.Fatalf("Rollback() error = %v", err)
-	}
-	if got := readTestFile(t, destinationPath); got != "- **Inflation**:: 6%\n" {
-		t.Fatalf("rollback destination = %q", got)
-	}
-	if got := readTestFile(t, sourcePath); got != "Inflation rose to 7%.\nUnclear prelims range.\n" {
-		t.Fatalf("rollback source = %q", got)
-	}
-}
-
-func TestInboxRollbackIgnoresPendingDestinationArchives(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	destinationPath := filepath.Join(vaultDir, "zettelkasten", "economy.md")
-	sourcePath := filepath.Join(vaultDir, "inbox-to-merge", "stray.md")
-	writeTestFile(t, destinationPath, "- **Inflation**:: 6%\n")
-	writeTestFile(t, sourcePath, "Inflation rose to 7%, but routing is uncertain.\n")
-
-	provider := &fakeZettelProvider{chatResponses: []string{
-		`{"claims":[{"id":"c1","text":"Inflation rose to 7%","source":"Inflation rose to 7%"}],"destinations":[{"path":"zettelkasten/economy.md","confidence":0.99,"ledger":[{"claim_id":"c1","status":"pending","destination_path":"zettelkasten/economy.md","reason":"not enough evidence to merge"}],"reason":"inflation destination"}],"pending":[],"notes":"pending"}`,
-	}}
-	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "inbox-to-merge",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
-		t.Fatalf("Index() error = %v", err)
-	}
-	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
-	if err != nil {
-		t.Fatalf("InboxMerge() error = %v", err)
-	}
-	if resp.PendingCount != 1 || resp.ProcessedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want pending run", resp)
-	}
-
-	writeTestFile(t, destinationPath, "- **Inflation**:: manual edit after pending run\n")
-	if _, err := service.Rollback(context.Background(), RollbackRequest{Options: options, JobID: resp.RunID}, nil); err != nil {
-		t.Fatalf("Rollback() error = %v", err)
-	}
-	if got := readTestFile(t, destinationPath); got != "- **Inflation**:: manual edit after pending run\n" {
-		t.Fatalf("rollback changed unapplied pending destination = %q", got)
-	}
-	if got := readTestFile(t, sourcePath); got != "Inflation rose to 7%, but routing is uncertain.\n" {
-		t.Fatalf("pending source changed = %q", got)
+	if _, err := os.Stat(filepath.Join(vaultDir, "zettelkasten", "not-a-candidate.md")); !os.IsNotExist(err) {
+		t.Fatalf("non-candidate note was created or stat error: %v", err)
 	}
 }
 
@@ -1319,58 +254,27 @@ func TestServiceInboxMergeRespectsInboxLimit(t *testing.T) {
 	t.Parallel()
 
 	vaultDir := t.TempDir()
-	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "destination.md"), "destination\n")
-	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "001.md"), "first\n")
-	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "002.md"), "second\n")
-	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "003.md"), "third\n")
+	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "seed.md"), "- **Seed**: candidate.\n")
+	writeTestFile(t, filepath.Join(vaultDir, "in", "a.md"), "- **A**: one.\n")
+	writeTestFile(t, filepath.Join(vaultDir, "in", "b.md"), "- **B**: two.\n")
 
-	provider := &fakeZettelProvider{}
+	provider := &fakeZettelProvider{chatResponse: "PENDING: test run\n"}
 	service := NewWithProviders(provider, provider, provider, provider)
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "inbox-to-merge",
-		InboxLimit:           2,
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
+	options := inboxMergeTestOptions(vaultDir, "in")
+	options.InboxLimit = 1
 	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
 		t.Fatalf("Index() error = %v", err)
 	}
+
 	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
 	if err != nil {
 		t.Fatalf("InboxMerge() error = %v", err)
 	}
-	if resp.SourceCount != 3 || resp.SelectedCount != 2 || resp.SkippedCount != 1 || resp.Limit != 2 {
-		t.Fatalf("InboxMerge() = %#v, want two selected out of three", resp)
+	if resp.SourceCount != 2 || resp.SelectedCount != 1 || resp.SkippedCount != 1 || resp.Limit != 1 {
+		t.Fatalf("InboxMerge() counts = %#v, want one selected and one skipped", resp)
 	}
-	if resp.FailedCount != 2 {
-		t.Fatalf("failed count = %d, want only selected notes attempted", resp.FailedCount)
-	}
-	if len(resp.Failed) != 2 || resp.Failed[0].SourcePath != "inbox-to-merge/001.md" || resp.Failed[1].SourcePath != "inbox-to-merge/002.md" {
-		t.Fatalf("failed paths = %#v, want sorted first two notes only", resp.Failed)
-	}
-	manifest := readInboxRunManifest(t, resp.ArchivePath)
-	if len(manifest.Items) != 2 {
-		t.Fatalf("manifest items = %#v, want one archived item for each selected failed note", manifest.Items)
-	}
-	for i, item := range manifest.Items {
-		if item.Status != "failed" {
-			t.Fatalf("manifest item %d = %#v, want failed status", i, item)
-		}
-	}
-	if manifest.Items[0].SourcePath != "inbox-to-merge/001.md" || manifest.Items[1].SourcePath != "inbox-to-merge/002.md" {
-		t.Fatalf("manifest item paths = %#v, want selected failed notes in sorted order", manifest.Items)
-	}
-	if _, err := os.Stat(filepath.Join(vaultDir, "inbox-to-merge", "003.md")); err != nil {
-		t.Fatalf("limited-out source changed: %v", err)
+	if len(provider.chatCalls) != 1 {
+		t.Fatalf("chat calls = %d, want one selected note", len(provider.chatCalls))
 	}
 }
 
@@ -1378,25 +282,11 @@ func TestServiceInboxMergeFailsFastWhenEmbeddingProviderUnavailable(t *testing.T
 	t.Parallel()
 
 	vaultDir := t.TempDir()
-	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "destination.md"), "destination\n")
-	writeTestFile(t, filepath.Join(vaultDir, "inbox-to-merge", "001.md"), "first\n")
+	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "seed.md"), "- **Seed**: candidate.\n")
+	writeTestFile(t, filepath.Join(vaultDir, "in", "source.md"), "- **Source**: content.\n")
 
-	indexProvider := &fakeZettelProvider{}
-	options := Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          "inbox-to-merge",
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
-	}
-	if _, err := NewWithProviders(indexProvider, indexProvider, indexProvider, indexProvider).Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+	options := inboxMergeTestOptions(vaultDir, "in")
+	if _, err := NewWithEmbedding(nil, &fakeZettelProvider{}).Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
 		t.Fatalf("Index() error = %v", err)
 	}
 
@@ -1407,13 +297,30 @@ func TestServiceInboxMergeFailsFastWhenEmbeddingProviderUnavailable(t *testing.T
 		t.Fatalf("InboxMerge() error = %v, want per-note failure response", err)
 	}
 	if len(chatProvider.chatCalls) != 0 {
-		t.Fatalf("chat calls = %d, want fail before routing", len(chatProvider.chatCalls))
+		t.Fatalf("chat calls = %d, want fail before merge model", len(chatProvider.chatCalls))
 	}
 	if resp.SelectedCount != 1 || resp.FailedCount != 1 || resp.ProcessedCount != 0 {
 		t.Fatalf("InboxMerge() response = %#v, want selected count with failed note", resp)
 	}
 	if !strings.Contains(resp.Failed[0].Reason, "connect: connection refused") {
 		t.Fatalf("failed reason = %q, want embedding provider error", resp.Failed[0].Reason)
+	}
+}
+
+func inboxMergeTestOptions(vaultDir string, inboxFolder string) Options {
+	return Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          inboxFolder,
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
 	}
 }
 
