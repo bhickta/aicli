@@ -2,10 +2,10 @@
 
 Thin Obsidian plugin for the Go-based `aicli` Zettelkasten merge engine.
 
-The plugin does not perform embeddings, judging, merging, clipping, validation, or archive writes itself. It sends the active note path to the local `aicli` server and renders the returned candidates, merge preview, apply result, and rollback result.
+The plugin is only a launcher for the inbox workflow. It sends vault settings to the local `aicli` server, where AICLI embeds the inbox note, finds semantic destination matches, and makes one AI merge call that returns final atomic notes.
 
 Default local server: `http://127.0.0.1:8765`.
 
-Use `providerId=codex-cli` with a Codex model for judging and merging when you want Codex CLI / Pro in the notes flow. Keep `embeddingProviderId` on a provider that supports embeddings, usually `lms` or `ollama`.
+Use `providerId=codex-cli` with a Codex model when you want Codex CLI / Pro for the single merge call. Keep `embeddingProviderId` on a provider that supports embeddings, usually `lms` or `ollama`.
 
 Obsidian is optional. The same workflow is available directly in the AICLI web UI under the `Zettel` tab for an AICLI-only flow.

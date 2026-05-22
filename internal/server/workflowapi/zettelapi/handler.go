@@ -22,9 +22,6 @@ func New(runtime *core.Runtime) *Handler {
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workflows/zettel/notes", h.notes)
 	mux.HandleFunc("POST /api/workflows/zettel/index", h.index)
-	mux.HandleFunc("POST /api/workflows/zettel/suggest", h.suggest)
-	mux.HandleFunc("POST /api/workflows/zettel/propose", h.propose)
-	mux.HandleFunc("POST /api/workflows/zettel/apply", h.apply)
 	mux.HandleFunc("POST /api/workflows/zettel/rollback", h.rollback)
 	mux.HandleFunc("POST /api/workflows/zettel/inbox-merge", h.inboxMerge)
 }
@@ -54,61 +51,6 @@ func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
 	}
 	h.runtime.StartJob(w, r, "zettel-index", req.VaultPath, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		return service.Index(ctx, req, progress)
-	})
-}
-
-func (h *Handler) suggest(w http.ResponseWriter, r *http.Request) {
-	req, ok := core.DecodeJSON[zettel.SuggestRequest](w, r)
-	if !ok {
-		return
-	}
-	service, err := h.serviceFor(req.Options, providerNeeds{
-		candidate:  true,
-		merge:      true,
-		validation: true,
-		embedding:  true,
-	})
-	if err != nil {
-		core.WriteError(w, http.StatusNotFound, err)
-		return
-	}
-	h.runtime.StartJob(w, r, "zettel-suggest", req.ActivePath, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		return service.Suggest(ctx, req, progress)
-	})
-}
-
-func (h *Handler) propose(w http.ResponseWriter, r *http.Request) {
-	req, ok := core.DecodeJSON[zettel.ProposeRequest](w, r)
-	if !ok {
-		return
-	}
-	service, err := h.serviceFor(req.Options, providerNeeds{
-		candidate:  true,
-		merge:      true,
-		validation: true,
-		embedding:  true,
-	})
-	if err != nil {
-		core.WriteError(w, http.StatusNotFound, err)
-		return
-	}
-	h.runtime.StartJob(w, r, "zettel-propose", req.ActivePath, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		return service.Propose(ctx, req, progress)
-	})
-}
-
-func (h *Handler) apply(w http.ResponseWriter, r *http.Request) {
-	req, ok := core.DecodeJSON[zettel.ApplyRequest](w, r)
-	if !ok {
-		return
-	}
-	service, err := h.serviceFor(req.Options, providerNeeds{})
-	if err != nil {
-		core.WriteError(w, http.StatusNotFound, err)
-		return
-	}
-	h.runtime.StartJob(w, r, "zettel-apply", req.Proposal.ActivePath, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		return service.Apply(ctx, req, progress)
 	})
 }
 
@@ -143,26 +85,15 @@ func (h *Handler) inboxMerge(w http.ResponseWriter, r *http.Request) {
 }
 
 type providerNeeds struct {
-	candidate  bool
-	merge      bool
-	validation bool
-	embedding  bool
+	merge     bool
+	embedding bool
 }
 
 func (h *Handler) serviceFor(options zettel.Options, needs providerNeeds) (*zettel.Service, error) {
 	requestedEmbeddingProviderID := strings.TrimSpace(options.EmbeddingProviderID)
 	options = zettel.NormalizeOptions(options)
-	var candidateProvider provider.Provider
 	var mergeProvider provider.Provider
-	var validationProvider provider.Provider
 	var embeddingProvider provider.Provider
-	if needs.candidate {
-		var ok bool
-		candidateProvider, ok = h.runtime.ProviderFor(options.CandidateProviderID)
-		if !ok {
-			return nil, errors.New("candidate judge provider not found")
-		}
-	}
 	if needs.merge {
 		var ok bool
 		mergeProvider, ok = h.runtime.ProviderFor(options.MergeProviderID)
@@ -170,30 +101,26 @@ func (h *Handler) serviceFor(options zettel.Options, needs providerNeeds) (*zett
 			return nil, errors.New("merge provider not found")
 		}
 	}
-	if needs.validation {
-		var ok bool
-		validationProvider, ok = h.runtime.ProviderFor(options.ValidationProviderID)
-		if !ok {
-			return nil, errors.New("validation judge provider not found")
-		}
-	}
 	if needs.embedding {
 		embeddingProviderID := options.EmbeddingProviderID
-		if requestedEmbeddingProviderID == "" && (embeddingProviderID == "" || !supportsEmbeddings(candidateProvider)) {
-			if fallback := strings.TrimSpace(h.runtime.Settings().DefaultProvider); fallback != "" {
-				embeddingProviderID = fallback
-			}
-		}
 		var ok bool
 		embeddingProvider, ok = h.runtime.ProviderFor(embeddingProviderID)
 		if !ok {
 			return nil, errors.New("embedding provider not found")
 		}
+		if requestedEmbeddingProviderID == "" && !supportsEmbeddings(embeddingProvider) {
+			if fallback := strings.TrimSpace(h.runtime.Settings().DefaultProvider); fallback != "" && fallback != embeddingProviderID {
+				if fallbackProvider, ok := h.runtime.ProviderFor(fallback); ok && supportsEmbeddings(fallbackProvider) {
+					embeddingProvider = fallbackProvider
+				}
+			}
+		}
+		if !supportsEmbeddings(embeddingProvider) {
+			return nil, errors.New("embedding provider does not support embeddings")
+		}
 	}
 	return zettel.NewWithProviders(
-		candidateProvider,
 		mergeProvider,
-		validationProvider,
 		embeddingProvider,
 	).WithDataDir(h.runtime.DataDir()), nil
 }

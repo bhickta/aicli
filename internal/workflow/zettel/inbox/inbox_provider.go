@@ -23,9 +23,6 @@ func (r Runner) decideInboxSource(
 		return inboxDestinationDecision{}, errors.New("no destination candidates found; run the zettel index workflow first")
 	}
 	model := strings.TrimSpace(options.MergeModel)
-	if model == "" {
-		model = options.CandidateModel
-	}
 	if r.mergeProvider == nil {
 		return inboxDestinationDecision{}, errors.New("provider is required")
 	}

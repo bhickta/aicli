@@ -32,7 +32,6 @@ type InboxSourceResult struct {
 	Claims           []InboxClaim           `json:"claims,omitempty"`
 	Ledger           []InboxClaimLedger     `json:"ledger,omitempty"`
 	Diffs            []InboxDestinationDiff `json:"diffs,omitempty"`
-	Validation       MergeJudge             `json:"validation,omitempty"`
 }
 
 type InboxClaim struct {

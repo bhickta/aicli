@@ -26,7 +26,7 @@ func TestServiceInboxMergeWritesFinalNoteAndRollbackRestores(t *testing.T) {
 		"END_NOTE",
 		"",
 	}, "\n")}
-	service := NewWithProviders(provider, provider, provider, provider)
+	service := NewWithProviders(provider, provider)
 	options := inboxMergeTestOptions(vaultDir, "inbox-to-merge")
 	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
 		t.Fatalf("Index() error = %v", err)
@@ -63,7 +63,7 @@ func TestServiceInboxMergeWritesFinalNoteAndRollbackRestores(t *testing.T) {
 		t.Fatalf("llm archives = %v, want one saved request/response", llmArchives)
 	}
 
-	rollback, err := service.Rollback(context.Background(), RollbackRequest{Options: options, JobID: resp.RunID}, nil)
+	rollback, err := service.Rollback(context.Background(), RollbackRequest{Options: options}, nil)
 	if err != nil {
 		t.Fatalf("Rollback() error = %v", err)
 	}
@@ -90,7 +90,7 @@ func TestServiceInboxMergeProcessesExactDuplicateWithoutProviders(t *testing.T) 
 
 	provider := &fakeZettelProvider{}
 	options := inboxMergeTestOptions(vaultDir, "in")
-	resp, err := NewWithProviders(provider, provider, provider, provider).InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	resp, err := NewWithProviders(provider, provider).InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
 	if err != nil {
 		t.Fatalf("InboxMerge() error = %v", err)
 	}
@@ -134,7 +134,7 @@ func TestServiceInboxMergeWritesMultipleAtomicFinalNotes(t *testing.T) {
 		"END_NOTE",
 		"",
 	}, "\n")}
-	service := NewWithProviders(provider, provider, provider, provider)
+	service := NewWithProviders(provider, provider)
 	options := inboxMergeTestOptions(vaultDir, "in")
 	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
 		t.Fatalf("Index() error = %v", err)
@@ -166,7 +166,7 @@ func TestServiceInboxMergeCanAdoptNewFinalNoteWhenEnabled(t *testing.T) {
 		"END_NOTE",
 		"",
 	}, "\n")}
-	service := NewWithProviders(provider, provider, provider, provider)
+	service := NewWithProviders(provider, provider)
 	options := inboxMergeTestOptions(vaultDir, "in")
 	options.AdoptUnmatchedInbox = true
 	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
@@ -196,7 +196,7 @@ func TestServiceInboxMergeKeepsSourcePendingWhenModelDeclines(t *testing.T) {
 	writeTestFile(t, sourcePath, sourceContent)
 
 	provider := &fakeZettelProvider{chatResponse: "PENDING: no semantically similar destination note\n"}
-	service := NewWithProviders(provider, provider, provider, provider)
+	service := NewWithProviders(provider, provider)
 	options := inboxMergeTestOptions(vaultDir, "in")
 	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
 		t.Fatalf("Index() error = %v", err)
@@ -229,7 +229,7 @@ func TestServiceInboxMergeRejectsNonCandidateFinalNote(t *testing.T) {
 		"END_NOTE",
 		"",
 	}, "\n")}
-	service := NewWithProviders(provider, provider, provider, provider)
+	service := NewWithProviders(provider, provider)
 	options := inboxMergeTestOptions(vaultDir, "in")
 	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
 		t.Fatalf("Index() error = %v", err)
@@ -259,7 +259,7 @@ func TestServiceInboxMergeRespectsInboxLimit(t *testing.T) {
 	writeTestFile(t, filepath.Join(vaultDir, "in", "b.md"), "- **B**: two.\n")
 
 	provider := &fakeZettelProvider{chatResponse: "PENDING: test run\n"}
-	service := NewWithProviders(provider, provider, provider, provider)
+	service := NewWithProviders(provider, provider)
 	options := inboxMergeTestOptions(vaultDir, "in")
 	options.InboxLimit = 1
 	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
@@ -292,7 +292,7 @@ func TestServiceInboxMergeFailsFastWhenEmbeddingProviderUnavailable(t *testing.T
 
 	embeddingProvider := &fakeZettelProvider{embeddingErr: errors.New("dial tcp 127.0.0.1:1234: connect: connection refused")}
 	chatProvider := &fakeZettelProvider{}
-	resp, err := NewWithProviders(chatProvider, chatProvider, chatProvider, embeddingProvider).InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	resp, err := NewWithProviders(chatProvider, embeddingProvider).InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
 	if err != nil {
 		t.Fatalf("InboxMerge() error = %v, want per-note failure response", err)
 	}
@@ -309,18 +309,14 @@ func TestServiceInboxMergeFailsFastWhenEmbeddingProviderUnavailable(t *testing.T
 
 func inboxMergeTestOptions(vaultDir string, inboxFolder string) Options {
 	return Options{
-		VaultPath:            vaultDir,
-		RootFolder:           "zettelkasten",
-		DataFolder:           ".aicli-zettel-merge",
-		InboxFolder:          inboxFolder,
-		CandidateProviderID:  "fake",
-		MergeProviderID:      "fake",
-		ValidationProviderID: "fake",
-		EmbeddingProviderID:  "fake",
-		CandidateModel:       "judge-model",
-		MergeModel:           "merge-model",
-		ValidationModel:      "validation-model",
-		EmbeddingModel:       "embedding-model",
+		VaultPath:           vaultDir,
+		RootFolder:          "zettelkasten",
+		DataFolder:          ".aicli-zettel-merge",
+		InboxFolder:         inboxFolder,
+		MergeProviderID:     "fake",
+		EmbeddingProviderID: "fake",
+		MergeModel:          "merge-model",
+		EmbeddingModel:      "embedding-model",
 	}
 }
 

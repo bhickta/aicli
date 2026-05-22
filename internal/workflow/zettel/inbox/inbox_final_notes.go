@@ -24,12 +24,17 @@ func parseInboxFinalNotes(sourcePath string, text string) (inboxDestinationDecis
 			continue
 		}
 		var body []string
+		closed := false
 		i++
 		for ; i < len(lines); i++ {
 			if strings.EqualFold(strings.TrimSpace(lines[i]), "END_NOTE") {
+				closed = true
 				break
 			}
 			body = append(body, lines[i])
+		}
+		if !closed {
+			return inboxDestinationDecision{}, false
 		}
 		markdown := notetext.EnsureTrailingNewline(strings.Trim(strings.Join(body, "\n"), "\n"))
 		if path == "" || strings.TrimSpace(markdown) == "" {
@@ -58,7 +63,6 @@ func parseInboxFinalNotes(sourcePath string, text string) (inboxDestinationDecis
 			Reason:  pendingReason,
 		})
 	}
-	decision.Validation = MergeJudge{Verdict: "pass", Score: 1, Notes: "Final-note response parsed and accepted."}
 	return decision, true
 }
 

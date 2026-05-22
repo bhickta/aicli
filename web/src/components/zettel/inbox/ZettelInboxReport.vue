@@ -69,7 +69,7 @@ function selectRow(path: string) {
         <p v-if="selected.reason" class="muted">{{ selected.reason }}</p>
 
         <details open>
-          <summary>Claim ledger</summary>
+          <summary>Merge ledger</summary>
           <div class="claim-ledger">
             <article v-for="claim in selected.claims || []" :key="claim.id" class="claim-row">
               <strong>{{ claim.id }}</strong>

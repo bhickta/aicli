@@ -67,11 +67,6 @@ func processExactDuplicateInboxSource(v vault, archive archivepkg.Store, runID s
 			Evidence:        "Inbox source content exactly matches the destination note.",
 			Reason:          "No merge needed because the destination already contains the whole source note byte-for-byte.",
 		}},
-		Validation: MergeJudge{
-			Verdict: "pass",
-			Score:   1,
-			Notes:   "Mechanical exact duplicate; no destination write was needed.",
-		},
 	}
 	if _, err := archive.WriteInboxItem(runID, result, sourceContent, nil, nil); err != nil {
 		return result, err

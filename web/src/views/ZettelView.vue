@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import ZettelWorkflowTabs from "../components/zettel/common/ZettelWorkflowTabs.vue";
 import ZettelInboxPanel from "../components/zettel/inbox/ZettelInboxPanel.vue";
-import ZettelManualPanel from "../components/zettel/manual/ZettelManualPanel.vue";
 import ZettelSettingsPanel from "../components/zettel/settings/ZettelSettingsPanel.vue";
 import ZettelStatusPanel from "../components/zettel/shell/ZettelStatusPanel.vue";
 import ZettelVaultPanel from "../components/zettel/shell/ZettelVaultPanel.vue";
@@ -9,44 +8,28 @@ import { useZettelWorkflow } from "../composables/useZettelWorkflow";
 
 const {
   config,
-  candidates,
-  notes,
-  selectedPaths,
-  proposal,
   inboxReport,
   apiUsage,
   status,
   result,
-  notesStatus,
   busy,
   mode,
   candidateLimitOptions,
-  thresholdOptions,
-  validationThresholdOptions,
   promptOptions,
   embeddingBatchSizeOptions,
   embeddingWorkerOptions,
-  canSuggest,
-  canPreview,
-  canApply,
   canRunInboxMerge,
   canUseVaultFolders,
   rawResultSummary,
-  proposalQuality,
   progressClass,
   progressStyle,
   updateProviderSettings,
   updateConfig,
   pickVault,
   pickZettelFolder,
-  loadNotes,
   buildIndex,
-  suggest,
-  previewMerge,
-  applyMerge,
   rollback,
   runInboxMerge,
-  toggleCandidate,
 } = useZettelWorkflow();
 </script>
 
@@ -55,7 +38,7 @@ const {
     <div class="zettel-title-row">
       <div>
         <h2>Zettelkasten</h2>
-        <p class="muted">Inbox merge by default. Manual review and provider setup are separate.</p>
+        <p class="muted">Simple inbox flow: embed, find semantic matches, then one AI merge call writes final notes.</p>
       </div>
       <ZettelWorkflowTabs v-model="mode" />
     </div>
@@ -77,34 +60,11 @@ const {
       @update-inbox-limit="updateConfig('inboxLimit', $event)"
     />
 
-    <ZettelManualPanel
-      v-if="mode === 'manual'"
-      :active-path="config.activePath"
-      :notes="notes"
-      :notes-status="notesStatus"
-      :busy="busy"
-      :candidates="candidates"
-      :selected-paths="selectedPaths"
-      :proposal="proposal"
-      :proposal-quality="proposalQuality"
-      :can-suggest="canSuggest"
-      :can-preview="canPreview"
-      :can-apply="canApply"
-      @update-active-path="updateConfig('activePath', $event)"
-      @load-notes="loadNotes"
-      @suggest="suggest"
-      @preview="previewMerge"
-      @apply="applyMerge"
-      @toggle-candidate="toggleCandidate"
-    />
-
     <ZettelSettingsPanel
       v-if="mode === 'settings'"
       :config="config"
       :can-use-vault-folders="canUseVaultFolders"
       :candidate-limit-options="candidateLimitOptions"
-      :threshold-options="thresholdOptions"
-      :validation-threshold-options="validationThresholdOptions"
       :prompt-options="promptOptions"
       :embedding-batch-size-options="embeddingBatchSizeOptions"
       :embedding-worker-options="embeddingWorkerOptions"

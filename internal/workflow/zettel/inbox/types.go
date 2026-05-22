@@ -30,7 +30,6 @@ type InboxSourceResult = model.InboxSourceResult
 type InboxClaim = model.InboxClaim
 type InboxClaimLedger = model.InboxClaimLedger
 type InboxDestinationDiff = model.InboxDestinationDiff
-type MergeJudge = model.MergeJudge
 type ProgressFunc = model.ProgressFunc
 
 type vault = vaultfs.Vault

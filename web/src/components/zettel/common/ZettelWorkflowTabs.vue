@@ -5,7 +5,6 @@ const mode = defineModel<ZettelMode>({ required: true });
 
 const tabs: Array<{ id: ZettelMode; label: string }> = [
   { id: "inbox", label: "Inbox merge" },
-  { id: "manual", label: "Manual review" },
   { id: "settings", label: "Settings" },
 ];
 </script>

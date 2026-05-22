@@ -12,7 +12,6 @@ type inboxDestinationDecision struct {
 	Claims       []InboxClaim                 `json:"claims,omitempty"`
 	Destinations []inboxDestinationAssignment `json:"destinations"`
 	Pending      []InboxClaimLedger           `json:"pending"`
-	Validation   MergeJudge                   `json:"validation,omitempty"`
 }
 
 type inboxDestinationAssignment struct {
@@ -75,12 +74,14 @@ func inboxDecisionMessages(sourcePath string, sourceContent string, candidates [
 }
 
 func inboxCandidateCharLimit(options Options, count int) int {
+	const minCandidateExcerptChars = 2500
+
 	if count < 1 {
 		count = 1
 	}
 	perCandidate := options.MaxMergeInputChars / count
-	if perCandidate < options.CandidateJudgeChars {
-		return options.CandidateJudgeChars
+	if perCandidate < minCandidateExcerptChars {
+		return minCandidateExcerptChars
 	}
 	return perCandidate
 }

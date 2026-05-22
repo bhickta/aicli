@@ -14,11 +14,9 @@ import (
 )
 
 type Service struct {
-	candidateProvider  provider.Provider
-	mergeProvider      provider.Provider
-	validationProvider provider.Provider
-	embeddingProvider  provider.Provider
-	dataDir            string
+	mergeProvider     provider.Provider
+	embeddingProvider provider.Provider
+	dataDir           string
 }
 
 func New(p provider.Provider) *Service {
@@ -26,20 +24,16 @@ func New(p provider.Provider) *Service {
 }
 
 func NewWithEmbedding(p provider.Provider, embeddingProvider provider.Provider) *Service {
-	return NewWithProviders(p, p, p, embeddingProvider)
+	return NewWithProviders(p, embeddingProvider)
 }
 
 func NewWithProviders(
-	candidateProvider provider.Provider,
 	mergeProvider provider.Provider,
-	validationProvider provider.Provider,
 	embeddingProvider provider.Provider,
 ) *Service {
 	return &Service{
-		candidateProvider:  candidateProvider,
-		mergeProvider:      mergeProvider,
-		validationProvider: validationProvider,
-		embeddingProvider:  embeddingProvider,
+		mergeProvider:     mergeProvider,
+		embeddingProvider: embeddingProvider,
 	}
 }
 
@@ -55,7 +49,7 @@ func (s *Service) Index(ctx context.Context, req IndexRequest, progress Progress
 	if err != nil {
 		return IndexResponse{}, err
 	}
-	tracker, _, _, _, embeddingProvider := s.trackedProviders()
+	tracker, _, embeddingProvider := s.trackedProviders()
 	response, err := indexer.New(v, options, embeddingProvider).Build(ctx, progress)
 	response.APICalls = tracker.Snapshot()
 	return response, err
@@ -104,13 +98,9 @@ func (s *Service) trackedProviders() (
 	*apicalls.Tracker,
 	provider.Provider,
 	provider.Provider,
-	provider.Provider,
-	provider.Provider,
 ) {
 	tracker := apicalls.NewTracker()
 	return tracker,
-		tracker.Wrap(s.candidateProvider),
 		tracker.Wrap(s.mergeProvider),
-		tracker.Wrap(s.validationProvider),
 		tracker.Wrap(s.embeddingProvider)
 }

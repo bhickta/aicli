@@ -16,7 +16,7 @@
 - Audio workflows for transcription and LLM-assisted analysis.
 - Video workflows for info, compression, metadata backup/restore, and notes/tags/course generation.
 - News workflow for JSON/XLSX import, dedupe, merge, similarity grouping, and optional LLM cleanup.
-- Zettelkasten merge workflow with local embeddings, provider-selectable judging/merging, exact line clipping, archive, and rollback.
+- Zettelkasten inbox merge workflow with local embeddings, semantic destination search, one AI final-note merge call, archive, and rollback.
 - Job history with status, stage, progress, elapsed time, and ETA in the UI.
 
 ## Requirements
@@ -83,42 +83,26 @@ Uploaded files are copied into:
 <data-dir>/uploads
 ```
 
-## Zettelkasten Merge
+## Zettelkasten Inbox Merge
 
-The merge engine lives in `aicli`, not Obsidian. It scans a vault folder, builds or imports embeddings, finds similar notes, asks the selected LLM provider to select exact source line ranges, generates a merge preview, validates it, then applies only after approval.
+The inbox merge engine lives in `aicli`, not Obsidian. The runtime flow is intentionally small:
 
-Default safety behavior:
-
-- Review before apply.
-- Source notes are clipped only by exact approved line ranges.
-- Source notes are not deleted by default.
-- Active/source files are hash-checked before writing.
-- Originals are archived in `.aicli-zettel-merge/jobs/<job-id>`.
-- Rollback restores the active note and source notes.
-
-### AICLI-only workflow
+1. Embed the inbox source note.
+2. Find semantically similar destination notes from the zettelkasten index.
+3. Make one AI merge call that returns complete final atomic destination notes.
 
 1. Start `aicli`.
 2. Open `http://127.0.0.1:8765`.
 3. Open the `Zettel` tab.
 4. Set:
    - Vault folder, for example `/home/bhickta/development/upsc`
-   - Active note path, for example `zettelkasten/.../Note.md`
+   - Source inbox folder, for example `inbox-to-merge`
    - Zettelkasten folder, usually `zettelkasten`
-   - Merge provider, for example `codex-cli` for Codex CLI / Pro
-   - Judge/merge model, for example `gpt-5.3-codex-spark`
+   - AI merge provider and model
    - Embedding provider, usually `lms` or `ollama`
    - Embedding model, usually `text-embedding-nomic-embed-text-v1.5`
 5. Click `Build Index` once, or when notes/model changed.
-6. Click `Suggest`.
-7. Select candidate cards.
-8. Click `Preview Merge`.
-9. Review the final markdown.
-10. Click `Apply`.
-
-Use `Rollback` from the same tab to restore the latest applied merge, or enter a job id before rolling back.
-
-### Autonomous inbox merge
+6. Click `Run Inbox Merge`.
 
 For no-intervention source-note ingestion, put new atomic notes under the configured inbox folder, for example:
 
@@ -132,13 +116,13 @@ The run report shows source note -> destination note mappings, merged/deduped/pe
 
 ### Optional Obsidian workflow
 
-The plugin in `obsidian/aicli-zettel-merge` is only a thin UI over the same `aicli` APIs. Use it when you want current-note workflow inside Obsidian:
+The plugin in `obsidian/aicli-zettel-merge` is a thin launcher over the same three-step inbox flow:
 
 1. Copy or symlink `obsidian/aicli-zettel-merge` into the vault plugin folder.
 2. Enable `AICLI Zettel Merge` in Obsidian.
-3. Open a note under `zettelkasten`.
-4. Run `AICLI: Suggest Zettel Merges`.
-5. Select candidates, preview, apply, or rollback.
+3. Configure the vault, inbox folder, destination folder, merge model, and embedding model.
+4. Run `AICLI: Build AICLI Zettel Index` when notes/model changed.
+5. Run `AICLI: Run AICLI Inbox Merge`.
 
 The older heavy `zettel-merge-ai` Obsidian plugin is no longer the target architecture and can be phased out after the AICLI flow is verified.
 

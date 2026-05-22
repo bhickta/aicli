@@ -10,7 +10,7 @@ import (
 
 func (s *Service) InboxMerge(ctx context.Context, req InboxMergeRequest, progress ProgressFunc) (InboxMergeResponse, error) {
 	req.Options = s.workflowOptions(req.Options)
-	tracker, _, mergeProvider, _, embeddingProvider := s.trackedProviders()
+	tracker, mergeProvider, embeddingProvider := s.trackedProviders()
 	response, err := inboxpkg.New(
 		mergeProvider,
 		embeddingProvider,

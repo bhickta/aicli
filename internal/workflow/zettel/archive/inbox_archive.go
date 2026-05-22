@@ -44,7 +44,6 @@ type inboxArchiveItem struct {
 	Destinations  []inboxArchiveDestination `json:"destinations,omitempty"`
 	Ledger        []InboxClaimLedger        `json:"ledger,omitempty"`
 	Claims        []InboxClaim              `json:"claims,omitempty"`
-	Validation    MergeJudge                `json:"validation,omitempty"`
 	Reason        string                    `json:"reason,omitempty"`
 }
 
@@ -198,7 +197,6 @@ func (s Store) WriteInboxItem(runID string, result InboxSourceResult, sourceCont
 		Destinations:  destinations,
 		Ledger:        result.Ledger,
 		Claims:        result.Claims,
-		Validation:    result.Validation,
 		Reason:        result.Reason,
 	})
 	if err := s.writeInboxManifest(base, manifest); err != nil {

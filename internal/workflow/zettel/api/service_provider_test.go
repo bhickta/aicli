@@ -110,7 +110,6 @@ func TestServiceIndexUsesSeparateEmbeddingProvider(t *testing.T) {
 			RootFolder:     "zettelkasten",
 			DataFolder:     ".aicli-zettel-merge",
 			ProviderID:     "codex-cli",
-			JudgeModel:     "gpt-5.3-codex-spark",
 			MergeModel:     "gpt-5.3-codex-spark",
 			EmbeddingModel: "text-embedding-nomic-embed-text-v1.5",
 		},
@@ -205,90 +204,4 @@ func TestServiceIndexPrunesDeletedDestinationNotes(t *testing.T) {
 	if _, ok := cachedPaths["zettelkasten/kept.md"]; !ok {
 		t.Fatalf("kept note missing from cache: %#v", cachedPaths)
 	}
-}
-
-func TestServiceProposeUsesSeparateStepProvidersAndModels(t *testing.T) {
-	t.Parallel()
-
-	vaultDir := t.TempDir()
-	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "active.md"), "# Active\n")
-	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "source.md"), "- copied fact\n")
-
-	candidateProvider := &fakeZettelProvider{id: "candidate"}
-	mergeProvider := &fakeZettelProvider{
-		id:           "merge",
-		chatResponse: `{"insertions":[{"after_line":1,"markdown":"- copied fact","reason":"keep fact"}],"notes":"ok"}`,
-	}
-	validationProvider := &fakeZettelProvider{
-		id:           "validation",
-		chatResponse: `{"verdict":"pass","score":1,"missing_facts":[],"unsupported_additions":[],"notes":"ok"}`,
-	}
-	embeddingProvider := &fakeZettelProvider{id: "embedding"}
-
-	resp, err := NewWithProviders(
-		candidateProvider,
-		mergeProvider,
-		validationProvider,
-		embeddingProvider,
-	).Propose(context.Background(), ProposeRequest{
-		Options: Options{
-			VaultPath:            vaultDir,
-			RootFolder:           "zettelkasten",
-			DataFolder:           ".aicli-zettel-merge",
-			CandidateProviderID:  "candidate",
-			MergeProviderID:      "merge",
-			ValidationProviderID: "validation",
-			EmbeddingProviderID:  "embedding",
-			CandidateModel:       "candidate-model",
-			MergeModel:           "merge-model",
-			ValidationModel:      "validation-model",
-			EmbeddingModel:       "embedding-model",
-		},
-		ActivePath: "zettelkasten/active.md",
-		Selections: []Selection{{
-			Path:             "zettelkasten/source.md",
-			SourceLineRanges: []LineRange{{StartLine: 1, EndLine: 1}},
-		}},
-	}, nil)
-	if err != nil {
-		t.Fatalf("Propose() error = %v", err)
-	}
-	if len(candidateProvider.chatCalls) != 0 {
-		t.Fatalf("candidate provider chat calls = %d, want 0 during propose", len(candidateProvider.chatCalls))
-	}
-	if len(mergeProvider.chatCalls) != 1 || mergeProvider.chatCalls[0].Model != "merge-model" {
-		t.Fatalf("merge calls = %#v, want one merge-model call", mergeProvider.chatCalls)
-	}
-	if len(validationProvider.chatCalls) != 1 || validationProvider.chatCalls[0].Model != "validation-model" {
-		t.Fatalf("validation calls = %#v, want one validation-model call", validationProvider.chatCalls)
-	}
-
-	proposal := resp.Proposal
-	if proposal.Models.Merge != "merge-model" || proposal.Models.ValidationJudge != "validation-model" {
-		t.Fatalf("proposal models = %#v, want step models recorded", proposal.Models)
-	}
-	if proposal.Providers.Merge != "merge" || proposal.Providers.ValidationJudge != "validation" || proposal.Providers.Embedding != "embedding" {
-		t.Fatalf("proposal providers = %#v, want step providers recorded", proposal.Providers)
-	}
-	if resp.APICalls.Total != 2 || resp.APICalls.Chat != 2 || resp.APICalls.Embeddings != 0 {
-		t.Fatalf("api calls = %#v, want two chat calls", resp.APICalls)
-	}
-	if proposal.APICalls.Total != resp.APICalls.Total || proposal.APICalls.Chat != resp.APICalls.Chat {
-		t.Fatalf("proposal api calls = %#v, want response counts %#v", proposal.APICalls, resp.APICalls)
-	}
-	if usageForProvider(resp.APICalls, "merge").Chat != 1 {
-		t.Fatalf("merge provider usage = %#v, want one chat call", usageForProvider(resp.APICalls, "merge"))
-	}
-	if usageForProvider(resp.APICalls, "validation").Chat != 1 {
-		t.Fatalf("validation provider usage = %#v, want one chat call", usageForProvider(resp.APICalls, "validation"))
-	}
-}
-
-func usageForProvider(usage APICallUsage, providerID string) ProviderAPICallUsage {
-	for _, providerUsage := range usage.Providers {
-		if providerUsage.ProviderID == providerID {
-			return providerUsage
-		}
-	}
-	return ProviderAPICallUsage{}
 }

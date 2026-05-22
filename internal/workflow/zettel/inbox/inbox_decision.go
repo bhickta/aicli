@@ -51,8 +51,8 @@ func (a *inboxAppliedDecision) materializeFinalNoteDestination(
 	claimSet map[string]bool,
 ) error {
 	path := strings.TrimSpace(destination.Path)
-	if path == "" || destination.Confidence < options.ReviewThreshold {
-		a.addDestinationPending(destination, claimSet, "destination confidence below threshold")
+	if path == "" {
+		a.addDestinationPending(destination, claimSet, "final note path was empty")
 		return nil
 	}
 	if strings.TrimSpace(destination.FinalNote) == "" {

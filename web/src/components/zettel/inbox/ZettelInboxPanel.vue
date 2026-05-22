@@ -31,7 +31,7 @@ const limitModel = computed({
 </script>
 
 <template>
-  <ZettelSection title="Inbox merge" description="Choose source and destination folders, then run the lossless audit workflow.">
+  <ZettelSection title="Inbox merge" description="Embed source notes, find semantic matches, then let one AI merge call write final atomic notes.">
     <template #actions>
       <button type="button" class="mod-cta" :disabled="!canRun" @click="emit('run')">Run Inbox Merge</button>
     </template>
@@ -47,7 +47,7 @@ const limitModel = computed({
       <ZettelFolderChooser
         label="Destination notes"
         :value="rootFolder"
-        description="Existing zettelkasten tree that receives merged claims"
+        description="Existing zettelkasten tree that receives final merged notes"
         :disabled="!canUseFolders"
         @choose="emit('pickFolder', 'rootFolder', 'destination notes')"
       />

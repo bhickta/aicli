@@ -176,7 +176,6 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		return result, nil
 	}
 
-	result.Validation = decision.Validation
 	result.Status = inboxStatusProcessed
 	if result.PendingCount > 0 {
 		result.Status = inboxStatusPartial

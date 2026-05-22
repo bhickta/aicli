@@ -20,6 +20,15 @@ func TestParseInboxFinalNotes(t *testing.T) {
 	}
 }
 
+func TestParseInboxFinalNotesRejectsUnclosedBlock(t *testing.T) {
+	t.Parallel()
+
+	_, ok := parseInboxFinalNotes("in/source.md", "BEGIN_NOTE zettelkasten/economics.md\n- partial\n")
+	if ok {
+		t.Fatal("parseInboxFinalNotes() accepted a BEGIN_NOTE block without END_NOTE")
+	}
+}
+
 func TestFormatFinalNoteMarkdownPreservesExistingFrontmatterAndCleansLabels(t *testing.T) {
 	t.Parallel()
 

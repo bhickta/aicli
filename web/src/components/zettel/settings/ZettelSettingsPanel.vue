@@ -8,8 +8,6 @@ defineProps<{
   config: ZettelConfig;
   canUseVaultFolders: boolean;
   candidateLimitOptions: number[];
-  thresholdOptions: SelectOption<number>[];
-  validationThresholdOptions: SelectOption<number>[];
   promptOptions: SelectOption<string>[];
   embeddingBatchSizeOptions: number[];
   embeddingWorkerOptions: number[];
@@ -43,30 +41,6 @@ const emit = defineEmits<{
               @change="emit('updateConfig', 'candidateLimit', Number(($event.target as HTMLSelectElement).value))"
             >
               <option v-for="value in candidateLimitOptions" :key="value" :value="value">{{ value }} notes</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="zettel-review">Review threshold</label>
-            <select
-              id="zettel-review"
-              :value="config.reviewThreshold"
-              @change="emit('updateConfig', 'reviewThreshold', Number(($event.target as HTMLSelectElement).value))"
-            >
-              <option v-for="option in thresholdOptions" :key="option.value" :value="option.value">
-                {{ option.label }} ({{ option.value }})
-              </option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="zettel-validation">Validation threshold</label>
-            <select
-              id="zettel-validation"
-              :value="config.validationThreshold"
-              @change="emit('updateConfig', 'validationThreshold', Number(($event.target as HTMLSelectElement).value))"
-            >
-              <option v-for="option in validationThresholdOptions" :key="option.value" :value="option.value">
-                {{ option.label }} ({{ option.value }})
-              </option>
             </select>
           </div>
           <div class="field">
