@@ -147,6 +147,7 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		return result, err
 	}
 	decision = constrainDecisionToCandidates(decision, similar)
+	decision = constrainFinalNoteRoutes(decision, sourceContent)
 	claims := decision.Claims
 	result.Claims = claims
 	if len(claims) == 0 {
@@ -205,7 +206,9 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 	}
 
 	validation := mechanicalInboxValidation(mechanicalAdoption)
-	if !mechanicalAdoption {
+	if decision.FinalNotes && !mechanicalAdoption {
+		validation = finalNoteInboxValidation(sourceContent, applied)
+	} else if !mechanicalAdoption {
 		validation = decision.Validation
 	}
 	result.Validation = validation

@@ -268,6 +268,229 @@ func TestServiceInboxMergeWritesFinalNoteEnvelope(t *testing.T) {
 	}
 }
 
+func TestServiceInboxMergeRejectsFinalNoteMissingMacroFacts(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	microPath := filepath.Join(vaultDir, "zettelkasten", "Rajput_Agriculture_Optional", "Modern Approach_ Microeconomics.md")
+	macroPath := filepath.Join(vaultDir, "zettelkasten", "Rajput_Agriculture_Optional", "Modern Approach_ Macroeconomics.md")
+	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "004.md")
+	sourceContent := "- **Microeconomics**: \"Microscope\" view -> individual/firm decisions. Focus: Demand/Supply, Price, Market Workings, Efficiency, Allocation, Production.\n" +
+		"- **Macroeconomics**: \"Telescope\" view -> country-level decisions. Focus: National impact, Employment, \"Make in India,\" International relations.\n"
+	microBefore := "- **Microeconomics**: Study of a particular firm or household.\n"
+	writeTestFile(t, microPath, microBefore)
+	writeTestFile(t, macroPath, "- **Macroeconomics**: Whole economy and national income.\n")
+	writeTestFile(t, sourcePath, sourceContent)
+
+	provider := &fakeZettelProvider{chatResponses: []string{
+		"BEGIN_NOTE zettelkasten/Rajput_Agriculture_Optional/Modern Approach_ Microeconomics.md\n" +
+			microBefore +
+			"- **Microeconomics**: \"Microscope\" view -> individual/firm decisions. Focus: Demand/Supply, Price, Market Workings, Efficiency, Allocation, Production.\n" +
+			"END_NOTE\n",
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "in",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want pending due to missing macro facts", resp)
+	}
+	pending := resp.Pending[0]
+	if pending.Validation.Verdict != "fail" || len(pending.Validation.MissingFacts) == 0 {
+		t.Fatalf("validation = %#v, want missing facts", pending.Validation)
+	}
+	if got := readTestFile(t, microPath); got != microBefore {
+		t.Fatalf("micro destination changed = %q, want original", got)
+	}
+	if got := readTestFile(t, sourcePath); got != sourceContent {
+		t.Fatalf("source changed = %q, want original", got)
+	}
+}
+
+func TestServiceInboxMergeAcceptsFinalNoteMultiDestinationCoverage(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	microPath := filepath.Join(vaultDir, "zettelkasten", "Rajput_Agriculture_Optional", "Modern Approach_ Microeconomics.md")
+	macroPath := filepath.Join(vaultDir, "zettelkasten", "Rajput_Agriculture_Optional", "Modern Approach_ Macroeconomics.md")
+	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "004.md")
+	sourceContent := "- **Microeconomics**: \"Microscope\" view -> individual/firm decisions.\n" +
+		"- **Macroeconomics**: \"Telescope\" view -> country-level decisions and international relations.\n"
+	microBefore := "- **Microeconomics**: Study of a particular firm or household.\n"
+	macroBefore := "- **Macroeconomics**: Whole economy and national income.\n"
+	writeTestFile(t, microPath, microBefore)
+	writeTestFile(t, macroPath, macroBefore)
+	writeTestFile(t, sourcePath, sourceContent)
+
+	provider := &fakeZettelProvider{chatResponses: []string{
+		"BEGIN_NOTE zettelkasten/Rajput_Agriculture_Optional/Modern Approach_ Microeconomics.md\n" +
+			microBefore +
+			"- **Microeconomics**: \"Microscope\" view -> individual/firm decisions.\n" +
+			"END_NOTE\n" +
+			"BEGIN_NOTE zettelkasten/Rajput_Agriculture_Optional/Modern Approach_ Macroeconomics.md\n" +
+			macroBefore +
+			"- **Macroeconomics**: \"Telescope\" view -> country-level decisions and international relations.\n" +
+			"END_NOTE\n",
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "in",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want processed multi-destination merge", resp)
+	}
+	if !strings.Contains(readTestFile(t, microPath), "Microscope") || !strings.Contains(readTestFile(t, macroPath), "Telescope") {
+		t.Fatalf("destinations did not receive source facts")
+	}
+	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+		t.Fatalf("source still exists or unexpected stat error: %v", err)
+	}
+}
+
+func TestServiceInboxMergeRejectsFinalNoteCandidateContamination(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	destinationPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "UPSC Prelims Syllabus Overview.md")
+	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "003.md")
+	sourceContent := "- **Prelims Syllabus**: Poverty, inclusion, and demographics.\n"
+	destinationBefore := "- **Microeconomics for Prelims**: Low priority.\n"
+	writeTestFile(t, destinationPath, destinationBefore)
+	writeTestFile(t, filepath.Join(vaultDir, "zettelkasten", "Economy", "0978 Study Material Roadmap and Next Topics.md"), "- **Mains Answer Writing Topics**: FDI in insurance and farm loan waiver.\n")
+	writeTestFile(t, sourcePath, sourceContent)
+
+	provider := &fakeZettelProvider{chatResponses: []string{
+		"BEGIN_NOTE zettelkasten/Economy/UPSC Prelims Syllabus Overview.md\n" +
+			destinationBefore +
+			"- **Prelims Syllabus**: Poverty, inclusion, and demographics.\n" +
+			"- **Mains Answer Writing Topics**: FDI in insurance and farm loan waiver.\n" +
+			"END_NOTE\n",
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "in",
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want pending contaminated final note", resp)
+	}
+	if len(resp.Pending[0].Validation.UnsupportedAdditions) == 0 {
+		t.Fatalf("validation = %#v, want unsupported addition", resp.Pending[0].Validation)
+	}
+	if got := readTestFile(t, destinationPath); got != destinationBefore {
+		t.Fatalf("destination changed = %q, want original", got)
+	}
+}
+
+func TestServiceInboxMergeAdoptsWhenFinalNoteDestinationTooNarrow(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	narrowPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "0330 Microeconomics Priority Note.md")
+	sourcePath := filepath.Join(vaultDir, "in", "Economy Shivin", "003.md")
+	sourceContent := "- **Prelims Syllabus**: Econ/Social Development, Poverty, Inclusion, Demographics.\n"
+	narrowBefore := "- **Microeconomics for Prelims**: Low priority.\n"
+	writeTestFile(t, narrowPath, narrowBefore)
+	writeTestFile(t, sourcePath, sourceContent)
+
+	provider := &fakeZettelProvider{chatResponses: []string{
+		"BEGIN_NOTE zettelkasten/Economy/0330 Microeconomics Priority Note.md\n" +
+			narrowBefore +
+			"- **Prelims Syllabus**: Econ/Social Development, Poverty, Inclusion, Demographics.\n" +
+			"END_NOTE\n",
+	}}
+	service := NewWithProviders(provider, provider, provider, provider)
+	options := Options{
+		VaultPath:            vaultDir,
+		RootFolder:           "zettelkasten",
+		DataFolder:           ".aicli-zettel-merge",
+		InboxFolder:          "in",
+		AdoptUnmatchedInbox:  true,
+		CandidateProviderID:  "fake",
+		MergeProviderID:      "fake",
+		ValidationProviderID: "fake",
+		EmbeddingProviderID:  "fake",
+		CandidateModel:       "judge-model",
+		MergeModel:           "merge-model",
+		ValidationModel:      "validation-model",
+		EmbeddingModel:       "embedding-model",
+	}
+	if _, err := service.Index(context.Background(), IndexRequest{Options: options}, nil); err != nil {
+		t.Fatalf("Index() error = %v", err)
+	}
+
+	resp, err := service.InboxMerge(context.Background(), InboxMergeRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("InboxMerge() error = %v", err)
+	}
+	if resp.ProcessedCount != 1 || resp.PendingCount != 0 || resp.FailedCount != 0 {
+		t.Fatalf("InboxMerge() = %#v, want adopted source after narrow route rejection", resp)
+	}
+	if got := readTestFile(t, narrowPath); got != narrowBefore {
+		t.Fatalf("narrow destination changed = %q, want original", got)
+	}
+	adoptedPath := filepath.Join(vaultDir, "zettelkasten", "Economy", "Economy Shivin", "003.md")
+	if got := readTestFile(t, adoptedPath); got != sourceContent {
+		t.Fatalf("adopted destination = %q, want source content", got)
+	}
+}
+
 func TestServiceInboxMergeActionDoesNotInventFrontmatterForPlainDestination(t *testing.T) {
 	t.Parallel()
 

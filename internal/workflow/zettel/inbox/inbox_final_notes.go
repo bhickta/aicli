@@ -59,7 +59,7 @@ func parseInboxFinalNotes(sourcePath string, text string) (inboxDestinationDecis
 			Reason:  pendingReason,
 		})
 	}
-	decision.Validation = MergeJudge{Verdict: "pass", Score: 1, Notes: "Final-note response parsed and accepted without mechanical coverage validation."}
+	decision.Validation = MergeJudge{Verdict: "pass", Score: 1, Notes: "Final-note response parsed; local validation runs before writing."}
 	return decision, true
 }
 
