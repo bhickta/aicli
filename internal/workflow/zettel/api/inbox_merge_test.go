@@ -264,7 +264,7 @@ func TestServiceInboxMergeRejectsNonCandidateFinalNote(t *testing.T) {
 	}
 }
 
-func TestServiceInboxMergeRejectsBadShorthandAfterValidation(t *testing.T) {
+func TestServiceInboxMergeKeepsPendingWhenValidatorRejectsBadShorthand(t *testing.T) {
 	t.Parallel()
 
 	vaultDir := t.TempDir()
@@ -281,7 +281,7 @@ func TestServiceInboxMergeRejectsBadShorthandAfterValidation(t *testing.T) {
 			"END_NOTE",
 			"",
 		}, "\n"),
-		"PASS\n",
+		"FAIL: final note uses double-colon shorthand\n",
 	}}
 	service := NewWithProviders(provider, provider)
 	options := inboxMergeTestOptions(vaultDir, "in")
@@ -294,17 +294,17 @@ func TestServiceInboxMergeRejectsBadShorthandAfterValidation(t *testing.T) {
 		t.Fatalf("InboxMerge() error = %v", err)
 	}
 	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want pending shorthand rejection", resp)
+		t.Fatalf("InboxMerge() = %#v, want validator to keep source pending", resp)
 	}
 	if got := readTestFile(t, destinationPath); got != "- **Prelims Syllabus**: Poverty.\n" {
 		t.Fatalf("destination changed = %q, want unchanged", got)
 	}
-	if !strings.Contains(resp.Pending[0].Reason, "double-colon") {
-		t.Fatalf("pending reason = %q, want local shorthand rejection", resp.Pending[0].Reason)
+	if !strings.Contains(resp.Pending[0].Reason, "validation failed") {
+		t.Fatalf("pending reason = %q, want validator rejection", resp.Pending[0].Reason)
 	}
 }
 
-func TestServiceInboxMergeRejectsDuplicateLongFactAcrossTargets(t *testing.T) {
+func TestServiceInboxMergeKeepsPendingWhenValidatorRejectsDuplicateFact(t *testing.T) {
 	t.Parallel()
 
 	vaultDir := t.TempDir()
@@ -329,7 +329,7 @@ func TestServiceInboxMergeRejectsDuplicateLongFactAcrossTargets(t *testing.T) {
 			"END_NOTE",
 			"",
 		}, "\n"),
-		"PASS\n",
+		"FAIL: AC market example is duplicated across multiple final notes\n",
 	}}
 	service := NewWithProviders(provider, provider)
 	options := inboxMergeTestOptions(vaultDir, "in")
@@ -342,7 +342,7 @@ func TestServiceInboxMergeRejectsDuplicateLongFactAcrossTargets(t *testing.T) {
 		t.Fatalf("InboxMerge() error = %v", err)
 	}
 	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want pending duplicate-fact rejection", resp)
+		t.Fatalf("InboxMerge() = %#v, want validator to keep source pending", resp)
 	}
 	if got := readTestFile(t, microPath); strings.Contains(got, "AC Market Example") {
 		t.Fatalf("micro destination changed = %q, want unchanged", got)
@@ -352,7 +352,7 @@ func TestServiceInboxMergeRejectsDuplicateLongFactAcrossTargets(t *testing.T) {
 	}
 }
 
-func TestServiceInboxMergeRejectsWrongTopLevelDestination(t *testing.T) {
+func TestServiceInboxMergeKeepsPendingWhenValidatorRejectsWrongDestination(t *testing.T) {
 	t.Parallel()
 
 	vaultDir := t.TempDir()
@@ -372,7 +372,7 @@ func TestServiceInboxMergeRejectsWrongTopLevelDestination(t *testing.T) {
 			"END_NOTE",
 			"",
 		}, "\n"),
-		"PASS\n",
+		"FAIL: destination is the wrong subject folder\n",
 	}}
 	service := NewWithProviders(provider, provider)
 	options := inboxMergeTestOptions(vaultDir, "in")
@@ -385,7 +385,7 @@ func TestServiceInboxMergeRejectsWrongTopLevelDestination(t *testing.T) {
 		t.Fatalf("InboxMerge() error = %v", err)
 	}
 	if resp.ProcessedCount != 0 || resp.PendingCount != 1 || resp.FailedCount != 0 {
-		t.Fatalf("InboxMerge() = %#v, want pending wrong-folder rejection", resp)
+		t.Fatalf("InboxMerge() = %#v, want validator to keep source pending", resp)
 	}
 	if got := readTestFile(t, governancePath); strings.Contains(got, "Economy PYQ") {
 		t.Fatalf("governance destination changed = %q, want unchanged", got)

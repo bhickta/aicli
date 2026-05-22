@@ -170,8 +170,6 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 			reportInboxStage(progress, sourcePath, "validating final destination notes", 4, totalStages)
 			if err := r.validateInboxFinalNotes(ctx, archive, runID, sourcePath, sourceContent, selectedCandidates, decision, options); err != nil {
 				decision = pendingInboxDecision(sourcePath, err.Error())
-			} else if err := validateInboxDecisionGuardrails(sourceContent, adoptedPath, decision); err != nil {
-				decision = pendingInboxDecision(sourcePath, err.Error())
 			}
 		}
 	}
