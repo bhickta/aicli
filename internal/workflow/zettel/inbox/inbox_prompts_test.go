@@ -35,11 +35,12 @@ func TestInboxMergePromptUsesOnlySemanticCandidates(t *testing.T) {
 		"complete deduplicated superset",
 		"no useful existing destination fact may disappear",
 		"Preserve the destination note's existing markdown hierarchy",
-		"do not flatten old sub-bullets into top-level bullets",
+		"do not flatten existing nested bullets into top-level bullets",
+		"Add related source facts at the matching level",
 		"merge the new wording/details into the existing bullet instead of adding a duplicate bullet",
 		"separate clearly labeled section inside the closest candidate",
-		"Do not invent mixed labels by combining nearby abbreviations or exam references with concepts",
-		"`CDS-2023-II` is an exam reference, not a `CDR/CDS` concept label",
+		"Concept labels must name one real concept from the source or destination",
+		"do not combine unrelated abbreviations, exam references, examples, or adjacent labels into a new label",
 		"Never end any markdown line with two spaces",
 	}
 	for _, instruction := range requiredInstructions {
