@@ -9,6 +9,7 @@ import { useZettelWorkflow } from "../composables/useZettelWorkflow";
 const {
   config,
   inboxReport,
+  candidatePreview,
   apiUsage,
   status,
   result,
@@ -29,6 +30,7 @@ const {
   pickVault,
   pickZettelFolder,
   buildIndex,
+  previewInboxCandidates,
   rollback,
   runInboxMerge,
 } = useZettelWorkflow();
@@ -57,8 +59,10 @@ const {
       :busy="busy"
       :can-run="canRunInboxMerge"
       :can-use-folders="canUseVaultFolders"
+      :candidate-preview="candidatePreview"
       :report="inboxReport"
       @run="runInboxMerge"
+      @preview-candidates="previewInboxCandidates"
       @build-index="buildIndex"
       @pick-folder="pickZettelFolder"
       @update-inbox-limit="updateConfig('inboxLimit', $event)"

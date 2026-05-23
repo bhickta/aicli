@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { InboxMergeReport } from "../../../types";
+import type { InboxCandidatePreviewReport, InboxMergeReport } from "../../../types";
 import type { ZettelFolderField } from "../../../features/zettel/types";
 import ZettelFolderChooser from "../common/ZettelFolderChooser.vue";
+import ZettelCandidatePreview from "./ZettelCandidatePreview.vue";
 import ZettelInboxReport from "./ZettelInboxReport.vue";
 import ZettelRunSizeControl from "./ZettelRunSizeControl.vue";
 import ZettelSection from "../common/ZettelSection.vue";
@@ -17,11 +18,13 @@ const props = defineProps<{
   busy: boolean;
   canRun: boolean;
   canUseFolders: boolean;
+  candidatePreview: InboxCandidatePreviewReport | null;
   report: InboxMergeReport | null;
 }>();
 
 const emit = defineEmits<{
   run: [];
+  previewCandidates: [];
   buildIndex: [];
   pickFolder: [field: ZettelFolderField, label: string];
   updateInboxLimit: [value: number];
@@ -84,11 +87,13 @@ const randomModel = computed({
     </div>
 
     <div class="zettel-inline-actions">
+      <button type="button" :disabled="busy || !canRun" @click="emit('previewCandidates')">Preview Embedding Matches</button>
       <button type="button" :disabled="busy" @click="emit('buildIndex')">Build Index</button>
     </div>
 
+    <ZettelCandidatePreview :report="candidatePreview" />
     <ZettelInboxReport :report="report" />
-    <p v-if="!report" class="muted">Run report, changed files, pending notes, and rollback id appear here.</p>
+    <p v-if="!candidatePreview && !report" class="muted">Previewed candidates and merge reports appear here.</p>
   </ZettelSection>
 </template>
 

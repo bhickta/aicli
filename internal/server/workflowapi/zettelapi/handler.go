@@ -22,6 +22,7 @@ func New(runtime *core.Runtime) *Handler {
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workflows/zettel/notes", h.notes)
 	mux.HandleFunc("POST /api/workflows/zettel/index", h.index)
+	mux.HandleFunc("POST /api/workflows/zettel/inbox-candidates", h.inboxCandidates)
 	mux.HandleFunc("POST /api/workflows/zettel/rollback", h.rollback)
 	mux.HandleFunc("POST /api/workflows/zettel/inbox-merge", h.inboxMerge)
 }
@@ -51,6 +52,21 @@ func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
 	}
 	h.runtime.StartJob(w, r, "zettel-index", req.VaultPath, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		return service.Index(ctx, req, progress)
+	})
+}
+
+func (h *Handler) inboxCandidates(w http.ResponseWriter, r *http.Request) {
+	req, ok := core.DecodeJSON[zettel.InboxCandidatePreviewRequest](w, r)
+	if !ok {
+		return
+	}
+	service, err := h.serviceFor(req.Options, providerNeeds{embedding: true})
+	if err != nil {
+		core.WriteError(w, http.StatusNotFound, err)
+		return
+	}
+	h.runtime.StartJob(w, r, "zettel-inbox-candidates", req.InboxFolder, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+		return service.InboxCandidatePreview(ctx, req, progress)
 	})
 }
 

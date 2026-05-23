@@ -149,6 +149,28 @@ export interface InboxDestinationDiff {
   created?: boolean;
 }
 
+export interface InboxCandidate {
+  path: string;
+  similarity: number;
+  excerpt?: string;
+}
+
+export interface InboxCandidateSource {
+  source_path: string;
+  source_excerpt?: string;
+  candidates: InboxCandidate[];
+  error?: string;
+}
+
+export interface InboxCandidatePreviewReport {
+  sources: InboxCandidateSource[];
+  source_count: number;
+  selected_count: number;
+  skipped_count: number;
+  limit?: number;
+  api_calls?: ApiCallUsage;
+}
+
 export interface ProviderApiCallUsage {
   provider_id: string;
   total: number;

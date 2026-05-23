@@ -1,7 +1,7 @@
 import { computed, onMounted, reactive, shallowRef, watch } from "vue";
 import { api } from "../lib/api";
 import { stringify } from "../lib/format";
-import type { ApiCallUsage, InboxMergeReport } from "../types";
+import type { ApiCallUsage, InboxCandidatePreviewReport, InboxMergeReport } from "../types";
 import {
   candidateLimitOptions,
   createZettelConfig,
@@ -27,6 +27,7 @@ export function useZettelWorkflow() {
   const config = reactive<ZettelConfig>(createZettelConfig());
 
   const inboxReport = shallowRef<InboxMergeReport | null>(null);
+  const candidatePreview = shallowRef<InboxCandidatePreviewReport | null>(null);
   const apiUsage = shallowRef<ApiCallUsage | null>(null);
   const rollbackJobID = shallowRef("");
   const mode = shallowRef<ZettelMode>(readZettelMode());
@@ -41,6 +42,8 @@ export function useZettelWorkflow() {
 
   watch(config, () => {
     persistZettelConfig(config);
+    candidatePreview.value = null;
+    inboxReport.value = null;
   });
 
   watch(mode, () => {
@@ -94,6 +97,17 @@ export function useZettelWorkflow() {
     });
   }
 
+  async function previewInboxCandidates() {
+    apiUsage.value = null;
+    await runner.runWorkflow("Previewing embedding matches", "/api/workflows/zettel/inbox-candidates", basePayload(), (output) => {
+      updateApiUsage(output);
+      const response = output as InboxCandidatePreviewReport;
+      candidatePreview.value = response;
+      runner.status.value = `Embedding preview completed: ${response.selected_count} source notes, ${totalCandidateCount(response)} candidates`;
+      runner.result.value = stringify(output);
+    });
+  }
+
   async function rollback() {
     apiUsage.value = null;
     await runner.runWorkflow("Rolling back zettel merge", "/api/workflows/zettel/rollback", {
@@ -128,9 +142,14 @@ export function useZettelWorkflow() {
     return root.api_calls || root.proposal?.api_calls || null;
   }
 
+  function totalCandidateCount(report: InboxCandidatePreviewReport) {
+    return report.sources.reduce((sum, source) => sum + source.candidates.length, 0);
+  }
+
   return {
     config,
     inboxReport,
+    candidatePreview,
     apiUsage,
     status: runner.status,
     result: runner.result,
@@ -151,6 +170,7 @@ export function useZettelWorkflow() {
     pickVault,
     pickZettelFolder,
     buildIndex,
+    previewInboxCandidates,
     rollback,
     runInboxMerge,
   };

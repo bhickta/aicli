@@ -104,7 +104,8 @@ Use `Run size` to limit a test run, `Random notes` to sample from the inbox inst
    - Embedding provider, usually `lms` or `ollama`
    - Embedding model, usually `text-embedding-nomic-embed-text-v1.5`
 5. Click `Build Index` once, or when notes/model changed.
-6. Click `Run Inbox Merge`.
+6. Click `Preview Embedding Matches` to inspect the destination files selected by semantic search.
+7. Click `Run Inbox Merge`.
 
 For no-intervention source-note ingestion, put new atomic notes under the configured inbox folder, for example:
 
