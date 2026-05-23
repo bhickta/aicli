@@ -62,6 +62,8 @@ func inboxMergeMessages(sourcePath string, sourceContent string, candidates []sc
 			"When a source concept only loosely fits the destination, keep it as a separate clearly labeled section inside the closest candidate.",
 			"Preserve quoted phrases exactly, including every word inside quotation marks.",
 			"Preserve contextual numbers exactly: years, percentages, rupee amounts, star ratings, marks, question references like Q1/Q2, hours, and stated counts.",
+			"For legal, regulatory, policy, court, or dispute chains, preserve the sequence exactly: actor, forum/body, decision, who challenged it, final outcome, and who benefited.",
+			"Do not replace specific outcome verbs like stayed, set aside, rejected, upheld, allowed, or disallowed with a different verb unless the source uses or clearly supports that exact outcome.",
 			"Markdown list numbering such as `1.` or `2.` is formatting, not a fact, unless the number is part of the concept label.",
 			"Never end any markdown line with two spaces; use normal newlines only.",
 			"Merge conceptually related source facts into the most appropriate final note.",

@@ -41,6 +41,8 @@ func TestInboxMergePromptUsesOnlySemanticCandidates(t *testing.T) {
 		"separate clearly labeled section inside the closest candidate",
 		"Concept labels must name one real concept from the source or destination",
 		"do not combine unrelated abbreviations, exam references, examples, or adjacent labels into a new label",
+		"For legal, regulatory, policy, court, or dispute chains, preserve the sequence exactly",
+		"Do not replace specific outcome verbs like stayed, set aside, rejected, upheld, allowed, or disallowed",
 		"Never end any markdown line with two spaces",
 	}
 	for _, instruction := range requiredInstructions {
