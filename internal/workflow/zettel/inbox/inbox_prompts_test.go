@@ -31,6 +31,18 @@ func TestInboxMergePromptUsesOnlySemanticCandidates(t *testing.T) {
 	if strings.Contains(system, "adopted") || strings.Contains(user, "NEW EMPTY DESTINATION") {
 		t.Fatalf("prompt still exposes adopted new-note flow:\n%s\n%s", system, user)
 	}
+	requiredInstructions := []string{
+		"complete deduplicated superset",
+		"no useful existing destination fact may disappear",
+		"merge the new wording/details into the existing bullet instead of adding a duplicate bullet",
+		"separate clearly labeled section inside the closest candidate",
+		"Never end any markdown line with two spaces",
+	}
+	for _, instruction := range requiredInstructions {
+		if !strings.Contains(system, instruction) {
+			t.Fatalf("system prompt missing instruction %q: %s", instruction, system)
+		}
+	}
 	if !strings.Contains(user, "SEMANTIC DESTINATION CANDIDATES:") || !strings.Contains(user, "zettelkasten/economy.md") {
 		t.Fatalf("user prompt missing semantic candidates: %s", user)
 	}
