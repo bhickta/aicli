@@ -253,7 +253,10 @@ func (r Runner) processInboxSource(ctx context.Context, v vault, archive archive
 		return InboxSourceResult{}, fmt.Errorf("read inbox source: %w", err)
 	}
 	sourceContent := string(sourceBytes)
-	result := InboxSourceResult{SourcePath: sourcePath}
+	result := InboxSourceResult{
+		SourcePath:    sourcePath,
+		SourceContent: sourceContent,
+	}
 	if destinationPath, ok, err := findExactDestinationDuplicate(v, options, sourcePath, sourceContent); err != nil {
 		return result, err
 	} else if ok {
@@ -359,6 +362,7 @@ func archiveFailedInboxSource(v vault, store archivepkg.Store, runID string, res
 			sourceContent = string(data)
 		}
 	}
+	result.SourceContent = sourceContent
 	_, err := store.WriteInboxItem(runID, result, sourceContent, nil, nil)
 	return err
 }

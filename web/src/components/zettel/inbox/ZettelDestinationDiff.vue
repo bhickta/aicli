@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { computed, shallowRef, watch } from "vue";
+import { computed, onMounted, onUnmounted, shallowRef, watch } from "vue";
 import type { InboxDestinationDiff } from "../../../types";
 import { buildDiffRows } from "../../../features/zettel/diff";
 
 const props = defineProps<{
   diffs: InboxDestinationDiff[];
+  sourcePath?: string;
+  sourceContent?: string;
+  processedPath?: string;
 }>();
 
 const selectedPath = shallowRef("");
+const isExpanded = shallowRef(false);
+let previousBodyOverflow = "";
 const selectedDiff = computed(() => {
   const diffs = props.diffs || [];
   return diffs.find((diff) => diff.path === selectedPath.value) || diffs[0] || null;
@@ -15,6 +20,8 @@ const selectedDiff = computed(() => {
 const rows = computed(() => selectedDiff.value ? buildDiffRows(selectedDiff.value) : []);
 const selectedFileName = computed(() => selectedDiff.value ? fileName(selectedDiff.value.path) : "");
 const selectedParentPath = computed(() => selectedDiff.value ? parentPath(selectedDiff.value.path) : "");
+const sourceFileName = computed(() => props.sourcePath ? fileName(props.sourcePath) : "Source note");
+const sourceParentPath = computed(() => props.sourcePath ? parentPath(props.sourcePath) : "");
 const stats = computed(() => {
   let added = 0;
   let removed = 0;
@@ -39,8 +46,34 @@ watch(
   { immediate: true },
 );
 
+watch(isExpanded, (expanded) => {
+  if (expanded) {
+    previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return;
+  }
+  document.body.style.overflow = previousBodyOverflow;
+});
+
+onMounted(() => {
+  window.addEventListener("keydown", closeOnEscape);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", closeOnEscape);
+  document.body.style.overflow = previousBodyOverflow;
+});
+
 function selectDiff(path: string) {
   selectedPath.value = path;
+}
+
+function toggleExpanded() {
+  isExpanded.value = !isExpanded.value;
+}
+
+function closeOnEscape(event: KeyboardEvent) {
+  if (event.key === "Escape") isExpanded.value = false;
 }
 
 function fileName(path: string): string {
@@ -55,26 +88,51 @@ function parentPath(path: string): string {
 </script>
 
 <template>
-  <section v-if="diffs.length" class="destination-diff">
-    <aside class="destination-files" aria-label="Changed destination files">
-      <div class="destination-files-header">
-        <strong>Changed files</strong>
-        <span>{{ diffs.length }}</span>
+  <section
+    v-if="diffs.length"
+    class="destination-diff"
+    :class="{ 'is-expanded': isExpanded }"
+    :aria-modal="isExpanded ? 'true' : undefined"
+  >
+    <aside class="merge-map" aria-label="Source and merge destinations">
+      <div class="merge-map-header">
+        <strong>Source merge</strong>
+        <span>{{ diffs.length }} destination{{ diffs.length === 1 ? "" : "s" }}</span>
       </div>
-      <button
-        v-for="diff in diffs"
-        :key="diff.path"
-        type="button"
-        class="destination-file"
-        :class="{ active: selectedDiff?.path === diff.path }"
-        @click="selectDiff(diff.path)"
-      >
-        <span class="file-state">{{ diff.created ? "A" : "M" }}</span>
-        <span class="file-copy">
-          <strong>{{ fileName(diff.path) }}</strong>
-          <small>{{ parentPath(diff.path) }}</small>
-        </span>
-      </button>
+
+      <article class="source-note">
+        <span class="source-label">Source</span>
+        <strong>{{ sourceFileName }}</strong>
+        <small v-if="sourceParentPath">{{ sourceParentPath }}</small>
+        <small v-if="processedPath" class="processed-path">processed -> {{ processedPath }}</small>
+        <details class="source-content" open>
+          <summary>Source content</summary>
+          <pre>{{ sourceContent || "Source content is available for new merge runs only." }}</pre>
+        </details>
+      </article>
+
+      <div class="merge-arrow">Merged into</div>
+
+      <div class="destination-files" aria-label="Changed destination files">
+        <div class="destination-files-header">
+          <strong>Changed destinations</strong>
+          <span>{{ diffs.length }}</span>
+        </div>
+        <button
+          v-for="diff in diffs"
+          :key="diff.path"
+          type="button"
+          class="destination-file"
+          :class="{ active: selectedDiff?.path === diff.path }"
+          @click="selectDiff(diff.path)"
+        >
+          <span class="file-state">{{ diff.created ? "A" : "M" }}</span>
+          <span class="file-copy">
+            <strong>{{ fileName(diff.path) }}</strong>
+            <small>{{ parentPath(diff.path) }}</small>
+          </span>
+        </button>
+      </div>
     </aside>
 
     <article v-if="selectedDiff" class="diff-editor" aria-label="Destination diff">
@@ -83,9 +141,19 @@ function parentPath(path: string): string {
           <strong>{{ selectedFileName }}</strong>
           <small>{{ selectedParentPath }}</small>
         </div>
-        <div class="diff-stats">
-          <span class="added">+{{ stats.added }}</span>
-          <span class="removed">-{{ stats.removed }}</span>
+        <div class="diff-header-actions">
+          <div class="diff-stats">
+            <span class="added">+{{ stats.added }}</span>
+            <span class="removed">-{{ stats.removed }}</span>
+          </div>
+          <button
+            type="button"
+            class="fullscreen-button"
+            :aria-pressed="isExpanded"
+            @click="toggleExpanded"
+          >
+            {{ isExpanded ? "Exit full screen" : "Full screen" }}
+          </button>
         </div>
       </header>
 
@@ -123,8 +191,9 @@ function parentPath(path: string): string {
 
 <style scoped>
 .destination-diff {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
   min-height: 420px;
   overflow: hidden;
   border: 1px solid #2b313b;
@@ -132,11 +201,35 @@ function parentPath(path: string): string {
   background: #0d1117;
 }
 
-.destination-files {
+.destination-diff.is-expanded {
+  position: fixed;
+  inset: 12px;
+  z-index: 1000;
+  grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
+  width: auto;
+  height: calc(100vh - 24px);
+  min-height: 0;
+  box-shadow: 0 18px 80px rgba(0, 0, 0, 0.6);
+}
+
+.merge-map {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   min-width: 0;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
   border-right: 1px solid #2b313b;
   background: #11161f;
+}
+
+.merge-map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #2b313b;
 }
 
 .destination-files-header,
@@ -149,6 +242,78 @@ function parentPath(path: string): string {
   margin: 0;
   padding: 8px 10px;
   border-bottom: 1px solid #2b313b;
+}
+
+.merge-map-header span {
+  color: #9aa4b2;
+  font-size: 12px;
+}
+
+.source-note {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border-bottom: 1px solid #2b313b;
+}
+
+.source-label {
+  color: #7ee787;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.source-note strong,
+.source-note small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.processed-path {
+  color: #9aa4b2;
+}
+
+.source-content {
+  margin-top: 4px;
+  min-width: 0;
+}
+
+.source-content summary {
+  cursor: pointer;
+  color: #d6deea;
+  font-size: 12px;
+}
+
+.source-content pre {
+  max-height: 180px;
+  min-height: 92px;
+  margin: 8px 0 0;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid #2b313b;
+  border-radius: 4px;
+  background: #0d1117;
+  color: #d6deea;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.merge-arrow {
+  padding: 7px 10px;
+  border-bottom: 1px solid #2b313b;
+  color: #9aa4b2;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.destination-files {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 .destination-files-header span {
@@ -217,6 +382,13 @@ function parentPath(path: string): string {
   min-width: 0;
 }
 
+.diff-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
 .diff-stats {
   display: flex;
   gap: 8px;
@@ -230,6 +402,20 @@ function parentPath(path: string): string {
 
 .diff-stats .removed {
   color: #ff7b72;
+}
+
+.fullscreen-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border-color: #343b46;
+  background: #1f252e;
+  color: #d6deea;
+  white-space: nowrap;
+}
+
+.fullscreen-button:hover {
+  border-color: #6ea8fe;
+  background: #2d405e;
 }
 
 .diff-columns {
@@ -323,10 +509,20 @@ function parentPath(path: string): string {
     grid-template-columns: 1fr;
   }
 
-  .destination-files {
-    max-height: 180px;
+  .destination-diff.is-expanded {
+    inset: 6px;
+    height: calc(100vh - 12px);
+    grid-template-columns: 1fr;
+  }
+
+  .merge-map {
+    max-height: 320px;
     border-right: 0;
     border-bottom: 1px solid #2b313b;
+  }
+
+  .source-content pre {
+    max-height: 120px;
   }
 }
 </style>

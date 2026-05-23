@@ -52,6 +52,7 @@ func findExactDestinationDuplicate(v vault, options Options, sourcePath string, 
 func processExactDuplicateInboxSource(v vault, archive archivepkg.Store, runID string, options Options, sourcePath string, sourceContent string, destinationPath string) (InboxSourceResult, error) {
 	result := InboxSourceResult{
 		SourcePath:       sourcePath,
+		SourceContent:    sourceContent,
 		Status:           inboxStatusProcessed,
 		DestinationPaths: []string{destinationPath},
 		DedupedCount:     1,

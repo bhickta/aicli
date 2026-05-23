@@ -22,6 +22,7 @@ type InboxMergeResponse struct {
 
 type InboxSourceResult struct {
 	SourcePath       string                 `json:"source_path"`
+	SourceContent    string                 `json:"source_content,omitempty"`
 	Status           string                 `json:"status"`
 	ProcessedPath    string                 `json:"processed_path,omitempty"`
 	DestinationPaths []string               `json:"destination_paths,omitempty"`

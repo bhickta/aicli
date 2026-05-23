@@ -108,7 +108,12 @@ function parentPath(path: string): string {
         </header>
         <p v-if="selected.reason" class="source-reason">{{ selected.reason }}</p>
 
-        <ZettelDestinationDiff :diffs="selected.diffs || []" />
+        <ZettelDestinationDiff
+          :diffs="selected.diffs || []"
+          :source-path="selected.source_path"
+          :source-content="selected.source_content"
+          :processed-path="selected.processed_path"
+        />
 
         <details v-if="selectedClaims.length || selectedLedger.length" class="ledger-details">
           <summary>Merge ledger</summary>

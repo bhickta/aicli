@@ -191,6 +191,7 @@ export interface ApiCallUsage {
 
 export interface InboxSourceResult {
   source_path: string;
+  source_content?: string;
   status: string;
   processed_path?: string;
   destination_paths?: string[];
