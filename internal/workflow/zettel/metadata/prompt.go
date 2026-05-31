@@ -3,12 +3,14 @@ package metadata
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/bhickta/aicli/internal/provider"
 )
 
-func metadataMessages(path string, content string) []provider.Message {
+func metadataMessages(_ string, content string) []provider.Message {
 	return []provider.Message{
 		{
 			Role: "system",
@@ -16,22 +18,24 @@ func metadataMessages(path string, content string) []provider.Message {
 				"You generate high-quality metadata for UPSC zettelkasten notes.",
 				"Return JSON only. Do not return markdown fences, prose, comments, or extra keys.",
 				"JSON schema:",
-				`{"title":"...","summary_keywords":"...","recall_questions":["...","...","..."]}`,
-				"title: detailed, specific, filename-quality title for the whole note.",
-				"summary_keywords: one short keyword-only line; cover every important concept, actor, place, scheme, date, number, example, and causal relation from the note; avoid sentences.",
-				"recall_questions: 3 to 5 broad questions; together they must force recall of the whole note.",
+				`{"title":"...","summary_keywords":"...","recall_questions":["..."]}`,
+				"title: detailed, specific, filename-quality title for the actual body content.",
+				"summary_keywords: compact keyword-only line; max 280 characters; include the most important concepts, actors, places, dates, numbers, examples, and causal relations; no sentences.",
+				"recall_questions: 1 to 3 telegraphic recall prompts, not grammatical questions.",
+				"Recall prompt style: topic terms only, use +, /, ->, commas; no question marks.",
+				"Good recall prompt: Chalcolithic art/culture -> jewelry + beads + village evolution.",
+				"Bad recall prompt: What characteristics define the note's description of art and culture?",
+				"Do not mention note, text, source, content, description, according to, status, course, series, or part number.",
 				"Do not add external knowledge.",
 				"Do not omit numbers, names, places, examples, lists, definitions, or causal chains from the metadata.",
+				"The user message contains body content only. Ignore any temptation to infer from filename, path, frontmatter, or course metadata.",
 				"Do not use markdown formatting in field values.",
 			}, "\n"),
 		},
 		{
 			Role: "user",
 			Content: strings.Join([]string{
-				"NOTE PATH:",
-				path,
-				"",
-				"NOTE CONTENT:",
+				"BODY CONTENT:",
 				content,
 			}, "\n"),
 		},
@@ -55,8 +59,11 @@ func parseGeneratedMetadata(text string) (generatedMetadata, error) {
 	if item.SummaryKeywords == "" {
 		return generatedMetadata{}, errors.New("metadata summary_keywords was empty")
 	}
-	if len(item.RecallQuestions) < 3 {
-		return generatedMetadata{}, errors.New("metadata recall_questions must contain at least 3 questions")
+	if len(item.RecallQuestions) == 0 {
+		return generatedMetadata{}, errors.New("metadata recall_questions must contain at least 1 recall prompt")
+	}
+	if err := validateGeneratedMetadata(item); err != nil {
+		return generatedMetadata{}, err
 	}
 	return item, nil
 }
@@ -88,12 +95,117 @@ func normalizeGeneratedMetadata(item generatedMetadata) generatedMetadata {
 			continue
 		}
 		questions = append(questions, question)
-		if len(questions) >= 5 {
+		if len(questions) >= 3 {
 			break
 		}
 	}
 	item.RecallQuestions = questions
 	return item
+}
+
+func validateGeneratedMetadata(item generatedMetadata) error {
+	for _, value := range []struct {
+		field string
+		text  string
+	}{
+		{field: "title", text: item.Title},
+		{field: "summary_keywords", text: item.SummaryKeywords},
+	} {
+		if containsMetadataLeak(value.text) {
+			return fmt.Errorf("metadata %s references source/status/note metadata", value.field)
+		}
+	}
+	if len([]rune(item.SummaryKeywords)) > 320 {
+		return errors.New("metadata summary_keywords is too long")
+	}
+	for _, prompt := range item.RecallQuestions {
+		if err := validateRecallPrompt(prompt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateRecallPrompt(prompt string) error {
+	if strings.Contains(prompt, "?") {
+		return fmt.Errorf("recall prompt must not be a grammatical question: %q", prompt)
+	}
+	if startsWithQuestionWord(prompt) {
+		return fmt.Errorf("recall prompt starts with a question word: %q", prompt)
+	}
+	if containsMetadataLeak(prompt) || containsRecallMetaWording(prompt) {
+		return fmt.Errorf("recall prompt references note/source metadata: %q", prompt)
+	}
+	return nil
+}
+
+func startsWithQuestionWord(value string) bool {
+	first := strings.Fields(strings.ToLower(strings.TrimSpace(value)))
+	if len(first) == 0 {
+		return false
+	}
+	switch strings.Trim(first[0], "\"'`.,:;") {
+	case "what", "how", "why", "when", "where", "which", "who", "whom":
+		return true
+	default:
+		return false
+	}
+}
+
+func containsMetadataLeak(value string) bool {
+	text := strings.ToLower(value)
+	blocked := []string{
+		"source:",
+		"source metadata",
+		"note status",
+		"status:",
+		"study iq",
+		"rs sharma",
+		"history optional",
+		"part number",
+		"part ",
+		"course",
+		"series",
+	}
+	for _, term := range blocked {
+		if strings.Contains(text, term) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsRecallMetaWording(value string) bool {
+	words := wordSet(value)
+	blocked := []string{
+		"note",
+		"text",
+		"content",
+		"description",
+		"described",
+		"discussed",
+		"according",
+		"source",
+		"status",
+	}
+	for _, word := range blocked {
+		if words[word] {
+			return true
+		}
+	}
+	return false
+}
+
+func wordSet(value string) map[string]bool {
+	words := map[string]bool{}
+	for _, field := range strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if field != "" {
+			words[field] = true
+		}
+	}
+	return words
 }
 
 func cleanMetadataValue(value string) string {

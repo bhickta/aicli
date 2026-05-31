@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -41,6 +42,45 @@ func splitFrontmatter(content string) (string, string, bool) {
 	return notetext.EnsureTrailingNewline(frontmatter), body, true
 }
 
+func markdownBody(content string) string {
+	_, body, _ := splitFrontmatter(content)
+	return body
+}
+
+func hasSubstantiveBody(content string) bool {
+	body := markdownBody(content)
+	var substantiveLines int
+	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || isStructuralMarkdownLine(line) {
+			continue
+		}
+		substantiveLines++
+		if substantiveLines >= 1 {
+			return true
+		}
+	}
+	return false
+}
+
+func isStructuralMarkdownLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "#") {
+		return true
+	}
+	trimmed = strings.TrimPrefix(trimmed, "-")
+	trimmed = strings.TrimPrefix(trimmed, "*")
+	trimmed = strings.TrimSpace(trimmed)
+	if trimmed == "" {
+		return true
+	}
+	trimmed = strings.Trim(trimmed, "*_` ")
+	return strings.HasSuffix(trimmed, ":")
+}
+
 func hasCompleteMetadata(frontmatter string) bool {
 	title := false
 	summary := false
@@ -66,7 +106,7 @@ func hasCompleteMetadata(frontmatter string) bool {
 			questions++
 		}
 	}
-	return title && summary && questions >= 3
+	return title && summary && questions >= 1
 }
 
 func renderMetadataFrontmatter(frontmatter string, item generatedMetadata) string {
@@ -123,9 +163,12 @@ func trimTrailingBlankLines(lines []string) []string {
 }
 
 func yamlQuote(value string) string {
-	data, err := json.Marshal(strings.TrimSpace(value))
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	err := encoder.Encode(strings.TrimSpace(value))
 	if err != nil {
 		return fmt.Sprintf("%q", strings.TrimSpace(value))
 	}
-	return string(data)
+	return strings.TrimSpace(buf.String())
 }

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bhickta/aicli/internal/provider"
 )
 
 func TestServiceMetadataWritesFrontmatterAndArchive(t *testing.T) {
@@ -16,15 +18,23 @@ func TestServiceMetadataWritesFrontmatterAndArchive(t *testing.T) {
 	notePath := filepath.Join(vaultDir, "zettelkasten", "economy.md")
 	writeTestFile(t, notePath, "---\nStatus: Read\naliases:\n  - Econ\n---\n# Economy\nGDP and inflation basics.\n")
 
-	provider := &fakeZettelProvider{chatResponse: `{
+	var userPrompt string
+	provider := &fakeZettelProvider{
+		chatResponse: `{
 		"title": "Economy, GDP, and Inflation Basics",
 		"summary_keywords": "Economy, GDP, inflation, basics",
 		"recall_questions": [
-			"What are the core economy concepts in this note?",
-			"How do GDP and inflation relate to the note?",
-			"What basics must be recalled from this note?"
+			"Economy basics -> GDP + inflation"
 		]
-	}`}
+	}`,
+		onChat: func(req provider.ChatRequest) {
+			for _, msg := range req.Messages {
+				if msg.Role == "user" {
+					userPrompt = msg.Content
+				}
+			}
+		},
+	}
 	options := metadataTestOptions(vaultDir)
 	resp, err := NewWithProviders(provider, provider).Metadata(context.Background(), MetadataRequest{
 		Options:        options,
@@ -47,12 +57,20 @@ func TestServiceMetadataWritesFrontmatterAndArchive(t *testing.T) {
 		"aliases:",
 		`title: "Economy, GDP, and Inflation Basics"`,
 		`summary_keywords: "Economy, GDP, inflation, basics"`,
-		`  - "What are the core economy concepts in this note?"`,
+		`  - "Economy basics -> GDP + inflation"`,
 		"# Economy\nGDP and inflation basics.",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("metadata note missing %q:\n%s", want, got)
 		}
+	}
+	for _, forbidden := range []string{"Status: Read", "aliases:", "NOTE PATH", "economy.md"} {
+		if strings.Contains(userPrompt, forbidden) {
+			t.Fatalf("metadata prompt leaked %q:\n%s", forbidden, userPrompt)
+		}
+	}
+	if !strings.Contains(userPrompt, "# Economy\nGDP and inflation basics.") {
+		t.Fatalf("metadata prompt missing body content:\n%s", userPrompt)
 	}
 	if _, err := os.Stat(filepath.Join(resp.ArchivePath, "manifest.json")); err != nil {
 		t.Fatalf("metadata manifest missing: %v", err)
@@ -83,9 +101,7 @@ func TestServiceMetadataSkipsCompleteMetadata(t *testing.T) {
 		`title: "Ready Note"`,
 		`summary_keywords: "ready, metadata"`,
 		"recall_questions:",
-		`  - "Question one?"`,
-		`  - "Question two?"`,
-		`  - "Question three?"`,
+		`  - "Ready note -> metadata"`,
 		"---",
 		"Body.",
 		"",
@@ -122,9 +138,7 @@ func TestServiceMetadataOverwriteReplacesOnlyMetadataFields(t *testing.T) {
 		`title: "Old Title"`,
 		`summary_keywords: "old"`,
 		"recall_questions:",
-		`  - "Old one?"`,
-		`  - "Old two?"`,
-		`  - "Old three?"`,
+		`  - "Old metadata -> body"`,
 		"tags:",
 		"  - economy",
 		"---",
@@ -136,9 +150,7 @@ func TestServiceMetadataOverwriteReplacesOnlyMetadataFields(t *testing.T) {
 		"title": "New Detailed Title",
 		"summary_keywords": "new, economy, body",
 		"recall_questions": [
-			"What is the note about?",
-			"Which economy details matter?",
-			"What body facts should be recalled?"
+			"New economy body facts"
 		]
 	}`}
 	resp, err := NewWithProviders(provider, provider).Metadata(context.Background(), MetadataRequest{
@@ -154,7 +166,7 @@ func TestServiceMetadataOverwriteReplacesOnlyMetadataFields(t *testing.T) {
 	}
 
 	got := readTestFile(t, notePath)
-	if strings.Contains(got, "Old Title") || strings.Contains(got, "Old one?") {
+	if strings.Contains(got, "Old Title") || strings.Contains(got, "Old metadata") {
 		t.Fatalf("old metadata was not replaced:\n%s", got)
 	}
 	for _, want := range []string{
@@ -167,6 +179,65 @@ func TestServiceMetadataOverwriteReplacesOnlyMetadataFields(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("overwritten note missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestServiceMetadataRejectsQuestionLikePromptWithoutWriting(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	notePath := filepath.Join(vaultDir, "zettelkasten", "grammar.md")
+	original := "# Grammar\nGDP and inflation basics.\n"
+	writeTestFile(t, notePath, original)
+
+	provider := &fakeZettelProvider{chatResponse: `{
+		"title": "Economy, GDP, and Inflation Basics",
+		"summary_keywords": "Economy, GDP, inflation, basics",
+		"recall_questions": [
+			"What characteristics define the note's description of GDP and inflation?"
+		]
+	}`}
+	resp, err := NewWithProviders(provider, provider).Metadata(context.Background(), MetadataRequest{
+		Options:        metadataTestOptions(vaultDir),
+		MetadataFolder: "zettelkasten",
+	}, nil)
+	if err != nil {
+		t.Fatalf("Metadata() error = %v", err)
+	}
+	if resp.ProcessedCount != 0 || resp.FailedCount != 1 {
+		t.Fatalf("Metadata() = %#v, want one failed note", resp)
+	}
+	if got := readTestFile(t, notePath); got != original {
+		t.Fatalf("failed metadata changed note = %q", got)
+	}
+	if !strings.Contains(resp.Failed[0].Reason, "recall prompt") {
+		t.Fatalf("failure reason = %q, want recall prompt validation", resp.Failed[0].Reason)
+	}
+}
+
+func TestServiceMetadataSkipsHeadingOnlyNoteWithoutProvider(t *testing.T) {
+	t.Parallel()
+
+	vaultDir := t.TempDir()
+	notePath := filepath.Join(vaultDir, "zettelkasten", "heading-only.md")
+	original := "---\nStatus: Read\n---\n# Heading\n\n## Empty Section\n"
+	writeTestFile(t, notePath, original)
+
+	resp, err := NewWithProviders(nil, nil).Metadata(context.Background(), MetadataRequest{
+		Options:        metadataTestOptions(vaultDir),
+		MetadataFolder: "zettelkasten",
+	}, nil)
+	if err != nil {
+		t.Fatalf("Metadata() error = %v", err)
+	}
+	if resp.ProcessedCount != 0 || len(resp.Skipped) != 1 || resp.FailedCount != 0 {
+		t.Fatalf("Metadata() = %#v, want one skipped note", resp)
+	}
+	if got := readTestFile(t, notePath); got != original {
+		t.Fatalf("skipped note changed = %q", got)
+	}
+	if resp.APICalls.Total != 0 {
+		t.Fatalf("api calls = %#v, want none", resp.APICalls)
 	}
 }
 

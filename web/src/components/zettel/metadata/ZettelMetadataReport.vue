@@ -117,7 +117,7 @@ function diffLineClass(line: string) {
             <p>{{ selected.summary_keywords }}</p>
           </div>
           <div v-if="selected.recall_questions?.length" class="metadata-field">
-            <span>Recall questions</span>
+            <span>Recall prompts</span>
             <ol>
               <li v-for="question in selected.recall_questions" :key="question">{{ question }}</li>
             </ol>

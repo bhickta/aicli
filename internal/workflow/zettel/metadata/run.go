@@ -60,9 +60,6 @@ func (r Runner) Generate(ctx context.Context, req MetadataRequest, progress Prog
 	if len(notes) == 0 {
 		return response, nil
 	}
-	if r.provider == nil {
-		return response, errors.New("provider is required")
-	}
 
 	results := r.processMetadataNotes(ctx, v, archive, runID, options, notes, req.MetadataOverwrite, req.MetadataWorkers, progress)
 	for _, result := range results {
@@ -233,8 +230,16 @@ func (r Runner) processMetadataNote(
 			Reason: "metadata already exists",
 		}, before, before, nil
 	}
+	if !hasSubstantiveBody(before) {
+		return MetadataNoteResult{
+			Path:   path,
+			Status: StatusSkipped,
+			Reason: "no substantive body content",
+		}, before, before, nil
+	}
 
-	item, err := r.generateMetadata(ctx, archive, runID, options, path, before, archiveMu)
+	body := markdownBody(before)
+	item, err := r.generateMetadata(ctx, archive, runID, options, path, body, archiveMu)
 	if err != nil {
 		return MetadataNoteResult{}, before, before, err
 	}
@@ -272,6 +277,9 @@ func (r Runner) generateMetadata(
 	content string,
 	archiveMu *sync.Mutex,
 ) (generatedMetadata, error) {
+	if r.provider == nil {
+		return generatedMetadata{}, errors.New("provider is required")
+	}
 	modelName := strings.TrimSpace(options.MergeModel)
 	req := provider.ChatRequest{
 		Model:       modelName,
