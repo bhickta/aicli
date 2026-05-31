@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import type { InboxCandidatePreviewReport, InboxMergeReport } from "../../../types";
 import type { ZettelFolderField } from "../../../features/zettel/types";
+import WorkerCountControl from "../common/WorkerCountControl.vue";
 import ZettelFolderChooser from "../common/ZettelFolderChooser.vue";
 import ZettelCandidatePreview from "./ZettelCandidatePreview.vue";
 import ZettelInboxReport from "./ZettelInboxReport.vue";
@@ -73,13 +74,14 @@ const randomModel = computed({
 
     <div class="zettel-run-grid">
       <ZettelRunSizeControl v-model="limitModel" :disabled="busy" />
-      <div class="field">
-        <label for="zettel-inbox-workers">Parallel calls</label>
-        <select id="zettel-inbox-workers" v-model.number="workersModel" :disabled="busy">
-          <option v-for="value in inboxWorkerOptions" :key="value" :value="value">{{ value }} at once</option>
-        </select>
-        <small>AI calls run in parallel; file writes stay serialized.</small>
-      </div>
+      <WorkerCountControl
+        id="zettel-inbox-workers"
+        v-model="workersModel"
+        label="Parallel calls"
+        :options="inboxWorkerOptions"
+        :disabled="busy"
+        helper="AI calls run in parallel; file writes stay serialized."
+      />
       <label class="zettel-checkbox">
         <input v-model="randomModel" type="checkbox" :disabled="busy">
         Random notes
@@ -119,10 +121,6 @@ const randomModel = computed({
   grid-template-columns: minmax(280px, 1fr) minmax(180px, 240px) minmax(140px, auto);
   gap: 12px;
   align-items: end;
-}
-
-.zettel-run-grid small {
-  color: #9aa4b2;
 }
 
 .zettel-checkbox {

@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import type { MetadataReport } from "../../../types";
 import type { ZettelFolderField } from "../../../features/zettel/types";
+import WorkerCountControl from "../common/WorkerCountControl.vue";
 import ZettelFolderChooser from "../common/ZettelFolderChooser.vue";
 import ZettelRunSizeControl from "../inbox/ZettelRunSizeControl.vue";
 import ZettelSection from "../common/ZettelSection.vue";
@@ -68,13 +69,14 @@ const overwriteModel = computed({
         empty-text="All notes"
         active-text="First"
       />
-      <div class="field">
-        <label for="zettel-metadata-workers">Parallel calls</label>
-        <select id="zettel-metadata-workers" v-model.number="workersModel" :disabled="busy">
-          <option v-for="value in metadataWorkerOptions" :key="value" :value="value">{{ value }} at once</option>
-        </select>
-        <small>Each note uses one metadata chat call.</small>
-      </div>
+      <WorkerCountControl
+        id="zettel-metadata-workers"
+        v-model="workersModel"
+        label="Parallel calls"
+        :options="metadataWorkerOptions"
+        :disabled="busy"
+        helper="Each note uses one metadata chat call."
+      />
       <label class="zettel-checkbox">
         <input v-model="overwriteModel" type="checkbox" :disabled="busy">
         Overwrite existing metadata
@@ -98,10 +100,6 @@ const overwriteModel = computed({
   grid-template-columns: minmax(280px, 1fr) minmax(180px, 240px) minmax(180px, auto);
   gap: 12px;
   align-items: end;
-}
-
-.metadata-run-grid small {
-  color: #9aa4b2;
 }
 
 .zettel-checkbox {

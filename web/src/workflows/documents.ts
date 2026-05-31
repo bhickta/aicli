@@ -4,8 +4,8 @@ import { documentPayload, providerModelField } from "./builders";
 const documentFields: WorkflowDefinition["fields"] = [
   providerModelField,
   { type: "path", id: "path", label: "Input PDF file" },
-  { type: "number", id: "render_workers", label: "Render workers (0 = auto)", min: 0, max: 64, default: 0 },
-  { type: "number", id: "workers", label: "OCR workers (0 = auto)", min: 0, max: 64, default: 0 },
+  { type: "number", id: "render_workers", label: "Render workers (0 = auto)", min: 0, default: 0 },
+  { type: "number", id: "workers", label: "OCR workers (0 = auto)", min: 0, default: 0 },
 ];
 
 export const documentWorkflowDefinitions: WorkflowDefinition[] = [
@@ -17,8 +17,8 @@ export const documentWorkflowDefinitions: WorkflowDefinition[] = [
     fields: [
       providerModelField,
       { type: "path", id: "path", label: "Input ZIP file" },
-      { type: "number", id: "render_workers", label: "Render workers (0 = auto)", min: 0, max: 64, default: 0 },
-      { type: "number", id: "workers", label: "OCR workers (0 = auto)", min: 0, max: 64, default: 0 },
+      { type: "number", id: "render_workers", label: "Render workers (0 = auto)", min: 0, default: 0 },
+      { type: "number", id: "workers", label: "OCR workers (0 = auto)", min: 0, default: 0 },
     ],
     buildPayload: documentPayload,
   },

@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import type { SelectOption, ZettelConfig, ZettelFolderField, ZettelProviderSettingsPatch } from "../../../features/zettel/types";
+import WorkerCountControl from "../common/WorkerCountControl.vue";
 import ZettelFolderChooser from "../common/ZettelFolderChooser.vue";
 import ZettelProviderSettings from "./ZettelProviderSettings.vue";
 import ZettelSection from "../common/ZettelSection.vue";
 
-defineProps<{
+const props = defineProps<{
   config: ZettelConfig;
   canUseVaultFolders: boolean;
   candidateLimitOptions: number[];
@@ -18,6 +20,11 @@ const emit = defineEmits<{
   pickFolder: [field: ZettelFolderField, label: string];
   updateConfig: [field: keyof ZettelConfig, value: ZettelConfig[keyof ZettelConfig]];
 }>();
+
+const embeddingWorkersModel = computed({
+  get: () => props.config.embeddingWorkers,
+  set: (value: number) => emit("updateConfig", "embeddingWorkers", value),
+});
 </script>
 
 <template>
@@ -63,16 +70,13 @@ const emit = defineEmits<{
               <option v-for="value in embeddingBatchSizeOptions" :key="value" :value="value">{{ value }} notes</option>
             </select>
           </div>
-          <div class="field">
-            <label for="zettel-embedding-workers">Embedding workers</label>
-            <select
-              id="zettel-embedding-workers"
-              :value="config.embeddingWorkers"
-              @change="emit('updateConfig', 'embeddingWorkers', Number(($event.target as HTMLSelectElement).value))"
-            >
-              <option v-for="value in embeddingWorkerOptions" :key="value" :value="value">{{ value }} workers</option>
-            </select>
-          </div>
+          <WorkerCountControl
+            id="zettel-embedding-workers"
+            v-model="embeddingWorkersModel"
+            label="Embedding workers"
+            :options="embeddingWorkerOptions"
+            helper="Parallel local embedding requests"
+          />
         </div>
       </div>
     </div>
