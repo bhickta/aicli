@@ -1,19 +1,20 @@
 import { computed, onMounted, reactive, shallowRef, watch } from "vue";
 import { api } from "../lib/api";
 import { stringify } from "../lib/format";
-import type { ApiCallUsage, InboxCandidatePreviewReport, InboxMergeReport } from "../types";
+import type { ApiCallUsage, InboxCandidatePreviewReport, InboxMergeReport, MetadataReport } from "../types";
 import {
   candidateLimitOptions,
   createZettelConfig,
   embeddingBatchSizeOptions,
   embeddingWorkerOptions,
   inboxWorkerOptions,
+  metadataWorkerOptions,
   persistZettelConfig,
   persistZettelMode,
   promptOptions,
   readZettelMode,
 } from "../features/zettel/config";
-import { buildZettelPayload } from "../features/zettel/payload";
+import { buildZettelMetadataPayload, buildZettelPayload } from "../features/zettel/payload";
 import { folderPickerStartPath, relativeToVault } from "../features/zettel/paths";
 import type {
   ZettelConfig,
@@ -27,6 +28,7 @@ export function useZettelWorkflow() {
   const config = reactive<ZettelConfig>(createZettelConfig());
 
   const inboxReport = shallowRef<InboxMergeReport | null>(null);
+  const metadataReport = shallowRef<MetadataReport | null>(null);
   const candidatePreview = shallowRef<InboxCandidatePreviewReport | null>(null);
   const apiUsage = shallowRef<ApiCallUsage | null>(null);
   const rollbackJobID = shallowRef("");
@@ -34,6 +36,7 @@ export function useZettelWorkflow() {
   const runner = useZettelRunner();
 
   const canRunInboxMerge = computed(() => Boolean(config.vaultPath.trim()) && !runner.busy.value);
+  const canRunMetadata = computed(() => Boolean(config.vaultPath.trim()) && !runner.busy.value);
   const canUseVaultFolders = computed(() => Boolean(config.vaultPath.trim()) && !runner.busy.value);
   onMounted(() => {
     if (!config.vaultPath) return;
@@ -44,6 +47,7 @@ export function useZettelWorkflow() {
     persistZettelConfig(config);
     candidatePreview.value = null;
     inboxReport.value = null;
+    metadataReport.value = null;
   });
 
   watch(mode, () => {
@@ -132,6 +136,17 @@ export function useZettelWorkflow() {
     });
   }
 
+  async function runMetadata() {
+    apiUsage.value = null;
+    await runner.runWorkflow("Generating note metadata", "/api/workflows/zettel/metadata", buildZettelMetadataPayload(config), (output) => {
+      updateApiUsage(output);
+      const response = output as MetadataReport;
+      metadataReport.value = response;
+      runner.status.value = `Metadata completed: ${response.processed_count} updated, ${response.skipped?.length || 0} skipped, ${response.failed_count} failed`;
+      runner.result.value = stringify(output);
+    });
+  }
+
   function updateApiUsage(output: unknown) {
     apiUsage.value = extractApiUsage(output);
   }
@@ -149,6 +164,7 @@ export function useZettelWorkflow() {
   return {
     config,
     inboxReport,
+    metadataReport,
     candidatePreview,
     apiUsage,
     status: runner.status,
@@ -160,7 +176,9 @@ export function useZettelWorkflow() {
     embeddingBatchSizeOptions,
     embeddingWorkerOptions,
     inboxWorkerOptions,
+    metadataWorkerOptions,
     canRunInboxMerge,
+    canRunMetadata,
     canUseVaultFolders,
     rawResultSummary: runner.rawResultSummary,
     progressClass: runner.progressClass,
@@ -173,5 +191,6 @@ export function useZettelWorkflow() {
     previewInboxCandidates,
     rollback,
     runInboxMerge,
+    runMetadata,
   };
 }

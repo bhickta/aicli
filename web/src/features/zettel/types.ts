@@ -1,6 +1,6 @@
-export type ZettelMode = "inbox" | "settings";
+export type ZettelMode = "inbox" | "metadata" | "settings";
 
-export type ZettelFolderField = "rootFolder" | "inboxFolder" | "dataFolder";
+export type ZettelFolderField = "rootFolder" | "inboxFolder" | "metadataFolder" | "dataFolder";
 
 export interface ZettelConfig {
   vaultPath: string;
@@ -9,6 +9,10 @@ export interface ZettelConfig {
   inboxLimit: number;
   inboxWorkers: number;
   inboxRandom: boolean;
+  metadataFolder: string;
+  metadataLimit: number;
+  metadataWorkers: number;
+  metadataOverwrite: boolean;
   dataFolder: string;
   shorthandPromptPath: string;
   mergeProviderId: string;

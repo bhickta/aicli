@@ -21,3 +21,13 @@ export function buildZettelPayload(config: ZettelConfig) {
     candidate_limit: readNumberValue(config.candidateLimit, 12, 1),
   };
 }
+
+export function buildZettelMetadataPayload(config: ZettelConfig) {
+  return {
+    ...buildZettelPayload(config),
+    metadata_folder: config.metadataFolder,
+    metadata_limit: readNumberValue(config.metadataLimit, 0, 0),
+    metadata_workers: readNumberValue(config.metadataWorkers, 1, 1),
+    metadata_overwrite: config.metadataOverwrite,
+  };
+}

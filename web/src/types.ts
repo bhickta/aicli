@@ -220,6 +220,31 @@ export interface InboxMergeReport {
   api_calls?: ApiCallUsage;
 }
 
+export interface MetadataNoteResult {
+  path: string;
+  status: string;
+  reason?: string;
+  title?: string;
+  summary_keywords?: string;
+  recall_questions?: string[];
+  diff?: InboxDestinationDiff;
+}
+
+export interface MetadataReport {
+  run_id: string;
+  archive_path: string;
+  processed?: MetadataNoteResult[];
+  skipped?: MetadataNoteResult[];
+  failed?: MetadataNoteResult[];
+  source_count?: number;
+  selected_count?: number;
+  skipped_count?: number;
+  limit?: number;
+  processed_count: number;
+  failed_count: number;
+  api_calls?: ApiCallUsage;
+}
+
 export interface BrowserEntry {
   name: string;
   path: string;

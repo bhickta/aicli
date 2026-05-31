@@ -3,9 +3,18 @@ import { computed } from "vue";
 
 const model = defineModel<number>({ required: true });
 
-defineProps<{
+withDefaults(defineProps<{
   disabled?: boolean;
-}>();
+  label?: string;
+  ariaLabel?: string;
+  emptyText?: string;
+  activeText?: string;
+}>(), {
+  label: "Run size",
+  ariaLabel: "Inbox merge run size",
+  emptyText: "Full inbox",
+  activeText: "First",
+});
 
 const presetLimits = [5, 10, 25, 50];
 const normalizedLimit = computed(() => {
@@ -31,8 +40,8 @@ function selectLimit(value: number) {
 
 <template>
   <div class="field run-size-control">
-    <label for="zettel-inbox-limit">Run size</label>
-    <div class="run-size-toolbar" role="group" aria-label="Inbox merge run size">
+    <label for="zettel-run-limit">{{ label }}</label>
+    <div class="run-size-toolbar" role="group" :aria-label="ariaLabel">
       <button
         type="button"
         class="run-size-option"
@@ -54,7 +63,7 @@ function selectLimit(value: number) {
         {{ limit }}
       </button>
       <input
-        id="zettel-inbox-limit"
+        id="zettel-run-limit"
         v-model="customLimit"
         type="number"
         min="1"
@@ -65,7 +74,7 @@ function selectLimit(value: number) {
         aria-label="Custom note limit"
       >
     </div>
-    <small>{{ normalizedLimit === 0 ? "Full inbox" : `First ${normalizedLimit} notes` }}</small>
+    <small>{{ normalizedLimit === 0 ? emptyText : `${activeText} ${normalizedLimit} notes` }}</small>
   </div>
 </template>
 

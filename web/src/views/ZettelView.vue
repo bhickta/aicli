@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import ZettelWorkflowTabs from "../components/zettel/common/ZettelWorkflowTabs.vue";
 import ZettelInboxPanel from "../components/zettel/inbox/ZettelInboxPanel.vue";
+import ZettelMetadataPanel from "../components/zettel/metadata/ZettelMetadataPanel.vue";
 import ZettelSettingsPanel from "../components/zettel/settings/ZettelSettingsPanel.vue";
 import ZettelStatusPanel from "../components/zettel/shell/ZettelStatusPanel.vue";
 import ZettelVaultPanel from "../components/zettel/shell/ZettelVaultPanel.vue";
@@ -9,6 +10,7 @@ import { useZettelWorkflow } from "../composables/useZettelWorkflow";
 const {
   config,
   inboxReport,
+  metadataReport,
   candidatePreview,
   apiUsage,
   status,
@@ -20,7 +22,9 @@ const {
   embeddingBatchSizeOptions,
   embeddingWorkerOptions,
   inboxWorkerOptions,
+  metadataWorkerOptions,
   canRunInboxMerge,
+  canRunMetadata,
   canUseVaultFolders,
   rawResultSummary,
   progressClass,
@@ -33,6 +37,7 @@ const {
   previewInboxCandidates,
   rollback,
   runInboxMerge,
+  runMetadata,
 } = useZettelWorkflow();
 </script>
 
@@ -68,6 +73,24 @@ const {
       @update-inbox-limit="updateConfig('inboxLimit', $event)"
       @update-inbox-workers="updateConfig('inboxWorkers', $event)"
       @update-inbox-random="updateConfig('inboxRandom', $event)"
+    />
+
+    <ZettelMetadataPanel
+      v-if="mode === 'metadata'"
+      :metadata-folder="config.metadataFolder"
+      :metadata-limit="config.metadataLimit"
+      :metadata-workers="config.metadataWorkers"
+      :metadata-overwrite="config.metadataOverwrite"
+      :metadata-worker-options="metadataWorkerOptions"
+      :busy="busy"
+      :can-run="canRunMetadata"
+      :can-use-folders="canUseVaultFolders"
+      :report="metadataReport"
+      @run="runMetadata"
+      @pick-folder="pickZettelFolder"
+      @update-metadata-limit="updateConfig('metadataLimit', $event)"
+      @update-metadata-workers="updateConfig('metadataWorkers', $event)"
+      @update-metadata-overwrite="updateConfig('metadataOverwrite', $event)"
     />
 
     <ZettelSettingsPanel

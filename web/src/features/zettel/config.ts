@@ -8,6 +8,7 @@ export const promptOptions: SelectOption<string>[] = [
 export const embeddingBatchSizeOptions = [64, 128, 256, 512];
 export const embeddingWorkerOptions = [1, 2, 3, 4, 6, 8];
 export const inboxWorkerOptions = [1, 2, 3, 4, 6, 8, 12];
+export const metadataWorkerOptions = [1, 2, 3, 4, 6, 8, 12];
 
 export function createZettelConfig(): ZettelConfig {
   const legacyProviderId = localStorage.getItem("aicli.zettel.providerId") || "lms";
@@ -18,6 +19,10 @@ export function createZettelConfig(): ZettelConfig {
     inboxLimit: Number(localStorage.getItem("aicli.zettel.inboxLimit") || 0),
     inboxWorkers: Number(localStorage.getItem("aicli.zettel.inboxWorkers") || 1),
     inboxRandom: localStorage.getItem("aicli.zettel.inboxRandom") === "true",
+    metadataFolder: localStorage.getItem("aicli.zettel.metadataFolder") || localStorage.getItem("aicli.zettel.rootFolder") || "zettelkasten",
+    metadataLimit: Number(localStorage.getItem("aicli.zettel.metadataLimit") || 0),
+    metadataWorkers: Number(localStorage.getItem("aicli.zettel.metadataWorkers") || 1),
+    metadataOverwrite: localStorage.getItem("aicli.zettel.metadataOverwrite") === "true",
     dataFolder: localStorage.getItem("aicli.zettel.dataFolder") || ".aicli-zettel-merge",
     shorthandPromptPath: localStorage.getItem("aicli.zettel.shorthandPromptPath") || "example_prompts.md",
     mergeProviderId: localStorage.getItem("aicli.zettel.mergeProviderId") || legacyProviderId,
@@ -32,7 +37,7 @@ export function createZettelConfig(): ZettelConfig {
 
 export function readZettelMode(): ZettelMode {
   const storedMode = localStorage.getItem("aicli.zettel.mode");
-  return storedMode === "settings" ? storedMode : "inbox";
+  return storedMode === "metadata" || storedMode === "settings" ? storedMode : "inbox";
 }
 
 export function persistZettelConfig(config: ZettelConfig) {
@@ -42,6 +47,10 @@ export function persistZettelConfig(config: ZettelConfig) {
   localStorage.setItem("aicli.zettel.inboxLimit", String(config.inboxLimit));
   localStorage.setItem("aicli.zettel.inboxWorkers", String(config.inboxWorkers));
   localStorage.setItem("aicli.zettel.inboxRandom", String(config.inboxRandom));
+  localStorage.setItem("aicli.zettel.metadataFolder", config.metadataFolder);
+  localStorage.setItem("aicli.zettel.metadataLimit", String(config.metadataLimit));
+  localStorage.setItem("aicli.zettel.metadataWorkers", String(config.metadataWorkers));
+  localStorage.setItem("aicli.zettel.metadataOverwrite", String(config.metadataOverwrite));
   localStorage.removeItem("aicli.zettel.adoptUnmatchedInbox");
   localStorage.setItem("aicli.zettel.dataFolder", config.dataFolder);
   localStorage.setItem("aicli.zettel.shorthandPromptPath", config.shorthandPromptPath);
