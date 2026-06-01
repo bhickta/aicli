@@ -10,17 +10,21 @@ import (
 )
 
 func (s *Service) prepareCourseItems(ctx context.Context, files []string, cacheDir string, slidesDir string, req CourseRequest, skipped []string, progressPlan courseProgressPlan, completedUnits int, progress CourseProgressFunc, totalUnits int) ([]CourseItem, []CourseItem, []string, error) {
-	usedNames := map[string]int{}
-	targetNames := make([]string, len(files))
-	for i, file := range files {
-		targetNames[i] = courseTargetName(file, usedNames)
-	}
-
+	targetNames := courseTargetNames(files)
 	workers := normalizedCourseWorkers(courseCompressionWorkers(req), len(files))
 	if workers == 1 {
 		return s.prepareCourseItemsSequential(ctx, files, targetNames, cacheDir, slidesDir, req, skipped, progressPlan, completedUnits, progress, totalUnits)
 	}
 	return s.prepareCourseItemsParallel(ctx, files, targetNames, cacheDir, slidesDir, req, skipped, workers, progressPlan, completedUnits, progress, totalUnits)
+}
+
+func courseTargetNames(files []string) []string {
+	usedNames := map[string]int{}
+	targetNames := make([]string, len(files))
+	for i, file := range files {
+		targetNames[i] = courseTargetName(file, usedNames)
+	}
+	return targetNames
 }
 
 func (s *Service) prepareCourseItemsSequential(ctx context.Context, files []string, targetNames []string, cacheDir string, slidesDir string, req CourseRequest, skipped []string, progressPlan courseProgressPlan, completedUnits int, progress CourseProgressFunc, totalUnits int) ([]CourseItem, []CourseItem, []string, error) {

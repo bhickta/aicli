@@ -1,0 +1,555 @@
+package video
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+
+	progressmodel "github.com/bhickta/aicli/internal/progress"
+	"github.com/bhickta/aicli/internal/workflow/whisper"
+)
+
+type pipelineCourseItem struct {
+	index int
+	item  CourseItem
+}
+
+type pipelineJob struct {
+	index         int
+	didTranscribe bool
+}
+
+type pipelineResult struct {
+	index         int
+	item          CourseItem
+	didTranscribe bool
+	err           error
+}
+
+type plannedCoursePart struct {
+	indexes  []int
+	items    []CourseItem
+	artifact courseArtifact
+}
+
+func (s *Service) runCoursePipeline(
+	ctx context.Context,
+	targetDir string,
+	courseDir string,
+	cacheDir string,
+	slidesDir string,
+	files []string,
+	durations map[string]float64,
+	skipped []string,
+	req CourseRequest,
+	progressPlan courseProgressPlan,
+	progress CourseProgressFunc,
+) (CourseResponse, bool, error) {
+	targetNames := courseTargetNames(files)
+	items, ready, missing, err := preparePipelineCourseItems(files, targetNames, cacheDir, slidesDir)
+	if err != nil {
+		return CourseResponse{}, true, err
+	}
+	if len(missing) > 0 {
+		if !whisper.CanRunFasterBatch(s.runner) || strings.TrimSpace(s.tools.WhisperCLI) == "" {
+			return CourseResponse{}, false, nil
+		}
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	parts := planCourseParts(targetDir, courseDir, req, items, durations)
+	response := CourseResponse{CourseDir: courseDir, Skipped: skipped}
+	jobs := make(chan pipelineJob, len(files))
+	results := make(chan pipelineResult, len(files))
+	var completedUnits atomic.Int64
+	var completedTranscripts atomic.Int64
+	var completedCompressed atomic.Int64
+	var firstErr error
+	var errMu sync.Mutex
+	setErr := func(err error) {
+		if err == nil {
+			return
+		}
+		errMu.Lock()
+		if firstErr == nil {
+			firstErr = err
+			cancel()
+		}
+		errMu.Unlock()
+	}
+	getErr := func() error {
+		errMu.Lock()
+		defer errMu.Unlock()
+		return firstErr
+	}
+
+	enqueued := make([]bool, len(items))
+	var enqueueMu sync.Mutex
+	enqueue := func(index int, didTranscribe bool) {
+		enqueueMu.Lock()
+		if index < 0 || index >= len(enqueued) || enqueued[index] {
+			enqueueMu.Unlock()
+			return
+		}
+		enqueued[index] = true
+		enqueueMu.Unlock()
+		select {
+		case jobs <- pipelineJob{index: index, didTranscribe: didTranscribe}:
+		case <-ctx.Done():
+		}
+	}
+
+	var workerWG sync.WaitGroup
+	workers := normalizedCourseWorkers(courseCompressionWorkers(req), len(files))
+	for range workers {
+		workerWG.Add(1)
+		go func() {
+			defer workerWG.Done()
+			for job := range jobs {
+				if err := ctx.Err(); err != nil {
+					return
+				}
+				item, err := s.compressPipelineItem(ctx, items[job.index], req)
+				select {
+				case results <- pipelineResult{index: job.index, item: item, didTranscribe: job.didTranscribe, err: err}:
+				case <-ctx.Done():
+					return
+				}
+				if err != nil {
+					setErr(err)
+					return
+				}
+			}
+		}()
+	}
+	go func() {
+		workerWG.Wait()
+		close(results)
+	}()
+
+	aggregationDone := make(chan CourseResponse, 1)
+	go func() {
+		aggregationDone <- s.aggregatePipelineResults(ctx, pipelineAggregation{
+			items:               items,
+			parts:               parts,
+			durations:           durations,
+			req:                 req,
+			progress:            progress,
+			progressPlan:        progressPlan,
+			totalUnits:          progressPlan.totalUnits,
+			completedUnits:      &completedUnits,
+			completedCompressed: &completedCompressed,
+			results:             results,
+			response:            &response,
+			setErr:              setErr,
+		})
+	}()
+
+	for _, readyItem := range ready {
+		enqueue(readyItem.index, false)
+	}
+
+	fallback := false
+	if len(missing) > 0 {
+		missingFiles := make([]string, 0, len(missing))
+		missingByBase := make(map[string]string, len(missing))
+		indexByFile := make(map[string]int, len(missing))
+		for _, item := range missing {
+			missingFiles = append(missingFiles, item.item.Source)
+			missingByBase[filepath.Base(item.item.Source)] = item.item.Source
+			indexByFile[item.item.Source] = item.index
+		}
+		out, err := whisper.RunFasterBatchStreaming(ctx, s.runner, whisper.FasterBatchRequest{
+			AudioPaths: missingFiles,
+			OutputDir:  cacheDir,
+			Model:      defaultWhisperModel(req.WhisperModel),
+			Device:     req.WhisperDevice,
+			Workers:    normalizedCourseWorkers(courseTranscriptWorkers(req), len(missingFiles)),
+			BatchSize:  24,
+			BeamSize:   1,
+		}, func(line string) {
+			file := transcribedLinePath(line, missingByBase)
+			if file == "" {
+				return
+			}
+			index, ok := indexByFile[file]
+			if !ok {
+				return
+			}
+			cacheSRT, cacheText, _ := transcriptPaths(file, cacheDir)
+			if !fileExists(cacheText) && fileExists(cacheSRT) {
+				if err := writeTranscriptText(cacheSRT, cacheText); err != nil {
+					setErr(err)
+					return
+				}
+			}
+			currentFiles := int(completedTranscripts.Add(1))
+			currentUnits := int(completedUnits.Add(int64(progressPlan.transcriptUnits(file))))
+			reportCourseProgress(progress, progressmodel.Units(
+				fmt.Sprintf("transcribed %d/%d video(s); queued compression: %s", currentFiles, len(missing), filepath.Base(file)),
+				currentUnits,
+				progressPlan.totalUnits,
+				"video second",
+			))
+			enqueue(index, true)
+		})
+		if err != nil {
+			if whisper.FasterBatchUnavailable(out, err) {
+				fallback = true
+				cancel()
+			} else if !errors.Is(ctx.Err(), context.Canceled) {
+				setErr(whisper.OutputError(out, err))
+			}
+		}
+		if getErr() == nil && !fallback {
+			for _, item := range missing {
+				cacheSRT, cacheText, _ := transcriptPaths(item.item.Source, cacheDir)
+				if !fileExists(cacheText) && fileExists(cacheSRT) {
+					if err := writeTranscriptText(cacheSRT, cacheText); err != nil {
+						setErr(err)
+						break
+					}
+				}
+				if !fileExists(cacheSRT) || !fileExists(cacheText) {
+					setErr(errors.New("faster-whisper did not produce both .srt and .txt for " + filepath.Base(item.item.Source)))
+					break
+				}
+				enqueue(item.index, true)
+			}
+		}
+	}
+
+	close(jobs)
+	aggregated := <-aggregationDone
+	if fallback {
+		return CourseResponse{}, false, nil
+	}
+	if err := getErr(); err != nil {
+		return CourseResponse{}, true, err
+	}
+	reportCourseProgress(progress, progressmodel.Units("completed course video, subtitles, and transcript", progressPlan.totalUnits, progressPlan.totalUnits, "video second"))
+	return aggregated, true, nil
+}
+
+type pipelineAggregation struct {
+	items               []CourseItem
+	parts               []plannedCoursePart
+	durations           map[string]float64
+	req                 CourseRequest
+	progress            CourseProgressFunc
+	progressPlan        courseProgressPlan
+	totalUnits          int
+	completedUnits      *atomic.Int64
+	completedCompressed *atomic.Int64
+	results             <-chan pipelineResult
+	response            *CourseResponse
+	setErr              func(error)
+}
+
+func (s *Service) aggregatePipelineResults(ctx context.Context, state pipelineAggregation) CourseResponse {
+	ready := make([]bool, len(state.items))
+	exported := make([]bool, len(state.parts))
+	for res := range state.results {
+		if res.err != nil {
+			state.setErr(res.err)
+			continue
+		}
+		state.items[res.index] = res.item
+		ready[res.index] = true
+		if res.didTranscribe {
+			state.response.Transcribed = append(state.response.Transcribed, CourseItem{
+				Source:     res.item.Source,
+				SRTPath:    res.item.SRTPath,
+				TextPath:   res.item.TextPath,
+				TargetName: res.item.TargetName,
+			})
+		}
+		compressed := int(state.completedCompressed.Add(1))
+		currentUnits := int(state.completedUnits.Add(int64(state.progressPlan.compressionUnits(res.item.Source))))
+		reportCourseProgress(state.progress, progressmodel.Units(
+			fmt.Sprintf("compressed %d/%d video(s); exporting ready parts", compressed, len(state.items)),
+			currentUnits,
+			state.totalUnits,
+			"video second",
+		))
+		s.exportReadyCourseParts(ctx, state, ready, exported)
+	}
+	s.exportReadyCourseParts(ctx, state, ready, exported)
+	state.response.Compressed = append([]CourseItem(nil), state.items...)
+	return *state.response
+}
+
+func (s *Service) exportReadyCourseParts(ctx context.Context, state pipelineAggregation, ready []bool, exported []bool) {
+	for partIndex := range state.parts {
+		if exported[partIndex] {
+			continue
+		}
+		part := state.parts[partIndex]
+		if !coursePartReady(part, ready) {
+			continue
+		}
+		reportCourseProgress(state.progress, progressmodel.Units(
+			fmt.Sprintf("merging verified course part %d/%d", partIndex+1, len(state.parts)),
+			min(int(state.completedUnits.Load())+1, state.totalUnits),
+			state.totalUnits,
+			"video second",
+		))
+		if err := s.writeCoursePart(ctx, part.items, part.artifact); err != nil {
+			state.setErr(err)
+			return
+		}
+		if err := s.verifyCoursePart(ctx, part.items, part.artifact, state.durations); err != nil {
+			state.setErr(err)
+			return
+		}
+		if partIndex == 0 {
+			state.response.VideoPath = part.artifact.videoPath
+			state.response.SRTPath = part.artifact.srtPath
+			state.response.TextPath = part.artifact.textPath
+		}
+		if state.req.CleanupVerified {
+			cleaned, err := cleanupVerifiedCoursePart(part.items)
+			if err != nil {
+				state.setErr(err)
+				return
+			}
+			state.response.Cleaned = append(state.response.Cleaned, cleaned...)
+		}
+		exported[partIndex] = true
+		reportCourseProgress(state.progress, progressmodel.Units(
+			fmt.Sprintf("verified course part %d/%d", partIndex+1, len(state.parts)),
+			state.totalUnits,
+			state.totalUnits,
+			"video second",
+		))
+	}
+}
+
+func preparePipelineCourseItems(files []string, targetNames []string, cacheDir string, slidesDir string) ([]CourseItem, []pipelineCourseItem, []pipelineCourseItem, error) {
+	if err := os.MkdirAll(slidesDir, 0o755); err != nil {
+		return nil, nil, nil, err
+	}
+	items := make([]CourseItem, len(files))
+	ready := []pipelineCourseItem{}
+	missing := []pipelineCourseItem{}
+	for i, file := range files {
+		cacheSRT, cacheText, sidecarSRT := transcriptPaths(file, cacheDir)
+		if !fileExists(cacheSRT) && fileExists(sidecarSRT) {
+			if err := copyFile(sidecarSRT, cacheSRT); err != nil {
+				return nil, nil, nil, err
+			}
+		}
+		if fileExists(cacheSRT) && !fileExists(cacheText) {
+			if err := writeTranscriptText(cacheSRT, cacheText); err != nil {
+				return nil, nil, nil, err
+			}
+		}
+		item := CourseItem{
+			Source:     file,
+			Output:     filepath.Join(slidesDir, targetNames[i]+"_slideshow.mp4"),
+			SRTPath:    cacheSRT,
+			TextPath:   cacheText,
+			TargetName: targetNames[i],
+		}
+		items[i] = item
+		pipelineItem := pipelineCourseItem{index: i, item: item}
+		if fileExists(cacheSRT) && fileExists(cacheText) {
+			ready = append(ready, pipelineItem)
+			continue
+		}
+		missing = append(missing, pipelineItem)
+	}
+	return items, ready, missing, nil
+}
+
+func (s *Service) compressPipelineItem(ctx context.Context, item CourseItem, req CourseRequest) (CourseItem, error) {
+	if _, statErr := os.Stat(item.Output); statErr == nil {
+		return item, nil
+	}
+	compressReq := courseCompressRequest(item.Source, item.Output, item.SRTPath, item.TargetName, req)
+	output, out, err := s.compress(ctx, compressReq)
+	if err != nil {
+		return CourseItem{}, errors.New(strings.TrimSpace(string(out)) + ": " + err.Error())
+	}
+	item.Output = output
+	return item, nil
+}
+
+func planCourseParts(targetDir string, courseDir string, req CourseRequest, items []CourseItem, durations map[string]float64) []plannedCoursePart {
+	groups := chunkCourseItemsByDuration(items, durations, req.MaxMergeHours)
+	folderName := courseOutputName(targetDir, req.OutputName)
+	offset := 0
+	if req.CleanupVerified {
+		offset = existingCoursePartOffset(courseDir, folderName)
+	}
+	multipart := len(groups) > 1 || offset > 0 || (req.CleanupVerified && req.MaxMergeHours > 0)
+	parts := make([]plannedCoursePart, 0, len(groups))
+	for i, group := range groups {
+		indexes := make([]int, len(group))
+		partItems := make([]CourseItem, len(group))
+		for j, item := range group {
+			indexes[j] = item.index
+			partItems[j] = item.item
+		}
+		parts = append(parts, plannedCoursePart{
+			indexes:  indexes,
+			items:    partItems,
+			artifact: courseArtifactPaths(courseDir, folderName, multipart, i+offset),
+		})
+	}
+	return parts
+}
+
+func chunkCourseItemsByDuration(items []CourseItem, durations map[string]float64, maxMergeHours float64) [][]pipelineCourseItem {
+	groups := [][]pipelineCourseItem{}
+	if len(items) == 0 {
+		return groups
+	}
+	if maxMergeHours <= 0 {
+		group := make([]pipelineCourseItem, len(items))
+		for i, item := range items {
+			group[i] = pipelineCourseItem{index: i, item: item}
+		}
+		return [][]pipelineCourseItem{group}
+	}
+	limit := maxMergeHours * 3600
+	current := []pipelineCourseItem{}
+	currentSeconds := 0.0
+	for i, item := range items {
+		duration := durations[item.Source]
+		if len(current) > 0 && currentSeconds+duration > limit {
+			groups = append(groups, current)
+			current = nil
+			currentSeconds = 0
+		}
+		current = append(current, pipelineCourseItem{index: i, item: item})
+		currentSeconds += duration
+	}
+	if len(current) > 0 {
+		groups = append(groups, current)
+	}
+	return groups
+}
+
+func coursePartReady(part plannedCoursePart, ready []bool) bool {
+	for _, index := range part.indexes {
+		if index < 0 || index >= len(ready) || !ready[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func existingCoursePartOffset(courseDir string, folderName string) int {
+	pattern := filepath.Join(courseDir, folderName+"_Part*_Slideshow.mp4")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return 0
+	}
+	re := regexp.MustCompile(`_Part([0-9]+)_Slideshow\.mp4$`)
+	maxPart := 0
+	for _, match := range matches {
+		parts := re.FindStringSubmatch(filepath.Base(match))
+		if len(parts) != 2 {
+			continue
+		}
+		value, err := strconv.Atoi(parts[1])
+		if err == nil && value > maxPart {
+			maxPart = value
+		}
+	}
+	return maxPart
+}
+
+func (s *Service) verifyCoursePart(ctx context.Context, part []CourseItem, artifact courseArtifact, durations map[string]float64) error {
+	for _, path := range []string{artifact.videoPath, artifact.srtPath, artifact.textPath} {
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		if info.Size() == 0 {
+			return fmt.Errorf("course artifact is empty: %s", path)
+		}
+	}
+	actualDuration, err := s.duration(ctx, artifact.videoPath)
+	if err != nil {
+		return err
+	}
+	expectedDuration := 0.0
+	for _, item := range part {
+		expectedDuration += durations[item.Source]
+	}
+	if expectedDuration > 0 {
+		tolerance := math.Max(120, expectedDuration*0.005)
+		if math.Abs(actualDuration-expectedDuration) > tolerance {
+			return fmt.Errorf("verified video duration mismatch for %s: got %.2fs, want %.2fs +/- %.2fs", artifact.videoPath, actualDuration, expectedDuration, tolerance)
+		}
+	}
+	return nil
+}
+
+func cleanupVerifiedCoursePart(part []CourseItem) ([]string, error) {
+	seen := map[string]bool{}
+	cleaned := []string{}
+	for _, item := range part {
+		paths := []string{item.Source, item.Output, item.SRTPath, item.TextPath}
+		if _, _, sidecarSRT := transcriptPaths(item.Source, filepath.Dir(item.SRTPath)); sidecarSRT != "" {
+			paths = append(paths, sidecarSRT)
+		}
+		for _, path := range paths {
+			if path == "" || seen[path] {
+				continue
+			}
+			seen[path] = true
+			removed, err := removeCoursePath(path)
+			if err != nil {
+				return cleaned, err
+			}
+			if removed {
+				cleaned = append(cleaned, path)
+			}
+		}
+	}
+	for _, item := range part {
+		removeEmptyCourseDir(filepath.Dir(item.Output))
+		removeEmptyCourseDir(filepath.Dir(item.SRTPath))
+	}
+	return cleaned, nil
+}
+
+func removeCoursePath(path string) (bool, error) {
+	if strings.TrimSpace(path) == "" {
+		return false, nil
+	}
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func removeEmptyCourseDir(path string) {
+	if strings.TrimSpace(path) == "" || path == "." || path == string(filepath.Separator) {
+		return
+	}
+	_ = os.Remove(path)
+}
+
+func defaultWhisperModel(model string) string {
+	if strings.TrimSpace(model) == "" {
+		return "large-v3"
+	}
+	return model
+}

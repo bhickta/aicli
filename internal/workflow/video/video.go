@@ -42,6 +42,7 @@ type CourseRequest struct {
 	Path               string  `json:"path"`
 	OutputDir          string  `json:"output_dir"`
 	OutputName         string  `json:"output_name"`
+	CleanupVerified    bool    `json:"cleanup_verified_parts"`
 	WhisperModel       string  `json:"whisper_model"`
 	WhisperDevice      string  `json:"whisper_device"`
 	Resolution         int     `json:"resolution"`
@@ -64,6 +65,7 @@ type CourseResponse struct {
 	Compressed  []CourseItem `json:"compressed"`
 	Transcribed []CourseItem `json:"transcribed,omitempty"`
 	Skipped     []string     `json:"skipped,omitempty"`
+	Cleaned     []string     `json:"cleaned,omitempty"`
 }
 
 type CourseItem struct {

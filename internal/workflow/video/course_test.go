@@ -151,6 +151,56 @@ func TestCourseUsesRequestedOutputName(t *testing.T) {
 	}
 }
 
+func TestCourseCleanupVerifiedPartsRemovesSourcesAndCacheOnlyAfterExport(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	first := filepath.Join(dir, "01 intro.mp4")
+	second := filepath.Join(dir, "02 lesson.mp4")
+	writeCourseVideoWithSRT(t, first)
+	writeCourseVideoWithSRT(t, second)
+
+	res, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, &courseRunner{}).Course(
+		context.Background(),
+		CourseRequest{
+			Path:            dir,
+			Preset:          "slideshow",
+			FPS:             "1/2",
+			MaxMergeHours:   0.0001,
+			CleanupVerified: true,
+		},
+	)
+	if err != nil {
+		t.Fatalf("Course() error = %v", err)
+	}
+	for _, path := range []string{
+		filepath.Join(dir, "Course", filepath.Base(dir)+"_Part1_Slideshow.mp4"),
+		filepath.Join(dir, "Course", filepath.Base(dir)+"_Part1.srt"),
+		filepath.Join(dir, "Course", filepath.Base(dir)+"_Part1.txt"),
+		filepath.Join(dir, "Course", filepath.Base(dir)+"_Part2_Slideshow.mp4"),
+		filepath.Join(dir, "Course", filepath.Base(dir)+"_Part2.srt"),
+		filepath.Join(dir, "Course", filepath.Base(dir)+"_Part2.txt"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected verified course artifact %s: %v", path, err)
+		}
+	}
+	for _, path := range []string{
+		first,
+		second,
+		strings.TrimSuffix(first, filepath.Ext(first)) + ".srt",
+		strings.TrimSuffix(second, filepath.Ext(second)) + ".srt",
+		filepath.Join(dir, ".aicli_cache"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("expected cleaned path %s to be removed, stat err = %v", path, err)
+		}
+	}
+	if len(res.Cleaned) == 0 {
+		t.Fatal("Cleaned is empty, want removed source/cache paths")
+	}
+}
+
 func TestCourseUsesCachedSRTWithoutCallingWhisper(t *testing.T) {
 	t.Parallel()
 
@@ -302,8 +352,8 @@ func TestCourseWithProgressReportsPerVideoCompletion(t *testing.T) {
 	if events[2].current != 4 || events[2].total != 5 {
 		t.Fatalf("third event = %#v, want 4/5", events[2])
 	}
-	if !strings.Contains(events[len(events)-1].stage, "merging") || events[len(events)-1].current != 4 || events[len(events)-1].total != 5 {
-		t.Fatalf("last event = %#v, want merge stage at 4/5", events[len(events)-1])
+	if !strings.Contains(events[len(events)-1].stage, "completed") || events[len(events)-1].current != 5 || events[len(events)-1].total != 5 {
+		t.Fatalf("last event = %#v, want completed stage at 5/5", events[len(events)-1])
 	}
 }
 
