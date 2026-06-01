@@ -2,10 +2,14 @@ package zettel
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bhickta/aicli/internal/provider"
+	archivepkg "github.com/bhickta/aicli/internal/workflow/zettel/archive"
 )
 
 func TestServiceWorkflowOptionsMovesRelativeDataFolderToCentralDataDir(t *testing.T) {
@@ -61,5 +65,67 @@ func TestServiceIndexUsesCentralDataFolder(t *testing.T) {
 	}
 	if len(matches) != 1 {
 		t.Fatalf("central embedding caches = %v, want one", matches)
+	}
+}
+
+func TestServiceTrainingExportUsesCentralDataFolder(t *testing.T) {
+	t.Parallel()
+
+	dataDir := t.TempDir()
+	vaultDir := t.TempDir()
+	service := NewWithProviders(nil, nil).WithDataDir(dataDir)
+	options := Options{
+		VaultPath:  vaultDir,
+		RootFolder: "zettelkasten",
+		DataFolder: ".aicli-zettel-merge",
+	}
+	resolved := service.workflowOptions(options)
+	trainingArchive := filepath.Join(
+		resolved.DataFolder,
+		"inbox-runs",
+		"run-1",
+		"training",
+		"zettel-inbox-chat.jsonl",
+	)
+	writeTrainingArchive(t, trainingArchive)
+
+	resp, err := service.TrainingExport(context.Background(), TrainingExportRequest{Options: options}, nil)
+	if err != nil {
+		t.Fatalf("TrainingExport() error = %v", err)
+	}
+	if resp.ExportedCount != 1 || resp.TrainCount != 1 || resp.EvalCount != 0 {
+		t.Fatalf("TrainingExport() = %#v, want one train example", resp)
+	}
+	if !strings.HasPrefix(resp.ArchivePath, filepath.Join(dataDir, "zettel")+string(filepath.Separator)) {
+		t.Fatalf("archive path = %q, want inside central data dir %q", resp.ArchivePath, dataDir)
+	}
+	if _, err := os.Stat(filepath.Join(vaultDir, ".aicli-zettel-merge")); !os.IsNotExist(err) {
+		t.Fatalf("vault data folder exists or stat failed unexpectedly: %v", err)
+	}
+}
+
+func writeTrainingArchive(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	exchange := archivepkg.LLMExchange{
+		Workflow:     "zettel-inbox-merge",
+		Step:         "merge-final-notes",
+		ParsedFormat: "final-notes",
+		Request: provider.ChatRequest{
+			Messages: []provider.Message{
+				{Role: "system", Content: "merge"},
+				{Role: "user", Content: "source"},
+			},
+		},
+		Response: provider.ChatResponse{Content: "final"},
+	}
+	data, err := json.Marshal(exchange)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -5,12 +5,14 @@ import ZettelMetadataPanel from "../components/zettel/metadata/ZettelMetadataPan
 import ZettelSettingsPanel from "../components/zettel/settings/ZettelSettingsPanel.vue";
 import ZettelStatusPanel from "../components/zettel/shell/ZettelStatusPanel.vue";
 import ZettelVaultPanel from "../components/zettel/shell/ZettelVaultPanel.vue";
+import ZettelTrainingPanel from "../components/zettel/training/ZettelTrainingPanel.vue";
 import { useZettelWorkflow } from "../composables/useZettelWorkflow";
 
 const {
   config,
   inboxReport,
   metadataReport,
+  trainingReport,
   candidatePreview,
   apiUsage,
   status,
@@ -25,6 +27,7 @@ const {
   metadataWorkerOptions,
   canRunInboxMerge,
   canRunMetadata,
+  canExportTraining,
   canUseVaultFolders,
   rawResultSummary,
   progressClass,
@@ -38,6 +41,7 @@ const {
   rollback,
   runInboxMerge,
   runMetadata,
+  exportTrainingData,
 } = useZettelWorkflow();
 </script>
 
@@ -91,6 +95,14 @@ const {
       @update-metadata-limit="updateConfig('metadataLimit', $event)"
       @update-metadata-workers="updateConfig('metadataWorkers', $event)"
       @update-metadata-overwrite="updateConfig('metadataOverwrite', $event)"
+    />
+
+    <ZettelTrainingPanel
+      v-if="mode === 'training'"
+      :busy="busy"
+      :can-run="canExportTraining"
+      :report="trainingReport"
+      @run="exportTrainingData"
     />
 
     <ZettelSettingsPanel

@@ -26,6 +26,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workflows/zettel/rollback", h.rollback)
 	mux.HandleFunc("POST /api/workflows/zettel/inbox-merge", h.inboxMerge)
 	mux.HandleFunc("POST /api/workflows/zettel/metadata", h.metadata)
+	mux.HandleFunc("POST /api/workflows/zettel/training-export", h.trainingExport)
 }
 
 func (h *Handler) notes(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +115,27 @@ func (h *Handler) metadata(w http.ResponseWriter, r *http.Request) {
 	h.runtime.StartJob(w, r, "zettel-metadata", req.MetadataFolder, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		return service.Metadata(ctx, req, progress)
 	})
+}
+
+func (h *Handler) trainingExport(w http.ResponseWriter, r *http.Request) {
+	req, ok := core.DecodeJSON[zettel.TrainingExportRequest](w, r)
+	if !ok {
+		return
+	}
+	service, err := h.serviceFor(req.Options, providerNeeds{})
+	if err != nil {
+		core.WriteError(w, http.StatusNotFound, err)
+		return
+	}
+	h.runtime.StartJob(
+		w,
+		r,
+		"zettel-training-export",
+		req.VaultPath,
+		func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+			return service.TrainingExport(ctx, req, progress)
+		},
+	)
 }
 
 type providerNeeds struct {

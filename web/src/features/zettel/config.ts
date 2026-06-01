@@ -37,7 +37,7 @@ export function createZettelConfig(): ZettelConfig {
 
 export function readZettelMode(): ZettelMode {
   const storedMode = localStorage.getItem("aicli.zettel.mode");
-  return storedMode === "metadata" || storedMode === "settings" ? storedMode : "inbox";
+  return storedMode === "metadata" || storedMode === "training" || storedMode === "settings" ? storedMode : "inbox";
 }
 
 export function persistZettelConfig(config: ZettelConfig) {

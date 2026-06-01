@@ -245,6 +245,23 @@ export interface MetadataReport {
   api_calls?: ApiCallUsage;
 }
 
+export interface TrainingExportReport {
+  run_id: string;
+  archive_path: string;
+  train_path: string;
+  eval_path: string;
+  manifest_path: string;
+  source_files?: string[];
+  scanned_count: number;
+  exported_count: number;
+  train_count: number;
+  eval_count: number;
+  duplicate_count: number;
+  skipped_count: number;
+  skipped_by_reason?: Record<string, number>;
+  api_calls?: ApiCallUsage;
+}
+
 export interface BrowserEntry {
   name: string;
   path: string;

@@ -1,7 +1,13 @@
 import { computed, onMounted, reactive, shallowRef, watch } from "vue";
 import { api } from "../lib/api";
 import { stringify } from "../lib/format";
-import type { ApiCallUsage, InboxCandidatePreviewReport, InboxMergeReport, MetadataReport } from "../types";
+import type {
+  ApiCallUsage,
+  InboxCandidatePreviewReport,
+  InboxMergeReport,
+  MetadataReport,
+  TrainingExportReport,
+} from "../types";
 import {
   candidateLimitOptions,
   createZettelConfig,
@@ -29,6 +35,7 @@ export function useZettelWorkflow() {
 
   const inboxReport = shallowRef<InboxMergeReport | null>(null);
   const metadataReport = shallowRef<MetadataReport | null>(null);
+  const trainingReport = shallowRef<TrainingExportReport | null>(null);
   const candidatePreview = shallowRef<InboxCandidatePreviewReport | null>(null);
   const apiUsage = shallowRef<ApiCallUsage | null>(null);
   const rollbackJobID = shallowRef("");
@@ -37,6 +44,7 @@ export function useZettelWorkflow() {
 
   const canRunInboxMerge = computed(() => Boolean(config.vaultPath.trim()) && !runner.busy.value);
   const canRunMetadata = computed(() => Boolean(config.vaultPath.trim()) && !runner.busy.value);
+  const canExportTraining = computed(() => Boolean(config.vaultPath.trim()) && !runner.busy.value);
   const canUseVaultFolders = computed(() => Boolean(config.vaultPath.trim()) && !runner.busy.value);
   onMounted(() => {
     if (!config.vaultPath) return;
@@ -48,6 +56,7 @@ export function useZettelWorkflow() {
     candidatePreview.value = null;
     inboxReport.value = null;
     metadataReport.value = null;
+    trainingReport.value = null;
   });
 
   watch(mode, () => {
@@ -147,6 +156,26 @@ export function useZettelWorkflow() {
     });
   }
 
+  async function exportTrainingData() {
+    apiUsage.value = null;
+    await runner.runWorkflow(
+      "Exporting clean training data",
+      "/api/workflows/zettel/training-export",
+      basePayload(),
+      (output) => {
+        updateApiUsage(output);
+        const response = output as TrainingExportReport;
+        trainingReport.value = response;
+        runner.status.value = [
+          `Training export completed: ${response.train_count} train`,
+          `${response.eval_count} eval`,
+          `${response.skipped_count} skipped`,
+        ].join(", ");
+        runner.result.value = stringify(output);
+      },
+    );
+  }
+
   function updateApiUsage(output: unknown) {
     apiUsage.value = extractApiUsage(output);
   }
@@ -165,6 +194,7 @@ export function useZettelWorkflow() {
     config,
     inboxReport,
     metadataReport,
+    trainingReport,
     candidatePreview,
     apiUsage,
     status: runner.status,
@@ -179,6 +209,7 @@ export function useZettelWorkflow() {
     metadataWorkerOptions,
     canRunInboxMerge,
     canRunMetadata,
+    canExportTraining,
     canUseVaultFolders,
     rawResultSummary: runner.rawResultSummary,
     progressClass: runner.progressClass,
@@ -192,5 +223,6 @@ export function useZettelWorkflow() {
     rollback,
     runInboxMerge,
     runMetadata,
+    exportTrainingData,
   };
 }

@@ -117,6 +117,29 @@ Then open the `Zettel` tab and click `Run Inbox Merge`. AICLI treats inbox notes
 
 The run report shows source note -> destination note mappings, merged/deduped/pending counts, diffs, provider API calls, and the rollback id. If the model returns `PENDING` or writes only non-candidate paths, the source note stays in place. Rollback with the inbox run id restores changed destination notes and moves processed source notes back.
 
+### Clean merge training data
+
+The `Zettel` -> `Training` tab exports clean chat-SFT JSONL from saved inbox merge audit data. It is local-only and makes zero provider/API calls.
+
+The exporter includes only successful final merge examples:
+
+```text
+workflow = zettel-inbox-merge
+step = merge-final-notes
+parsed_format = final-notes
+error = empty
+```
+
+It skips failed, pending, unparsed, metadata, judge, validation, and duplicate examples, then writes:
+
+```text
+<aicli-data-dir>/zettel/<vault-key>/training-exports/<run-id>/train.jsonl
+<aicli-data-dir>/zettel/<vault-key>/training-exports/<run-id>/eval.jsonl
+<aicli-data-dir>/zettel/<vault-key>/training-exports/<run-id>/manifest.json
+```
+
+Use `train.jsonl` and `eval.jsonl` as the starting dataset for Unsloth or Axolotl QLoRA fine-tuning. Start with a 7B/8B instruct model on an RTX 3090. Metadata examples are intentionally excluded from this export so the model learns the merge task only.
+
 ### Optional Obsidian workflow
 
 The plugin in `obsidian/aicli-zettel-merge` is a thin launcher over the same inbox flow:

@@ -1,4 +1,4 @@
-export type ZettelMode = "inbox" | "metadata" | "settings";
+export type ZettelMode = "inbox" | "metadata" | "training" | "settings";
 
 export type ZettelFolderField = "rootFolder" | "inboxFolder" | "metadataFolder" | "dataFolder";
 
