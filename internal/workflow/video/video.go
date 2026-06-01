@@ -22,16 +22,18 @@ type InfoRequest = info.Request
 type InfoResponse = info.Response
 
 type CompressRequest struct {
-	Path        string `json:"path"`
-	Output      string `json:"output"`
-	CRF         int    `json:"crf"`
-	Resolution  int    `json:"resolution"`
-	Preset      string `json:"preset"`
-	Overwrite   bool   `json:"overwrite"`
-	FPS         string `json:"fps"`
-	FastSkip    bool   `json:"fast_skip"`
-	ExternalSRT string `json:"external_srt"`
-	TargetName  string `json:"target_name"`
+	Path          string `json:"path"`
+	Output        string `json:"output"`
+	CRF           int    `json:"crf"`
+	Resolution    int    `json:"resolution"`
+	Preset        string `json:"preset"`
+	Overwrite     bool   `json:"overwrite"`
+	FPS           string `json:"fps"`
+	FastSkip      bool   `json:"fast_skip"`
+	ExternalSRT   string `json:"external_srt"`
+	SkipSubtitles bool   `json:"skip_subtitles"`
+	SkipFastStart bool   `json:"skip_faststart"`
+	TargetName    string `json:"target_name"`
 }
 
 type CompressResponse struct {
@@ -41,6 +43,7 @@ type CompressResponse struct {
 type CourseRequest struct {
 	Path               string  `json:"path"`
 	OutputDir          string  `json:"output_dir"`
+	WorkDir            string  `json:"work_dir"`
 	OutputName         string  `json:"output_name"`
 	CleanupVerified    bool    `json:"cleanup_verified_parts"`
 	WhisperModel       string  `json:"whisper_model"`

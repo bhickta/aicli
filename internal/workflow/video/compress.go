@@ -101,13 +101,14 @@ func compressOutputPath(req CompressRequest, resolution int) string {
 
 func compressArgs(req CompressRequest, preset compressPreset, resolution int, fps string, output string) []string {
 	args := []string{"-y", "-v", "error", "-stats"}
+	externalSRT := !req.SkipSubtitles && req.ExternalSRT != "" && fileExists(req.ExternalSRT)
 	if resolution > 0 {
 		args = append(args, "-hwaccel", "cuda", "-hwaccel_output_format", "cuda")
 		if req.FastSkip {
 			args = append(args, "-skip_frame", "nokey")
 		}
 		args = append(args, "-i", req.Path)
-		if req.ExternalSRT != "" && fileExists(req.ExternalSRT) {
+		if externalSRT {
 			args = append(args, "-i", req.ExternalSRT)
 		}
 		args = append(args, "-vf", fmt.Sprintf("scale_cuda=-2:%d", resolution))
@@ -116,7 +117,7 @@ func compressArgs(req CompressRequest, preset compressPreset, resolution int, fp
 			args = append(args, "-hwaccel", "cuda", "-skip_frame", "nokey")
 		}
 		args = append(args, "-i", req.Path)
-		if req.ExternalSRT != "" && fileExists(req.ExternalSRT) {
+		if externalSRT {
 			args = append(args, "-i", req.ExternalSRT)
 		}
 	}
@@ -128,10 +129,16 @@ func compressArgs(req CompressRequest, preset compressPreset, resolution int, fp
 	}
 	args = append(args, "-c:a", "aac", "-b:a", preset.audioBitrate, "-ac", strconv.Itoa(preset.audioChannels), "-ar", "22050")
 	args = append(args, "-map", "0:v:0", "-map", "0:a:0?")
-	if req.ExternalSRT != "" && fileExists(req.ExternalSRT) {
+	if req.SkipSubtitles {
+		args = append(args, "-sn")
+	} else if externalSRT {
 		args = append(args, "-map", "1:s?", "-c:s", "mov_text")
 	} else {
 		args = append(args, "-map", "0:s?", "-c:s", "mov_text")
 	}
-	return append(args, "-map_metadata", "0", "-map_chapters", "0", "-movflags", "+faststart", output)
+	args = append(args, "-map_metadata", "0", "-map_chapters", "0")
+	if !req.SkipFastStart {
+		args = append(args, "-movflags", "+faststart")
+	}
+	return append(args, output)
 }

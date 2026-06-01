@@ -52,15 +52,17 @@ func (s *Service) prepareCourseItem(
 
 func courseCompressRequest(file string, output string, srtPath string, targetName string, req CourseRequest) CompressRequest {
 	compressReq := CompressRequest{
-		Path:        file,
-		Output:      output,
-		Resolution:  req.Resolution,
-		Preset:      req.Preset,
-		CRF:         req.CRF,
-		FPS:         req.FPS,
-		FastSkip:    true,
-		ExternalSRT: srtPath,
-		TargetName:  targetName,
+		Path:          file,
+		Output:        output,
+		Resolution:    req.Resolution,
+		Preset:        req.Preset,
+		CRF:           req.CRF,
+		FPS:           req.FPS,
+		FastSkip:      true,
+		ExternalSRT:   srtPath,
+		SkipSubtitles: true,
+		SkipFastStart: true,
+		TargetName:    targetName,
 	}
 	if req.FastSkip {
 		compressReq.FastSkip = true

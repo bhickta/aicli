@@ -42,7 +42,7 @@ func TestCompressUsesFFmpeg(t *testing.T) {
 		t.Fatalf("Output = %q, want video_240p.mp4", res.Output)
 	}
 	args := strings.Join(runner.args, " ")
-	for _, want := range []string{"-hwaccel cuda", "-vf scale_cuda=-2:240", "-c:v h264_nvenc", "-cq 30"} {
+	for _, want := range []string{"-hwaccel cuda", "-vf scale_cuda=-2:240", "-c:v h264_nvenc", "-cq 30", "-map 0:s?", "-movflags +faststart"} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("ffmpeg args = %q, want contains %q", args, want)
 		}

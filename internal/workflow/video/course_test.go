@@ -151,6 +151,66 @@ func TestCourseUsesRequestedOutputName(t *testing.T) {
 	}
 }
 
+func TestCourseTempCompressionSkipsRedundantSubtitleMuxingAndFaststart(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	videoPath := filepath.Join(dir, "01 intro.mp4")
+	writeCourseVideoWithSRT(t, videoPath)
+
+	runner := &courseRunner{}
+	_, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, runner).Course(
+		context.Background(),
+		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2"},
+	)
+	if err != nil {
+		t.Fatalf("Course() error = %v", err)
+	}
+	for _, call := range runner.calls {
+		if call.command != "ffmpeg" || len(call.args) == 0 || !strings.Contains(call.args[len(call.args)-1], ".aicli_cache/slideshows") {
+			continue
+		}
+		args := strings.Join(call.args, " ")
+		if !strings.Contains(args, "-sn") {
+			t.Fatalf("course temp compression args = %q, want subtitle streams disabled", args)
+		}
+		for _, notWant := range []string{"-map 1:s?", "-map 0:s?", "-movflags +faststart"} {
+			if strings.Contains(args, notWant) {
+				t.Fatalf("course temp compression args = %q, did not want %q", args, notWant)
+			}
+		}
+		return
+	}
+	t.Fatalf("no course temp compression ffmpeg call found: %#v", runner.calls)
+}
+
+func TestCourseUsesOptionalWorkDirForCache(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	workDir := t.TempDir()
+	videoPath := filepath.Join(dir, "01 intro.mp4")
+	writeCourseVideoWithSRT(t, videoPath)
+
+	_, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, &courseRunner{}).Course(
+		context.Background(),
+		CourseRequest{Path: dir, WorkDir: workDir, Preset: "slideshow", FPS: "1/2"},
+	)
+	if err != nil {
+		t.Fatalf("Course() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".aicli_cache")); !os.IsNotExist(err) {
+		t.Fatalf("source .aicli_cache stat err = %v, want not exist when work dir is set", err)
+	}
+	matches, err := filepath.Glob(filepath.Join(workDir, "*", "01 intro.srt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("work dir cache matches = %#v, want one cached transcript", matches)
+	}
+}
+
 func TestCourseCleanupVerifiedPartsRemovesSourcesAndCacheOnlyAfterExport(t *testing.T) {
 	t.Parallel()
 

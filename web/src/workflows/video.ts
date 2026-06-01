@@ -9,6 +9,7 @@ export const videoWorkflowDefinitions: WorkflowDefinition[] = [
     endpoint: "/api/workflows/video/course",
     fields: [
       { type: "path", id: "path", label: "Course source folder", picker: "directory" },
+      { type: "path", id: "work_dir", label: "Fast work folder (optional)", picker: "directory" },
       { type: "text", id: "whisper_model", label: "Whisper model", value: "large-v3", placeholder: "large-v3" },
       { type: "text", id: "whisper_device", label: "Whisper device", value: "cuda", placeholder: "cuda" },
       { type: "text", id: "output_name", label: "Course output name", value: "", placeholder: "Uses source folder name" },
@@ -20,6 +21,7 @@ export const videoWorkflowDefinitions: WorkflowDefinition[] = [
     ],
     buildPayload: (values) => ({
       path: values.path,
+      work_dir: values.work_dir,
       whisper_model: values.whisper_model || "large-v3",
       whisper_device: values.whisper_device || "cuda",
       output_name: values.output_name,

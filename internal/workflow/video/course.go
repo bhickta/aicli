@@ -34,7 +34,7 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 	if len(files) == 0 {
 		return CourseResponse{}, errors.New("no video files found")
 	}
-	courseDir, cacheDir, slidesDir, err := prepareCourseDirs(targetDir, req.OutputDir)
+	courseDir, cacheDir, slidesDir, err := prepareCourseDirs(targetDir, req.OutputDir, req.WorkDir)
 	if err != nil {
 		return CourseResponse{}, err
 	}
