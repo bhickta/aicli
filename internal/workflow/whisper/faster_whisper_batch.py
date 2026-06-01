@@ -14,10 +14,26 @@ def format_srt_time(seconds: float) -> str:
     return f"{hours:02}:{minutes:02}:{int(secs):02},{millis:03}"
 
 
-def atomic_write(path: Path, content: str) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(content, encoding="utf-8")
-    os.replace(tmp, path)
+def write_transcript_outputs(srt_path: Path, txt_path: Path, segments) -> None:
+    srt_tmp = srt_path.with_suffix(srt_path.suffix + ".tmp")
+    txt_tmp = txt_path.with_suffix(txt_path.suffix + ".tmp")
+    with srt_tmp.open("w", encoding="utf-8") as srt_file, txt_tmp.open(
+        "w", encoding="utf-8"
+    ) as txt_file:
+        index = 1
+        for segment in segments:
+            text = segment.text.strip()
+            if not text:
+                continue
+            srt_file.write(f"{index}\n")
+            srt_file.write(
+                f"{format_srt_time(segment.start)} --> {format_srt_time(segment.end)}\n"
+            )
+            srt_file.write(f"{text}\n\n")
+            txt_file.write(f"{text}\n")
+            index += 1
+    os.replace(srt_tmp, srt_path)
+    os.replace(txt_tmp, txt_path)
 
 
 def main() -> int:
@@ -57,24 +73,7 @@ def main() -> int:
             language=None,
             vad_filter=True,
         )
-        segment_list = list(segments)
-
-        srt_lines = []
-        txt_lines = []
-        for index, segment in enumerate(segment_list, start=1):
-            text = segment.text.strip()
-            if not text:
-                continue
-            srt_lines.append(str(index))
-            srt_lines.append(
-                f"{format_srt_time(segment.start)} --> {format_srt_time(segment.end)}"
-            )
-            srt_lines.append(text)
-            srt_lines.append("")
-            txt_lines.append(text)
-
-        atomic_write(srt_path, "\n".join(srt_lines).strip() + "\n")
-        atomic_write(txt_path, "\n".join(txt_lines).strip() + "\n")
+        write_transcript_outputs(srt_path, txt_path, segments)
 
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as executor:
         futures = {executor.submit(transcribe, video): video for video in args.videos}

@@ -41,6 +41,7 @@ type CompressResponse struct {
 type CourseRequest struct {
 	Path               string  `json:"path"`
 	OutputDir          string  `json:"output_dir"`
+	OutputName         string  `json:"output_name"`
 	WhisperModel       string  `json:"whisper_model"`
 	WhisperDevice      string  `json:"whisper_device"`
 	Resolution         int     `json:"resolution"`

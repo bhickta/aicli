@@ -124,6 +124,33 @@ func TestCourseTranscribesMissingSRTWithWhisperLargeV3(t *testing.T) {
 	}
 }
 
+func TestCourseUsesRequestedOutputName(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	videoPath := filepath.Join(dir, "01 intro.mp4")
+	writeCourseVideoWithSRT(t, videoPath)
+
+	res, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, &courseRunner{}).Course(
+		context.Background(),
+		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2", OutputName: "Philosophy Tanu Jain"},
+	)
+	if err != nil {
+		t.Fatalf("Course() error = %v", err)
+	}
+	wantVideo := filepath.Join(dir, "Course", "Philosophy Tanu Jain_Slideshow.mp4")
+	wantSRT := filepath.Join(dir, "Course", "Philosophy Tanu Jain.srt")
+	wantText := filepath.Join(dir, "Course", "Philosophy Tanu Jain.txt")
+	if res.VideoPath != wantVideo || res.SRTPath != wantSRT || res.TextPath != wantText {
+		t.Fatalf("artifacts = %q, %q, %q; want %q, %q, %q", res.VideoPath, res.SRTPath, res.TextPath, wantVideo, wantSRT, wantText)
+	}
+	for _, path := range []string{wantVideo, wantSRT, wantText} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected artifact %s: %v", path, err)
+		}
+	}
+}
+
 func TestCourseUsesCachedSRTWithoutCallingWhisper(t *testing.T) {
 	t.Parallel()
 

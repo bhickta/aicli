@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 )
 
-func (s *Service) exportCourseParts(ctx context.Context, targetDir string, courseDir string, items []CourseItem, transcribed []CourseItem, skipped []string, maxMergeHours float64) (CourseResponse, error) {
+func (s *Service) exportCourseParts(ctx context.Context, targetDir string, courseDir string, outputName string, items []CourseItem, transcribed []CourseItem, skipped []string, maxMergeHours float64) (CourseResponse, error) {
 	parts, err := chunkCourseItems(ctx, s, items, maxMergeHours)
 	if err != nil {
 		return CourseResponse{}, err
 	}
-	folderName := filepath.Base(targetDir)
+	folderName := courseOutputName(targetDir, outputName)
 	response := CourseResponse{CourseDir: courseDir, Compressed: items, Transcribed: transcribed, Skipped: skipped}
 	multipart := len(parts) > 1
 	for i, part := range parts {
@@ -64,4 +64,15 @@ func (s *Service) writeCoursePart(ctx context.Context, part []CourseItem, artifa
 		return err
 	}
 	return mergeTranscripts(part, artifact.textPath)
+}
+
+func courseOutputName(targetDir string, outputName string) string {
+	name := sanitizeCourseName(outputName)
+	if name == "" {
+		name = sanitizeCourseName(filepath.Base(targetDir))
+	}
+	if name == "" {
+		return "Course"
+	}
+	return name
 }

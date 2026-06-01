@@ -77,5 +77,5 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 		progressPlan.totalUnits,
 		"video second",
 	))
-	return s.exportCourseParts(ctx, targetDir, courseDir, items, transcribed, skipped, req.MaxMergeHours)
+	return s.exportCourseParts(ctx, targetDir, courseDir, req.OutputName, items, transcribed, skipped, req.MaxMergeHours)
 }
