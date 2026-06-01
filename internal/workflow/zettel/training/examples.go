@@ -1,13 +1,7 @@
 package training
 
 import (
-	"bufio"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -77,15 +71,6 @@ func normalizeContent(content string) string {
 	return strings.TrimSpace(content)
 }
 
-func exampleHash(example chatExample) string {
-	data, err := json.Marshal(example)
-	if err != nil {
-		return ""
-	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
-
 func splitRecords(records []exportRecord) ([]exportRecord, []exportRecord) {
 	evalCount := len(records) / 20
 	if evalCount >= len(records) {
@@ -94,55 +79,4 @@ func splitRecords(records []exportRecord) ([]exportRecord, []exportRecord) {
 	evalRecords := records[:evalCount]
 	trainRecords := records[evalCount:]
 	return trainRecords, evalRecords
-}
-
-func writeJSONL(path string, records []exportRecord) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("open training export %s: %w", path, err)
-	}
-	defer file.Close()
-	for _, record := range records {
-		data, err := json.Marshal(record.example)
-		if err != nil {
-			return fmt.Errorf("marshal training example: %w", err)
-		}
-		if _, err := file.Write(append(data, '\n')); err != nil {
-			return fmt.Errorf("write training example: %w", err)
-		}
-	}
-	return nil
-}
-
-func writeManifest(response TrainingExportResponse) error {
-	data, err := json.MarshalIndent(response, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal training export manifest: %w", err)
-	}
-	return os.WriteFile(response.ManifestPath, append(data, '\n'), 0o600)
-}
-
-func readJSONLLines(path string, visit func([]byte) error) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open training archive %s: %w", path, err)
-	}
-	defer file.Close()
-
-	reader := bufio.NewReader(file)
-	for {
-		line, err := reader.ReadBytes('\n')
-		if len(strings.TrimSpace(string(line))) > 0 {
-			if visitErr := visit(line); visitErr != nil {
-				return visitErr
-			}
-		}
-		if err == nil {
-			continue
-		}
-		if err == io.EOF {
-			return nil
-		}
-		return fmt.Errorf("read training archive %s: %w", path, err)
-	}
 }

@@ -130,15 +130,35 @@ parsed_format = final-notes
 error = empty
 ```
 
+Strict mode is enabled by default. It also removes examples that would teach bad behavior:
+
+- old prompt variants
+- missing semantic destination candidates
+- assistant markdown code fences
+- duplicate frontmatter
+- malformed `BEGIN_NOTE` / `END_NOTE` boundaries
+- status/JSON responses
+
 It skips failed, pending, unparsed, metadata, judge, validation, and duplicate examples, then writes:
 
 ```text
 <aicli-data-dir>/zettel/<vault-key>/training-exports/<run-id>/train.jsonl
 <aicli-data-dir>/zettel/<vault-key>/training-exports/<run-id>/eval.jsonl
+<aicli-data-dir>/zettel/<vault-key>/training-exports/<run-id>/train.sharegpt.jsonl
+<aicli-data-dir>/zettel/<vault-key>/training-exports/<run-id>/eval.sharegpt.jsonl
 <aicli-data-dir>/zettel/<vault-key>/training-exports/<run-id>/manifest.json
 ```
 
-Use `train.jsonl` and `eval.jsonl` as the starting dataset for Unsloth or Axolotl QLoRA fine-tuning. Start with a 7B/8B instruct model on an RTX 3090. Metadata examples are intentionally excluded from this export so the model learns the merge task only.
+Use `train.jsonl` and `eval.jsonl` for chat-SFT trainers, or the `*.sharegpt.jsonl` files for ShareGPT-style trainers such as common Axolotl/Unsloth recipes. Start with a 7B/8B instruct model on an RTX 3090. Metadata examples are intentionally excluded from this export so the model learns the merge task only. The manifest includes quality counters; for a strict export, red-flag counters should be zero before training.
+
+You can also export without starting the web server:
+
+```bash
+go run ./cmd/aicli zettel-training-export \
+  -vault /path/to/vault \
+  -data-folder /path/to/aicli/zettel/<vault-key> \
+  -strict=true
+```
 
 ### Optional Obsidian workflow
 

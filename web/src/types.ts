@@ -250,8 +250,11 @@ export interface TrainingExportReport {
   archive_path: string;
   train_path: string;
   eval_path: string;
+  sharegpt_train_path?: string;
+  sharegpt_eval_path?: string;
   manifest_path: string;
   source_files?: string[];
+  strict?: boolean;
   scanned_count: number;
   exported_count: number;
   train_count: number;
@@ -259,7 +262,29 @@ export interface TrainingExportReport {
   duplicate_count: number;
   skipped_count: number;
   skipped_by_reason?: Record<string, number>;
+  quality?: TrainingQualityReport;
   api_calls?: ApiCallUsage;
+}
+
+export interface TrainingQualityReport {
+  system_prompt_variants: number;
+  primary_system_prompt_count: number;
+  examples_with_semantic_candidates: number;
+  examples_without_semantic_candidates: number;
+  examples_with_code_fences: number;
+  examples_with_duplicate_frontmatter: number;
+  examples_with_bad_note_boundaries: number;
+  examples_with_status_or_json_output: number;
+  short_assistant_count: number;
+  long_assistant_count: number;
+  total_final_notes: number;
+  max_final_notes_per_example: number;
+  min_user_chars: number;
+  max_user_chars: number;
+  average_user_chars: number;
+  min_assistant_chars: number;
+  max_assistant_chars: number;
+  average_assistant_chars: number;
 }
 
 export interface BrowserEntry {

@@ -101,8 +101,10 @@ const {
       v-if="mode === 'training'"
       :busy="busy"
       :can-run="canExportTraining"
+      :strict="config.trainingStrict"
       :report="trainingReport"
       @run="exportTrainingData"
+      @update-strict="updateConfig('trainingStrict', $event)"
     />
 
     <ZettelSettingsPanel

@@ -20,7 +20,7 @@ import {
   promptOptions,
   readZettelMode,
 } from "../features/zettel/config";
-import { buildZettelMetadataPayload, buildZettelPayload } from "../features/zettel/payload";
+import { buildZettelMetadataPayload, buildZettelPayload, buildZettelTrainingPayload } from "../features/zettel/payload";
 import { folderPickerStartPath, relativeToVault } from "../features/zettel/paths";
 import type {
   ZettelConfig,
@@ -161,7 +161,7 @@ export function useZettelWorkflow() {
     await runner.runWorkflow(
       "Exporting clean training data",
       "/api/workflows/zettel/training-export",
-      basePayload(),
+      buildZettelTrainingPayload(config),
       (output) => {
         updateApiUsage(output);
         const response = output as TrainingExportReport;

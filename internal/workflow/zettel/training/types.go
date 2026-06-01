@@ -23,8 +23,31 @@ type chatExample struct {
 }
 
 type exportRecord struct {
-	hash    string
-	example chatExample
+	hash       string
+	systemHash string
+	example    chatExample
+	quality    exampleQuality
+}
+
+type shareGPTExample struct {
+	Conversations []shareGPTMessage `json:"conversations"`
+}
+
+type shareGPTMessage struct {
+	From  string `json:"from"`
+	Value string `json:"value"`
+}
+
+type exampleQuality struct {
+	systemHash              string
+	hasSemanticCandidates   bool
+	hasCodeFence            bool
+	hasDuplicateFrontmatter bool
+	hasBadNoteBoundaries    bool
+	hasStatusOrJSONOutput   bool
+	finalNoteCount          int
+	userChars               int
+	assistantChars          int
 }
 
 func New() Runner {

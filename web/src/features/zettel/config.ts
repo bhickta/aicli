@@ -23,6 +23,7 @@ export function createZettelConfig(): ZettelConfig {
     metadataLimit: Number(localStorage.getItem("aicli.zettel.metadataLimit") || 0),
     metadataWorkers: Number(localStorage.getItem("aicli.zettel.metadataWorkers") || 1),
     metadataOverwrite: localStorage.getItem("aicli.zettel.metadataOverwrite") === "true",
+    trainingStrict: localStorage.getItem("aicli.zettel.trainingStrict") !== "false",
     dataFolder: localStorage.getItem("aicli.zettel.dataFolder") || ".aicli-zettel-merge",
     shorthandPromptPath: localStorage.getItem("aicli.zettel.shorthandPromptPath") || "example_prompts.md",
     mergeProviderId: localStorage.getItem("aicli.zettel.mergeProviderId") || legacyProviderId,
@@ -51,6 +52,7 @@ export function persistZettelConfig(config: ZettelConfig) {
   localStorage.setItem("aicli.zettel.metadataLimit", String(config.metadataLimit));
   localStorage.setItem("aicli.zettel.metadataWorkers", String(config.metadataWorkers));
   localStorage.setItem("aicli.zettel.metadataOverwrite", String(config.metadataOverwrite));
+  localStorage.setItem("aicli.zettel.trainingStrict", String(config.trainingStrict));
   localStorage.removeItem("aicli.zettel.adoptUnmatchedInbox");
   localStorage.setItem("aicli.zettel.dataFolder", config.dataFolder);
   localStorage.setItem("aicli.zettel.shorthandPromptPath", config.shorthandPromptPath);

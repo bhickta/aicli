@@ -45,19 +45,25 @@ func (r Runner) Export(
 	}
 
 	response := TrainingExportResponse{
-		RunID:           runID,
-		ArchivePath:     exportPath,
-		TrainPath:       filepath.Join(exportPath, "train.jsonl"),
-		EvalPath:        filepath.Join(exportPath, "eval.jsonl"),
-		ManifestPath:    filepath.Join(exportPath, "manifest.json"),
-		SourceFiles:     files,
-		SkippedByReason: map[string]int{},
+		RunID:             runID,
+		ArchivePath:       exportPath,
+		TrainPath:         filepath.Join(exportPath, "train.jsonl"),
+		EvalPath:          filepath.Join(exportPath, "eval.jsonl"),
+		ShareGPTTrainPath: filepath.Join(exportPath, "train.sharegpt.jsonl"),
+		ShareGPTEvalPath:  filepath.Join(exportPath, "eval.sharegpt.jsonl"),
+		ManifestPath:      filepath.Join(exportPath, "manifest.json"),
+		SourceFiles:       files,
+		Strict:            req.Strict,
+		SkippedByReason:   map[string]int{},
 	}
 	reportProgress(progress, "scanning training archives", 0, len(files), "file")
 
 	records, err := r.collectExamples(ctx, files, &response, progress)
 	if err != nil {
 		return response, err
+	}
+	if req.Strict {
+		records = applyStrictFilters(records, &response)
 	}
 	trainRecords, evalRecords := splitRecords(records)
 
@@ -67,10 +73,17 @@ func (r Runner) Export(
 	if err := writeJSONL(response.EvalPath, evalRecords); err != nil {
 		return response, err
 	}
+	if err := writeShareGPTJSONL(response.ShareGPTTrainPath, trainRecords); err != nil {
+		return response, err
+	}
+	if err := writeShareGPTJSONL(response.ShareGPTEvalPath, evalRecords); err != nil {
+		return response, err
+	}
 
 	response.ExportedCount = len(records)
 	response.TrainCount = len(trainRecords)
 	response.EvalCount = len(evalRecords)
+	response.Quality = buildQualityReport(records)
 	if err := writeManifest(response); err != nil {
 		return response, err
 	}
@@ -109,10 +122,13 @@ func (r Runner) collectExamples(
 				response.DuplicateCount++
 				return nil
 			}
+			quality := inspectExample(example)
 			seen[hash] = true
 			records = append(records, exportRecord{
-				hash:    hash,
-				example: example,
+				hash:       hash,
+				systemHash: quality.systemHash,
+				example:    example,
+				quality:    quality,
 			})
 			return nil
 		})
@@ -124,6 +140,20 @@ func (r Runner) collectExamples(
 		return records[i].hash < records[j].hash
 	})
 	return records, nil
+}
+
+func applyStrictFilters(records []exportRecord, response *TrainingExportResponse) []exportRecord {
+	primarySystemHash := mostCommonSystemPromptHash(records)
+	filtered := make([]exportRecord, 0, len(records))
+	for _, record := range records {
+		reason := strictSkipReason(record.quality, primarySystemHash)
+		if reason != "" {
+			addSkipped(response, reason)
+			continue
+		}
+		filtered = append(filtered, record)
+	}
+	return filtered
 }
 
 func addSkipped(response *TrainingExportResponse, reason string) {

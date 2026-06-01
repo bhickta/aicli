@@ -31,3 +31,10 @@ export function buildZettelMetadataPayload(config: ZettelConfig) {
     metadata_overwrite: config.metadataOverwrite,
   };
 }
+
+export function buildZettelTrainingPayload(config: ZettelConfig) {
+  return {
+    ...buildZettelPayload(config),
+    strict: config.trainingStrict,
+  };
+}

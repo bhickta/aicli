@@ -13,6 +13,7 @@ export interface ZettelConfig {
   metadataLimit: number;
   metadataWorkers: number;
   metadataOverwrite: boolean;
+  trainingStrict: boolean;
   dataFolder: string;
   shorthandPromptPath: string;
   mergeProviderId: string;
