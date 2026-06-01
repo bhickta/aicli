@@ -3,7 +3,6 @@ package video
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 )
 
@@ -30,10 +29,9 @@ func (s *Service) exportCourseParts(ctx context.Context, targetDir string, cours
 }
 
 type courseArtifact struct {
-	videoPath    string
-	tmpVideoPath string
-	srtPath      string
-	textPath     string
+	videoPath string
+	srtPath   string
+	textPath  string
 }
 
 func courseArtifactPaths(courseDir string, folderName string, multipart bool, index int) courseArtifact {
@@ -42,10 +40,9 @@ func courseArtifactPaths(courseDir string, folderName string, multipart bool, in
 		suffix = fmt.Sprintf("_Part%d", index+1)
 	}
 	return courseArtifact{
-		videoPath:    filepath.Join(courseDir, folderName+suffix+"_Slideshow.mp4"),
-		tmpVideoPath: filepath.Join(courseDir, folderName+suffix+"_tmp.mp4"),
-		srtPath:      filepath.Join(courseDir, folderName+suffix+".srt"),
-		textPath:     filepath.Join(courseDir, folderName+suffix+".txt"),
+		videoPath: filepath.Join(courseDir, folderName+suffix+"_Slideshow.mp4"),
+		srtPath:   filepath.Join(courseDir, folderName+suffix+".srt"),
+		textPath:  filepath.Join(courseDir, folderName+suffix+".txt"),
 	}
 }
 
@@ -53,15 +50,14 @@ func (s *Service) writeCoursePart(ctx context.Context, part []CourseItem, artifa
 	if err := s.mergeSRTs(ctx, part, artifact.srtPath); err != nil {
 		return err
 	}
-	if err := s.mergeVideos(ctx, part, artifact.tmpVideoPath); err != nil {
-		return err
-	}
-	if _, err := os.Stat(artifact.srtPath); err == nil {
-		if err := s.embedSRT(ctx, artifact.tmpVideoPath, artifact.srtPath, artifact.videoPath); err != nil {
+	if fileExists(artifact.srtPath) {
+		if err := s.mergeVideosWithSRT(ctx, part, artifact.srtPath, artifact.videoPath); err != nil {
 			return err
 		}
-	} else if err := os.Rename(artifact.tmpVideoPath, artifact.videoPath); err != nil {
-		return err
+	} else {
+		if err := s.mergeVideos(ctx, part, artifact.videoPath); err != nil {
+			return err
+		}
 	}
 	return mergeTranscripts(part, artifact.textPath)
 }

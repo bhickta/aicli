@@ -184,6 +184,46 @@ func TestCourseTempCompressionSkipsRedundantSubtitleMuxingAndFaststart(t *testin
 	t.Fatalf("no course temp compression ffmpeg call found: %#v", runner.calls)
 }
 
+func TestCourseFinalMergeEmbedsSRTInSinglePass(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	first := filepath.Join(dir, "01 intro.mp4")
+	second := filepath.Join(dir, "02 lesson.mp4")
+	writeCourseVideoWithSRT(t, first)
+	writeCourseVideoWithSRT(t, second)
+
+	runner := &courseRunner{}
+	_, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, runner).Course(
+		context.Background(),
+		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2"},
+	)
+	if err != nil {
+		t.Fatalf("Course() error = %v", err)
+	}
+	finalVideo := filepath.Join(dir, "Course", filepath.Base(dir)+"_Slideshow.mp4")
+	finalSRT := filepath.Join(dir, "Course", filepath.Base(dir)+".srt")
+	for _, call := range runner.calls {
+		if call.command != "ffmpeg" || len(call.args) == 0 {
+			continue
+		}
+		if strings.Contains(strings.Join(call.args, " "), "_tmp.mp4") {
+			t.Fatalf("ffmpeg args = %#v, did not want tmp final video pass", call.args)
+		}
+		if call.args[len(call.args)-1] != finalVideo {
+			continue
+		}
+		args := strings.Join(call.args, " ")
+		for _, want := range []string{"-f concat", "-i " + finalSRT, "-map 1:s:0", "-c copy", "-c:s mov_text"} {
+			if !strings.Contains(args, want) {
+				t.Fatalf("final merge args = %q, want contains %q", args, want)
+			}
+		}
+		return
+	}
+	t.Fatalf("no final single-pass merge call found: %#v", runner.calls)
+}
+
 func TestCourseUsesOptionalWorkDirForCache(t *testing.T) {
 	t.Parallel()
 
