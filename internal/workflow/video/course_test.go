@@ -227,7 +227,7 @@ func TestCourseFinalMergeEmbedsSRTInSinglePass(t *testing.T) {
 			continue
 		}
 		args := strings.Join(call.args, " ")
-		for _, want := range []string{"-f concat", "-i " + finalSRT, "-map 1:s:0", "-c copy", "-c:s mov_text"} {
+		for _, want := range []string{"-fflags +genpts", "-f concat", "-i " + finalSRT, "-map 1:s:0", "-avoid_negative_ts make_zero", "-c copy", "-c:s mov_text"} {
 			if !strings.Contains(args, want) {
 				t.Fatalf("final merge args = %q, want contains %q", args, want)
 			}
@@ -261,6 +261,7 @@ func TestCourseFinalMergeFallsBackWhenSinglePassFails(t *testing.T) {
 	sawFailedOnePass := false
 	sawFallbackConcat := false
 	sawFallbackEmbed := false
+	sawFallbackTimestampRepair := false
 	for _, call := range runner.calls {
 		if call.command != "ffmpeg" || len(call.args) == 0 {
 			continue
@@ -271,15 +272,61 @@ func TestCourseFinalMergeFallsBackWhenSinglePassFails(t *testing.T) {
 			sawFailedOnePass = true
 		case call.args[len(call.args)-1] == tmpVideo && strings.Contains(args, "-f concat"):
 			sawFallbackConcat = true
+			sawFallbackTimestampRepair = strings.Contains(args, "-fflags +genpts") && strings.Contains(args, "-avoid_negative_ts make_zero")
 		case call.args[len(call.args)-1] == finalVideo && strings.Contains(args, tmpVideo):
 			sawFallbackEmbed = true
 		}
 	}
-	if !sawFailedOnePass || !sawFallbackConcat || !sawFallbackEmbed {
-		t.Fatalf("fallback calls missing: onepass=%v concat=%v embed=%v calls=%#v", sawFailedOnePass, sawFallbackConcat, sawFallbackEmbed, runner.calls)
+	if !sawFailedOnePass || !sawFallbackConcat || !sawFallbackEmbed || !sawFallbackTimestampRepair {
+		t.Fatalf("fallback calls missing: onepass=%v concat=%v embed=%v repair=%v calls=%#v", sawFailedOnePass, sawFallbackConcat, sawFallbackEmbed, sawFallbackTimestampRepair, runner.calls)
 	}
 	if fileExists(tmpVideo) {
 		t.Fatalf("temporary fallback video was not cleaned up: %s", tmpVideo)
+	}
+}
+
+func TestMergeSRTsNormalizesBlocksWhenDurationProbeFails(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	firstSRT := filepath.Join(dir, "first.srt")
+	secondSRT := filepath.Join(dir, "second.srt")
+	if err := os.WriteFile(firstSRT, []byte("1\n00:00:00,000 --> 00:00:03,000\nfirst\n\n2\n00:00:20,000 --> 00:05:20,000\nlong block\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secondSRT, []byte("1\n00:00:01,000 --> 00:00:04,000\nsecond\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	firstOutput := filepath.Join(dir, "first.mp4")
+	secondOutput := filepath.Join(dir, "second.mp4")
+	runner := &courseRunner{ffprobeFailures: map[string]bool{firstOutput: true, secondOutput: true}}
+	svc := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, runner)
+	output := filepath.Join(dir, "merged.srt")
+	err := svc.mergeSRTs(context.Background(), []CourseItem{
+		{Output: firstOutput, SRTPath: firstSRT},
+		{Output: secondOutput, SRTPath: secondSRT},
+	}, output)
+	if err != nil {
+		t.Fatalf("mergeSRTs() error = %v", err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged := string(data)
+	for _, want := range []string{
+		"00:00:20,000 --> 00:02:20,000",
+		"00:02:21,000 --> 00:02:24,000",
+		"long block",
+		"second",
+	} {
+		if !strings.Contains(merged, want) {
+			t.Fatalf("merged SRT = %q, want contains %q", merged, want)
+		}
+	}
+	if strings.Contains(merged, "00:05:20,000") {
+		t.Fatalf("merged SRT kept pathological subtitle duration: %q", merged)
 	}
 }
 

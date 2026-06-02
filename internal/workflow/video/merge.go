@@ -5,9 +5,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	maxCourseSRTBlockDuration = 2 * time.Minute
+	minCourseSRTBlockDuration = time.Second
 )
 
 func chunkCourseItems(ctx context.Context, svc *Service, items []CourseItem, maxMergeHours float64) ([][]CourseItem, error) {
@@ -61,7 +67,7 @@ func (s *Service) mergeVideos(ctx context.Context, items []CourseItem, outputPat
 		return err
 	}
 	defer cleanup()
-	out, err := s.runner.CombinedOutput(ctx, s.tools.FFmpeg, "-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outputPath)
+	out, err := s.runner.CombinedOutput(ctx, s.tools.FFmpeg, "-y", "-fflags", "+genpts", "-f", "concat", "-safe", "0", "-i", listPath, "-avoid_negative_ts", "make_zero", "-c", "copy", outputPath)
 	if err != nil {
 		return errors.New(strings.TrimSpace(string(out)) + ": " + err.Error())
 	}
@@ -81,6 +87,7 @@ func (s *Service) mergeVideosWithSRT(ctx context.Context, items []CourseItem, sr
 		ctx,
 		s.tools.FFmpeg,
 		"-y",
+		"-fflags", "+genpts",
 		"-f", "concat",
 		"-safe", "0",
 		"-i", listPath,
@@ -88,6 +95,7 @@ func (s *Service) mergeVideosWithSRT(ctx context.Context, items []CourseItem, sr
 		"-map", "0:v:0",
 		"-map", "0:a?",
 		"-map", "1:s:0",
+		"-avoid_negative_ts", "make_zero",
 		"-c", "copy",
 		"-c:s", "mov_text",
 		outputPath,
@@ -118,11 +126,13 @@ func (s *Service) mergeSRTs(ctx context.Context, items []CourseItem, outputPath 
 	offset := time.Duration(0)
 	index := 1
 	for _, item := range items {
+		segmentDuration := time.Duration(0)
 		if item.SRTPath != "" && fileExists(item.SRTPath) {
 			blocks, err := parseSRT(item.SRTPath)
 			if err != nil {
 				return err
 			}
+			blocks, segmentDuration = normalizeCourseSRTBlocks(blocks)
 			for _, block := range blocks {
 				builder.WriteString(strconv.Itoa(index))
 				builder.WriteString("\n")
@@ -136,16 +146,57 @@ func (s *Service) mergeSRTs(ctx context.Context, items []CourseItem, outputPath 
 			}
 		}
 		duration, err := s.duration(ctx, item.Output)
-		if err != nil {
-			duration = 0
+		if err == nil {
+			probedDuration := time.Duration(duration * float64(time.Second))
+			if probedDuration > segmentDuration {
+				segmentDuration = probedDuration
+			}
 		}
-		offset += time.Duration(duration * float64(time.Second))
+		offset += segmentDuration
 	}
 	if builder.Len() == 0 {
 		_ = os.Remove(outputPath)
 		return nil
 	}
 	return os.WriteFile(outputPath, []byte(builder.String()), 0o644)
+}
+
+func normalizeCourseSRTBlocks(blocks []srtBlock) ([]srtBlock, time.Duration) {
+	if len(blocks) == 0 {
+		return nil, 0
+	}
+	normalized := append([]srtBlock(nil), blocks...)
+	sort.SliceStable(normalized, func(i, j int) bool {
+		if normalized[i].start == normalized[j].start {
+			return normalized[i].end < normalized[j].end
+		}
+		return normalized[i].start < normalized[j].start
+	})
+	for i := range normalized {
+		block := &normalized[i]
+		if block.end <= block.start {
+			block.end = block.start + minCourseSRTBlockDuration
+		}
+		if i+1 < len(normalized) {
+			nextStart := normalized[i+1].start
+			if nextStart > block.start && block.end > nextStart {
+				block.end = nextStart - time.Millisecond
+			}
+		}
+		if block.end-block.start > maxCourseSRTBlockDuration {
+			block.end = block.start + maxCourseSRTBlockDuration
+		}
+		if block.end <= block.start {
+			block.end = block.start + minCourseSRTBlockDuration
+		}
+	}
+	segmentDuration := time.Duration(0)
+	for _, block := range normalized {
+		if block.end > segmentDuration {
+			segmentDuration = block.end
+		}
+	}
+	return normalized, segmentDuration
 }
 
 func (s *Service) embedSRT(ctx context.Context, videoPath, srtPath, outputPath string) error {
