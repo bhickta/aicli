@@ -78,6 +78,75 @@ func (s *SQLiteStore) ListJobs(ctx context.Context) ([]Job, error) {
 	return jobs, rows.Err()
 }
 
+func (s *SQLiteStore) ListJobsFiltered(ctx context.Context, opts JobListOptions) ([]Job, error) {
+	limit := normalizedJobListLimit(opts.Limit)
+	status := opts.Status
+	if status == "" || status == "recent" {
+		return s.queryJobs(ctx, `SELECT id, type, status, stage, progress, current_step, total_steps, eta_seconds, progress_mode, completed_units, total_units, unit_label, progress_started_at, progress_ends_at, input, output, error, created_at, updated_at, finished_at FROM jobs ORDER BY created_at DESC LIMIT ?`, limit)
+	}
+	if status == "all" {
+		return s.queryJobs(ctx, `SELECT id, type, status, stage, progress, current_step, total_steps, eta_seconds, progress_mode, completed_units, total_units, unit_label, progress_started_at, progress_ends_at, input, output, error, created_at, updated_at, finished_at FROM jobs ORDER BY created_at DESC LIMIT ?`, limit)
+	}
+	if status == "finished" {
+		return s.queryJobs(ctx, `SELECT id, type, status, stage, progress, current_step, total_steps, eta_seconds, progress_mode, completed_units, total_units, unit_label, progress_started_at, progress_ends_at, input, output, error, created_at, updated_at, finished_at FROM jobs WHERE status IN (?, ?, ?) ORDER BY created_at DESC LIMIT ?`, JobStatusCompleted, JobStatusFailed, JobStatusCancelled, limit)
+	}
+	return s.queryJobs(ctx, `SELECT id, type, status, stage, progress, current_step, total_steps, eta_seconds, progress_mode, completed_units, total_units, unit_label, progress_started_at, progress_ends_at, input, output, error, created_at, updated_at, finished_at FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?`, status, limit)
+}
+
+func (s *SQLiteStore) queryJobs(ctx context.Context, query string, args ...any) ([]Job, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	jobs := []Job{}
+	for rows.Next() {
+		var job Job
+		if err := scanJob(rows, &job); err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
+}
+
+func normalizedJobListLimit(limit int) int {
+	if limit <= 0 {
+		return 20
+	}
+	if limit > 200 {
+		return 200
+	}
+	return limit
+}
+
+func (s *SQLiteStore) DeleteFinishedJobs(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM jobs WHERE status IN (?, ?, ?)`, JobStatusCompleted, JobStatusFailed, JobStatusCancelled)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (s *SQLiteStore) MarkRunningJobsInterrupted(ctx context.Context, reason string) (int64, error) {
+	now := time.Now().UTC()
+	res, err := s.db.ExecContext(
+		ctx,
+		`UPDATE jobs SET status = ?, stage = ?, error = ?, updated_at = ?, finished_at = ? WHERE status = ?`,
+		JobStatusFailed,
+		"interrupted",
+		reason,
+		now,
+		now,
+		JobStatusRunning,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (s *SQLiteStore) UpdateJob(ctx context.Context, job Job) error {
 	job.UpdatedAt = time.Now().UTC()
 	res, err := s.db.ExecContext(

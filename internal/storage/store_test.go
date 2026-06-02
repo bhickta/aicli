@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestSQLiteStoreJobLifecycle(t *testing.T) {
@@ -66,6 +67,102 @@ func TestSQLiteStoreGetJobNotFound(t *testing.T) {
 	_, err = store.GetJob(context.Background(), "missing")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("GetJob() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestSQLiteStoreListJobsFiltered(t *testing.T) {
+	t.Parallel()
+
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	store := NewSQLiteStore(db)
+	if err := store.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 6, 2, 8, 0, 0, 0, time.UTC)
+	for i, job := range []Job{
+		{ID: "old", Type: "ocr", Status: JobStatusCompleted, CreatedAt: base.Add(-2 * time.Hour)},
+		{ID: "failed", Type: "video", Status: JobStatusFailed, CreatedAt: base.Add(-time.Hour)},
+		{ID: "running", Type: "video", Status: JobStatusRunning, CreatedAt: base},
+	} {
+		job.UpdatedAt = job.CreatedAt
+		if err := store.CreateJob(context.Background(), job); err != nil {
+			t.Fatalf("CreateJob(%d) error = %v", i, err)
+		}
+	}
+
+	recent, err := store.ListJobsFiltered(context.Background(), JobListOptions{Status: "recent", Limit: 2})
+	if err != nil {
+		t.Fatalf("ListJobsFiltered(recent) error = %v", err)
+	}
+	if len(recent) != 2 || recent[0].ID != "running" || recent[1].ID != "failed" {
+		t.Fatalf("recent jobs = %#v, want running then failed", recent)
+	}
+
+	running, err := store.ListJobsFiltered(context.Background(), JobListOptions{Status: JobStatusRunning, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListJobsFiltered(running) error = %v", err)
+	}
+	if len(running) != 1 || running[0].ID != "running" {
+		t.Fatalf("running jobs = %#v, want only running", running)
+	}
+}
+
+func TestSQLiteStoreDeletesFinishedAndMarksRunningInterrupted(t *testing.T) {
+	t.Parallel()
+
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	store := NewSQLiteStore(db)
+	if err := store.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range []Job{
+		{ID: "running", Type: "video", Status: JobStatusRunning},
+		{ID: "completed", Type: "ocr", Status: JobStatusCompleted},
+		{ID: "cancelled", Type: "ocr", Status: JobStatusCancelled},
+	} {
+		if err := store.CreateJob(context.Background(), job); err != nil {
+			t.Fatalf("CreateJob(%s) error = %v", job.ID, err)
+		}
+	}
+
+	interrupted, err := store.MarkRunningJobsInterrupted(context.Background(), "interrupted by restart")
+	if err != nil {
+		t.Fatalf("MarkRunningJobsInterrupted() error = %v", err)
+	}
+	if interrupted != 1 {
+		t.Fatalf("interrupted = %d, want 1", interrupted)
+	}
+	running, err := store.GetJob(context.Background(), "running")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if running.Status != JobStatusFailed || running.Stage != "interrupted" || running.Error != "interrupted by restart" || running.FinishedAt.IsZero() {
+		t.Fatalf("running job after interrupt = %#v", running)
+	}
+
+	deleted, err := store.DeleteFinishedJobs(context.Background())
+	if err != nil {
+		t.Fatalf("DeleteFinishedJobs() error = %v", err)
+	}
+	if deleted != 3 {
+		t.Fatalf("deleted = %d, want 3", deleted)
+	}
+	jobs, err := store.ListJobs(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("jobs after delete = %#v, want none", jobs)
 	}
 }
 

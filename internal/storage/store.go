@@ -38,6 +38,11 @@ type Store interface {
 	UpdateJob(ctx context.Context, job Job) error
 }
 
+type JobListOptions struct {
+	Status string
+	Limit  int
+}
+
 var ErrNotFound = errors.New("not found")
 
 type SQLiteStore struct {

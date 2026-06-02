@@ -62,6 +62,7 @@ func (s *Server) routes() {
 		ProviderFor: s.providerFor,
 	}).Register(s.mux)
 	s.mux.HandleFunc("GET /api/jobs", s.listJobs)
+	s.mux.HandleFunc("DELETE /api/jobs", s.clearJobs)
 	s.mux.HandleFunc("POST /api/jobs", s.createJob)
 	s.mux.HandleFunc("GET /api/jobs/", s.getJob)
 	s.mux.Handle("/", http.FileServerFS(web.Static()))
@@ -89,7 +90,7 @@ func (s *Server) withLogging(next http.Handler) http.Handler {
 }
 
 func shouldLogRequest(r *http.Request) bool {
-	return !(r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/jobs/"))
+	return !(r.Method == http.MethodGet && (r.URL.Path == "/api/jobs" || strings.HasPrefix(r.URL.Path, "/api/jobs/")))
 }
 
 type statusRecorder struct {

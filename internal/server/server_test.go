@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sort"
 
 	"github.com/bhickta/aicli/internal/config"
 	"github.com/bhickta/aicli/internal/provider/registry"
@@ -31,11 +32,31 @@ func (m *memoryStore) ListJobs(_ context.Context) ([]storage.Job, error) {
 	for _, job := range m.jobs {
 		jobs = append(jobs, job)
 	}
+	sort.Slice(jobs, func(i, j int) bool {
+		return jobs[i].CreatedAt.After(jobs[j].CreatedAt)
+	})
 	return jobs, nil
+}
+func (m *memoryStore) ListJobsFiltered(ctx context.Context, opts storage.JobListOptions) ([]storage.Job, error) {
+	jobs, err := m.ListJobs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return filterJobs(jobs, opts), nil
 }
 func (m *memoryStore) UpdateJob(_ context.Context, job storage.Job) error {
 	m.jobs[job.ID] = job
 	return nil
+}
+func (m *memoryStore) DeleteFinishedJobs(_ context.Context) (int64, error) {
+	var deleted int64
+	for id, job := range m.jobs {
+		if job.Status == storage.JobStatusCompleted || job.Status == storage.JobStatusFailed || job.Status == storage.JobStatusCancelled {
+			delete(m.jobs, id)
+			deleted++
+		}
+	}
+	return deleted, nil
 }
 
 func testHandler() http.Handler {
@@ -48,11 +69,15 @@ func testHandlerWithDataDir(dataDir string) http.Handler {
 }
 
 func testHandlerWithSettings(settings config.Settings, dataDir string) http.Handler {
+	return testHandlerWithSettingsAndStore(settings, dataDir, &memoryStore{jobs: map[string]storage.Job{}})
+}
+
+func testHandlerWithSettingsAndStore(settings config.Settings, dataDir string, store storage.Store) http.Handler {
 	return New(Dependencies{
 		Logger:    slog.Default(),
 		DataDir:   dataDir,
 		Settings:  settings,
-		Store:     &memoryStore{jobs: map[string]storage.Job{}},
+		Store:     store,
 		Providers: registry.New(settings.Providers, settings.Tools),
 	})
 }

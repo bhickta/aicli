@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"database/sql"
 	"log/slog"
 	"net/http"
@@ -45,6 +46,14 @@ func New(opts Options, logger *slog.Logger) (*App, error) {
 	if err := store.Migrate(); err != nil {
 		_ = db.Close()
 		return nil, err
+	}
+	interrupted, err := store.MarkRunningJobsInterrupted(context.Background(), "interrupted by AICLI restart")
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if interrupted > 0 && logger != nil {
+		logger.Info("marked interrupted jobs", "count", interrupted)
 	}
 
 	providers := registry.New(settings.Providers, settings.Tools)
