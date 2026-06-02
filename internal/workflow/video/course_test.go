@@ -637,6 +637,74 @@ func TestCourseWithProgressReportsPerVideoCompletion(t *testing.T) {
 	}
 }
 
+func TestCourseWithProgressDoesNotReportFullCompletionBeforeCourseCompleted(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	first := filepath.Join(dir, "01 intro.mp4")
+	second := filepath.Join(dir, "02 lesson.mp4")
+	writeCourseVideoWithSRT(t, first)
+	writeCourseVideoWithSRT(t, second)
+
+	_, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, &courseRunner{}).CourseWithProgress(
+		context.Background(),
+		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2", MaxMergeHours: 0.0001, Workers: 1},
+		func(update progressmodel.Update) {
+			if !strings.Contains(update.Stage, "completed course") && update.TotalUnits > 0 && update.CompletedUnits >= update.TotalUnits {
+				t.Fatalf("intermediate progress reported full completion: %#v", update)
+			}
+		},
+	)
+	if err != nil {
+		t.Fatalf("CourseWithProgress() error = %v", err)
+	}
+}
+
+func TestFinalizePipelineMissingTranscriptsSkipsAlreadyQueuedItems(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	source := filepath.Join(dir, "01 intro.mp4")
+	if err := os.WriteFile(source, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cacheDir := filepath.Join(dir, ".aicli_cache")
+
+	called := false
+	err := finalizePipelineMissingTranscripts(
+		[]pipelineCourseItem{{index: 3, item: CourseItem{Source: source}}},
+		cacheDir,
+		func(index int) bool { return index == 3 },
+		func(int, bool) { called = true },
+	)
+	if err != nil {
+		t.Fatalf("finalizePipelineMissingTranscripts() error = %v, want nil for already queued item", err)
+	}
+	if called {
+		t.Fatal("enqueue called for already queued item")
+	}
+}
+
+func TestFinalizePipelineMissingTranscriptsRequiresCacheForUnqueuedItems(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	source := filepath.Join(dir, "01 intro.mp4")
+	if err := os.WriteFile(source, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := finalizePipelineMissingTranscripts(
+		[]pipelineCourseItem{{index: 3, item: CourseItem{Source: source}}},
+		filepath.Join(dir, ".aicli_cache"),
+		func(int) bool { return false },
+		func(int, bool) { t.Fatal("enqueue called without transcript cache") },
+	)
+	if err == nil || !strings.Contains(err.Error(), "did not produce both .srt and .txt") {
+		t.Fatalf("finalizePipelineMissingTranscripts() error = %v, want missing transcript cache error", err)
+	}
+}
+
 func writeCourseVideoWithSRT(t *testing.T, path string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte("video"), 0o644); err != nil {

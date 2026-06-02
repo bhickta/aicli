@@ -108,6 +108,11 @@ func (s *Service) runCoursePipeline(
 		case <-ctx.Done():
 		}
 	}
+	isEnqueued := func(index int) bool {
+		enqueueMu.Lock()
+		defer enqueueMu.Unlock()
+		return index >= 0 && index < len(enqueued) && enqueued[index]
+	}
 
 	var workerWG sync.WaitGroup
 	workers := normalizedCourseWorkers(courseCompressionWorkers(req), len(files))
@@ -186,12 +191,9 @@ func (s *Service) runCoursePipeline(
 			if !ok {
 				return
 			}
-			cacheSRT, cacheText, _ := transcriptPaths(file, cacheDir)
-			if !fileExists(cacheText) && fileExists(cacheSRT) {
-				if err := writeTranscriptText(cacheSRT, cacheText); err != nil {
-					setErr(err)
-					return
-				}
+			if err := ensurePipelineTranscriptCache(file, cacheDir); err != nil {
+				setErr(err)
+				return
 			}
 			currentFiles := int(completedTranscripts.Add(1))
 			currentUnits := int(completedUnits.Add(int64(progressPlan.transcriptUnits(file))))
@@ -212,19 +214,8 @@ func (s *Service) runCoursePipeline(
 			}
 		}
 		if getErr() == nil && !fallback {
-			for _, item := range missing {
-				cacheSRT, cacheText, _ := transcriptPaths(item.item.Source, cacheDir)
-				if !fileExists(cacheText) && fileExists(cacheSRT) {
-					if err := writeTranscriptText(cacheSRT, cacheText); err != nil {
-						setErr(err)
-						break
-					}
-				}
-				if !fileExists(cacheSRT) || !fileExists(cacheText) {
-					setErr(errors.New("faster-whisper did not produce both .srt and .txt for " + filepath.Base(item.item.Source)))
-					break
-				}
-				enqueue(item.index, true)
+			if err := finalizePipelineMissingTranscripts(missing, cacheDir, isEnqueued, enqueue); err != nil {
+				setErr(err)
 			}
 		}
 	}
@@ -239,6 +230,32 @@ func (s *Service) runCoursePipeline(
 	}
 	reportCourseProgress(progress, progressmodel.Units("completed course video, subtitles, and transcript", progressPlan.totalUnits, progressPlan.totalUnits, "video second"))
 	return aggregated, true, nil
+}
+
+func finalizePipelineMissingTranscripts(missing []pipelineCourseItem, cacheDir string, isEnqueued func(int) bool, enqueue func(int, bool)) error {
+	for _, item := range missing {
+		if isEnqueued(item.index) {
+			continue
+		}
+		if err := ensurePipelineTranscriptCache(item.item.Source, cacheDir); err != nil {
+			return err
+		}
+		enqueue(item.index, true)
+	}
+	return nil
+}
+
+func ensurePipelineTranscriptCache(file string, cacheDir string) error {
+	cacheSRT, cacheText, _ := transcriptPaths(file, cacheDir)
+	if !fileExists(cacheText) && fileExists(cacheSRT) {
+		if err := writeTranscriptText(cacheSRT, cacheText); err != nil {
+			return err
+		}
+	}
+	if !fileExists(cacheSRT) || !fileExists(cacheText) {
+		return errors.New("faster-whisper did not produce both .srt and .txt for " + filepath.Base(file))
+	}
+	return nil
 }
 
 type pipelineAggregation struct {
@@ -300,7 +317,7 @@ func (s *Service) exportReadyCourseParts(ctx context.Context, state pipelineAggr
 		}
 		reportCourseProgress(state.progress, progressmodel.Units(
 			fmt.Sprintf("merging verified course part %d/%d", partIndex+1, len(state.parts)),
-			min(int(state.completedUnits.Load())+1, state.totalUnits),
+			activeCourseProgressUnits(int(state.completedUnits.Load())+1, state.totalUnits),
 			state.totalUnits,
 			"video second",
 		))
@@ -328,11 +345,28 @@ func (s *Service) exportReadyCourseParts(ctx context.Context, state pipelineAggr
 		exported[partIndex] = true
 		reportCourseProgress(state.progress, progressmodel.Units(
 			fmt.Sprintf("verified course part %d/%d", partIndex+1, len(state.parts)),
-			state.totalUnits,
+			activeCourseProgressUnits(int(state.completedUnits.Load())+1, state.totalUnits),
 			state.totalUnits,
 			"video second",
 		))
 	}
+}
+
+func activeCourseProgressUnits(completed int, total int) int {
+	if total <= 0 {
+		return 0
+	}
+	if completed < 0 {
+		completed = 0
+	}
+	capUnits := total - 1
+	if total >= 100 {
+		capUnits = min(capUnits, int(math.Floor(float64(total)*0.99)))
+	}
+	if capUnits < 0 {
+		capUnits = 0
+	}
+	return min(completed, capUnits)
 }
 
 func preparePipelineCourseItems(files []string, targetNames []string, cacheDir string, slidesDir string) ([]CourseItem, []pipelineCourseItem, []pipelineCourseItem, error) {
