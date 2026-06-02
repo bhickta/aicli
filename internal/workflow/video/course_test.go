@@ -16,6 +16,7 @@ type courseRunner struct {
 	mu              sync.Mutex
 	calls           []runnerCall
 	ffprobeFailures map[string]bool
+	failOnePassSRT  bool
 }
 
 func (r *courseRunner) CombinedOutput(_ context.Context, command string, args ...string) ([]byte, error) {
@@ -31,6 +32,9 @@ func (r *courseRunner) CombinedOutput(_ context.Context, command string, args ..
 	if command == "whisper-cli" {
 		return writeWhisperOutputs(args)
 	}
+	if command == "ffmpeg" && r.failOnePassSRT && hasArg(args, "-f") && hasArg(args, "concat") && hasArg(args, "-map") && hasArg(args, "1:s:0") {
+		return []byte("Packet duration is out of range"), os.ErrInvalid
+	}
 	if len(args) > 0 {
 		outPath := args[len(args)-1]
 		if filepath.IsAbs(outPath) || strings.HasSuffix(outPath, ".mp4") {
@@ -43,6 +47,15 @@ func (r *courseRunner) CombinedOutput(_ context.Context, command string, args ..
 		}
 	}
 	return []byte("ok"), nil
+}
+
+func hasArg(args []string, value string) bool {
+	for _, arg := range args {
+		if arg == value {
+			return true
+		}
+	}
+	return false
 }
 
 func writeWhisperOutputs(args []string) ([]byte, error) {
@@ -222,6 +235,52 @@ func TestCourseFinalMergeEmbedsSRTInSinglePass(t *testing.T) {
 		return
 	}
 	t.Fatalf("no final single-pass merge call found: %#v", runner.calls)
+}
+
+func TestCourseFinalMergeFallsBackWhenSinglePassFails(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	first := filepath.Join(dir, "01 intro.mp4")
+	second := filepath.Join(dir, "02 lesson.mp4")
+	writeCourseVideoWithSRT(t, first)
+	writeCourseVideoWithSRT(t, second)
+
+	runner := &courseRunner{failOnePassSRT: true}
+	res, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, runner).Course(
+		context.Background(),
+		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2"},
+	)
+	if err != nil {
+		t.Fatalf("Course() error = %v", err)
+	}
+	assertCourseArtifacts(t, dir, res)
+
+	finalVideo := filepath.Join(dir, "Course", filepath.Base(dir)+"_Slideshow.mp4")
+	tmpVideo := courseTmpVideoPath(finalVideo)
+	sawFailedOnePass := false
+	sawFallbackConcat := false
+	sawFallbackEmbed := false
+	for _, call := range runner.calls {
+		if call.command != "ffmpeg" || len(call.args) == 0 {
+			continue
+		}
+		args := strings.Join(call.args, " ")
+		switch {
+		case call.args[len(call.args)-1] == finalVideo && strings.Contains(args, "-f concat") && strings.Contains(args, "-map 1:s:0"):
+			sawFailedOnePass = true
+		case call.args[len(call.args)-1] == tmpVideo && strings.Contains(args, "-f concat"):
+			sawFallbackConcat = true
+		case call.args[len(call.args)-1] == finalVideo && strings.Contains(args, tmpVideo):
+			sawFallbackEmbed = true
+		}
+	}
+	if !sawFailedOnePass || !sawFallbackConcat || !sawFallbackEmbed {
+		t.Fatalf("fallback calls missing: onepass=%v concat=%v embed=%v calls=%#v", sawFailedOnePass, sawFallbackConcat, sawFallbackEmbed, runner.calls)
+	}
+	if fileExists(tmpVideo) {
+		t.Fatalf("temporary fallback video was not cleaned up: %s", tmpVideo)
+	}
 }
 
 func TestCourseUsesOptionalWorkDirForCache(t *testing.T) {
