@@ -41,6 +41,10 @@ export const activeWorkflow = computed(() => {
 });
 
 export function selectWorkflowCategory(category: string) {
+  if (category === "Zettel") {
+    appState.view = "zettel";
+    return;
+  }
   appState.workflow.category = category;
   appState.workflow.workflowId = activeWorkflowDefinitions.value[0]?.id || "";
 }

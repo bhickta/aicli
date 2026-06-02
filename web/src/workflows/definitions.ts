@@ -8,7 +8,7 @@ import { studyWorkflowDefinitions } from "./study";
 import { videoWorkflowDefinitions } from "./video";
 import { whatsappWorkflowDefinitions } from "./whatsapp";
 
-export const workflowCategories = ["Study", "Codex", "Documents", "Images", "Audio", "Video", "WhatsApp", "News"];
+export const workflowCategories = ["Study", "Zettel", "Codex", "Documents", "Images", "Audio", "Video", "WhatsApp", "News"];
 
 export const workflowDefinitions: WorkflowDefinition[] = [
   ...studyWorkflowDefinitions,
