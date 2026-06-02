@@ -48,7 +48,7 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 	resources := systemresources.Collect(ctx)
 	req = withCourseWorkerDefaults(req, len(files), resources)
 	progressPlan := newCourseProgressPlan(files, durations, cacheDir)
-	reportCourseProgress(progress, progressmodel.Units(courseStartStage(len(files), len(skipped)), 0, progressPlan.totalUnits, "video second"))
+	reportCourseProgress(progress, progressmodel.Units(courseStartStage(len(files), len(skipped)), 0, progressPlan.totalUnits, courseProgressUnitLabel))
 
 	if response, pipelined, err := s.runCoursePipeline(ctx, targetDir, courseDir, cacheDir, slidesDir, files, durations, skipped, req, progressPlan, progress); pipelined {
 		return s.finishCourse(ctx, req, response, err, progress)
@@ -64,7 +64,7 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 			fmt.Sprintf("transcribed %d/%d video(s) with faster-whisper; compressing", len(batchTranscribed), progressPlan.missingTranscriptCount),
 			completedUnits,
 			progressPlan.totalUnits,
-			"video second",
+			courseProgressUnitLabel,
 		))
 	}
 
@@ -79,7 +79,7 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 		"merging course video, subtitles, and transcript",
 		progressPlan.totalUnits-1,
 		progressPlan.totalUnits,
-		"video second",
+		courseProgressUnitLabel,
 	))
 	response, err := s.exportCourseParts(ctx, targetDir, courseDir, req.OutputName, items, transcribed, skipped, req.MaxMergeHours)
 	return s.finishCourse(ctx, req, response, err, progress)

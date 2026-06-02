@@ -120,7 +120,7 @@ func (s *Service) prepareMissingTranscriptsWithFasterWhisper(ctx context.Context
 			fmt.Sprintf("transcribed %d/%d video(s): %s", currentFile, len(missing), filepath.Base(file)),
 			currentUnits,
 			totalUnits,
-			"video second",
+			courseProgressUnitLabel,
 		))
 	})
 	if err != nil {

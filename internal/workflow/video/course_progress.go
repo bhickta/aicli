@@ -2,6 +2,8 @@ package video
 
 import "math"
 
+const courseProgressUnitLabel = "course work second"
+
 type courseProgressPlan struct {
 	transcriptUnitsByFile  map[string]int
 	compressionUnitsByFile map[string]int

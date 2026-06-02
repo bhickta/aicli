@@ -608,13 +608,14 @@ func TestCourseWithProgressReportsPerVideoCompletion(t *testing.T) {
 		stage   string
 		current int
 		total   int
+		label   string
 	}
 	events := []event{}
 	_, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, &courseRunner{}).CourseWithProgress(
 		context.Background(),
 		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2", Workers: 1},
 		func(update progressmodel.Update) {
-			events = append(events, event{stage: update.Stage, current: update.CompletedUnits, total: update.TotalUnits})
+			events = append(events, event{stage: update.Stage, current: update.CompletedUnits, total: update.TotalUnits, label: update.UnitLabel})
 		},
 	)
 	if err != nil {
@@ -634,6 +635,11 @@ func TestCourseWithProgressReportsPerVideoCompletion(t *testing.T) {
 	}
 	if !strings.Contains(events[len(events)-1].stage, "completed") || events[len(events)-1].current != 5 || events[len(events)-1].total != 5 {
 		t.Fatalf("last event = %#v, want completed stage at 5/5", events[len(events)-1])
+	}
+	for _, event := range events {
+		if event.label == "video second" {
+			t.Fatalf("course progress event used misleading label: %#v", event)
+		}
 	}
 }
 

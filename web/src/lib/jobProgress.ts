@@ -77,6 +77,9 @@ function formatUnits(job: Job): string {
   if (job.unit_label === "video second") {
     return ` | ${formatDuration(completed)}/${formatDuration(total)} video processed`;
   }
+  if (job.unit_label === "course work second") {
+    return "";
+  }
   const label = pluralize(job.unit_label || (job.total_units ? "unit" : "step"), total);
   return ` | ${Math.max(0, completed)}/${total} ${label}`;
 }

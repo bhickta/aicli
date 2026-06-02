@@ -201,7 +201,7 @@ func (s *Service) runCoursePipeline(
 				fmt.Sprintf("transcribed %d/%d video(s); queued compression: %s", currentFiles, len(missing), filepath.Base(file)),
 				currentUnits,
 				progressPlan.totalUnits,
-				"video second",
+				courseProgressUnitLabel,
 			))
 			enqueue(index, true)
 		})
@@ -228,7 +228,7 @@ func (s *Service) runCoursePipeline(
 	if err := getErr(); err != nil {
 		return CourseResponse{}, true, err
 	}
-	reportCourseProgress(progress, progressmodel.Units("completed course video, subtitles, and transcript", progressPlan.totalUnits, progressPlan.totalUnits, "video second"))
+	reportCourseProgress(progress, progressmodel.Units("completed course video, subtitles, and transcript", progressPlan.totalUnits, progressPlan.totalUnits, courseProgressUnitLabel))
 	return aggregated, true, nil
 }
 
@@ -297,7 +297,7 @@ func (s *Service) aggregatePipelineResults(ctx context.Context, state pipelineAg
 			fmt.Sprintf("compressed %d/%d video(s); exporting ready parts", compressed, len(state.items)),
 			currentUnits,
 			state.totalUnits,
-			"video second",
+			courseProgressUnitLabel,
 		))
 		s.exportReadyCourseParts(ctx, state, ready, exported)
 	}
@@ -319,7 +319,7 @@ func (s *Service) exportReadyCourseParts(ctx context.Context, state pipelineAggr
 			fmt.Sprintf("merging verified course part %d/%d", partIndex+1, len(state.parts)),
 			activeCourseProgressUnits(int(state.completedUnits.Load())+1, state.totalUnits),
 			state.totalUnits,
-			"video second",
+			courseProgressUnitLabel,
 		))
 		if err := s.writeCoursePart(ctx, part.items, part.artifact); err != nil {
 			state.setErr(err)
@@ -347,7 +347,7 @@ func (s *Service) exportReadyCourseParts(ctx context.Context, state pipelineAggr
 			fmt.Sprintf("verified course part %d/%d", partIndex+1, len(state.parts)),
 			activeCourseProgressUnits(int(state.completedUnits.Load())+1, state.totalUnits),
 			state.totalUnits,
-			"video second",
+			courseProgressUnitLabel,
 		))
 	}
 }

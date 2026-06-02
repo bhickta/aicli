@@ -41,7 +41,7 @@ func (s *Service) prepareCourseItemsSequential(ctx context.Context, files []stri
 		}
 		items = append(items, item)
 		completedUnits += progressPlan.compressionUnits(file)
-		reportCourseProgress(progress, progressmodel.Units(fmt.Sprintf("compressed %d/%d video(s)", i+1, len(files)), completedUnits, totalUnits, "video second"))
+		reportCourseProgress(progress, progressmodel.Units(fmt.Sprintf("compressed %d/%d video(s)", i+1, len(files)), completedUnits, totalUnits, courseProgressUnitLabel))
 	}
 	return items, transcribed, skipped, nil
 }
@@ -109,7 +109,7 @@ func (s *Service) prepareCourseItemsParallel(ctx context.Context, files []string
 			completedUnits += progressPlan.transcriptUnits(files[res.index])
 		}
 		completedUnits += progressPlan.compressionUnits(files[res.index])
-		reportCourseProgress(progress, progressmodel.Units(fmt.Sprintf("compressed %d/%d video(s) with %d worker(s)", completed, len(files), workers), completedUnits, totalUnits, "video second"))
+		reportCourseProgress(progress, progressmodel.Units(fmt.Sprintf("compressed %d/%d video(s) with %d worker(s)", completed, len(files), workers), completedUnits, totalUnits, courseProgressUnitLabel))
 	}
 	if firstErr != nil {
 		return nil, nil, nil, firstErr
