@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -313,7 +314,7 @@ func (s *Service) exportReadyCourseParts(ctx context.Context, state pipelineAggr
 		}
 		part := state.parts[partIndex]
 		if !coursePartReady(part, ready) {
-			continue
+			break
 		}
 		reportCourseProgress(state.progress, progressmodel.Units(
 			fmt.Sprintf("merging verified course part %d/%d", partIndex+1, len(state.parts)),
@@ -321,6 +322,10 @@ func (s *Service) exportReadyCourseParts(ctx context.Context, state pipelineAggr
 			state.totalUnits,
 			courseProgressUnitLabel,
 		))
+		if err := removeIncompleteCourseArtifact(part.artifact); err != nil {
+			state.setErr(err)
+			return
+		}
 		if err := s.writeCoursePart(ctx, part.items, part.artifact); err != nil {
 			state.setErr(err)
 			return
@@ -420,15 +425,18 @@ func (s *Service) compressPipelineItem(ctx context.Context, item CourseItem, req
 }
 
 func planCourseParts(targetDir string, courseDir string, req CourseRequest, items []CourseItem, durations map[string]float64) []plannedCoursePart {
-	groups := chunkCourseItemsByDuration(items, durations, req.MaxMergeHours)
 	folderName := courseOutputName(targetDir, req.OutputName)
-	offset := 0
+	existing := []existingCoursePart{}
 	if req.CleanupVerified {
-		offset = existingCoursePartOffset(courseDir, folderName)
+		existing = existingVerifiedCourseParts(courseDir, folderName)
 	}
+	groups := coursePartGroupsForResume(items, durations, req.MaxMergeHours, existing)
+	occupied := existingCoursePartNumbers(existing)
+	allocator := newCoursePartAllocator(occupied)
+	offset := len(occupied)
 	multipart := len(groups) > 1 || offset > 0 || (req.CleanupVerified && req.MaxMergeHours > 0)
 	parts := make([]plannedCoursePart, 0, len(groups))
-	for i, group := range groups {
+	for _, group := range groups {
 		indexes := make([]int, len(group))
 		partItems := make([]CourseItem, len(group))
 		for j, item := range group {
@@ -438,35 +446,39 @@ func planCourseParts(targetDir string, courseDir string, req CourseRequest, item
 		parts = append(parts, plannedCoursePart{
 			indexes:  indexes,
 			items:    partItems,
-			artifact: courseArtifactPaths(courseDir, folderName, multipart, i+offset),
+			artifact: courseArtifactPaths(courseDir, folderName, multipart, allocator.next()),
 		})
 	}
 	return parts
 }
 
 func chunkCourseItemsByDuration(items []CourseItem, durations map[string]float64, maxMergeHours float64) [][]pipelineCourseItem {
+	pipelineItems := make([]pipelineCourseItem, len(items))
+	for i, item := range items {
+		pipelineItems[i] = pipelineCourseItem{index: i, item: item}
+	}
+	return chunkPipelineCourseItemsByDuration(pipelineItems, durations, maxMergeHours)
+}
+
+func chunkPipelineCourseItemsByDuration(items []pipelineCourseItem, durations map[string]float64, maxMergeHours float64) [][]pipelineCourseItem {
 	groups := [][]pipelineCourseItem{}
 	if len(items) == 0 {
 		return groups
 	}
 	if maxMergeHours <= 0 {
-		group := make([]pipelineCourseItem, len(items))
-		for i, item := range items {
-			group[i] = pipelineCourseItem{index: i, item: item}
-		}
-		return [][]pipelineCourseItem{group}
+		return [][]pipelineCourseItem{append([]pipelineCourseItem(nil), items...)}
 	}
 	limit := maxMergeHours * 3600
 	current := []pipelineCourseItem{}
 	currentSeconds := 0.0
-	for i, item := range items {
-		duration := durations[item.Source]
+	for _, item := range items {
+		duration := durations[item.item.Source]
 		if len(current) > 0 && currentSeconds+duration > limit {
 			groups = append(groups, current)
 			current = nil
 			currentSeconds = 0
 		}
-		current = append(current, pipelineCourseItem{index: i, item: item})
+		current = append(current, item)
 		currentSeconds += duration
 	}
 	if len(current) > 0 {
@@ -484,25 +496,159 @@ func coursePartReady(part plannedCoursePart, ready []bool) bool {
 	return true
 }
 
-func existingCoursePartOffset(courseDir string, folderName string) int {
+type existingCoursePart struct {
+	number   int
+	segments []string
+}
+
+type coursePartAllocator struct {
+	occupied map[int]bool
+	nextPart int
+}
+
+func newCoursePartAllocator(occupied map[int]bool) coursePartAllocator {
+	return coursePartAllocator{occupied: occupied, nextPart: 1}
+}
+
+func (a *coursePartAllocator) next() int {
+	for a.occupied[a.nextPart] {
+		a.nextPart++
+	}
+	part := a.nextPart
+	a.occupied[part] = true
+	a.nextPart++
+	return part - 1
+}
+
+func existingVerifiedCourseParts(courseDir string, folderName string) []existingCoursePart {
 	pattern := filepath.Join(courseDir, folderName+"_Part*_Slideshow.mp4")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
-		return 0
+		return nil
 	}
 	re := regexp.MustCompile(`_Part([0-9]+)_Slideshow\.mp4$`)
-	maxPart := 0
+	parts := []existingCoursePart{}
 	for _, match := range matches {
-		parts := re.FindStringSubmatch(filepath.Base(match))
-		if len(parts) != 2 {
+		matches := re.FindStringSubmatch(filepath.Base(match))
+		if len(matches) != 2 {
 			continue
 		}
-		value, err := strconv.Atoi(parts[1])
-		if err == nil && value > maxPart {
-			maxPart = value
+		number, err := strconv.Atoi(matches[1])
+		if err != nil || number <= 0 {
+			continue
+		}
+		artifact := courseArtifactPaths(courseDir, folderName, true, number-1)
+		if !courseArtifactComplete(artifact) {
+			continue
+		}
+		parts = append(parts, existingCoursePart{
+			number:   number,
+			segments: coursePartSegments(artifact.textPath),
+		})
+	}
+	sort.Slice(parts, func(i, j int) bool {
+		return parts[i].number < parts[j].number
+	})
+	return parts
+}
+
+func existingCoursePartNumbers(parts []existingCoursePart) map[int]bool {
+	occupied := make(map[int]bool, len(parts))
+	for _, part := range parts {
+		occupied[part.number] = true
+	}
+	return occupied
+}
+
+func coursePartGroupsForResume(
+	items []CourseItem,
+	durations map[string]float64,
+	maxMergeHours float64,
+	existing []existingCoursePart,
+) [][]pipelineCourseItem {
+	if len(existing) == 0 {
+		return chunkCourseItemsByDuration(items, durations, maxMergeHours)
+	}
+
+	occupiedSegments := map[string]bool{}
+	for _, part := range existing {
+		for _, segment := range part.segments {
+			occupiedSegments[segment] = true
 		}
 	}
-	return maxPart
+
+	pending := make([]pipelineCourseItem, 0, len(items))
+	for i, item := range items {
+		if occupiedSegments[item.TargetName] {
+			continue
+		}
+		pending = append(pending, pipelineCourseItem{index: i, item: item})
+	}
+
+	groups := [][]pipelineCourseItem{}
+	cursor := 0
+	for _, part := range existing {
+		if len(part.segments) == 0 {
+			continue
+		}
+		firstSegment := part.segments[0]
+		gap := []pipelineCourseItem{}
+		for cursor < len(pending) && pending[cursor].item.TargetName < firstSegment {
+			gap = append(gap, pending[cursor])
+			cursor++
+		}
+		if len(gap) > 0 {
+			groups = append(groups, chunkPipelineCourseItemsByDuration(gap, durations, maxMergeHours)...)
+		}
+		for cursor < len(pending) && occupiedSegments[pending[cursor].item.TargetName] {
+			cursor++
+		}
+	}
+	if cursor < len(pending) {
+		groups = append(groups, chunkPipelineCourseItemsByDuration(pending[cursor:], durations, maxMergeHours)...)
+	}
+	return groups
+}
+
+func coursePartSegments(textPath string) []string {
+	data, err := os.ReadFile(textPath)
+	if err != nil {
+		return nil
+	}
+	re := regexp.MustCompile(`(?m)^--- Segment: (.+) ---$`)
+	matches := re.FindAllStringSubmatch(string(data), -1)
+	segments := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) == 2 {
+			segments = append(segments, match[1])
+		}
+	}
+	return segments
+}
+
+func courseArtifactComplete(artifact courseArtifact) bool {
+	for _, path := range []string{artifact.videoPath, artifact.srtPath, artifact.textPath} {
+		info, err := os.Stat(path)
+		if err != nil || info.Size() == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func removeIncompleteCourseArtifact(artifact courseArtifact) error {
+	if courseArtifactComplete(artifact) {
+		return nil
+	}
+	for _, path := range []string{artifact.videoPath, artifact.srtPath, artifact.textPath, courseTmpVideoPath(artifact.videoPath)} {
+		if path == "" {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) verifyCoursePart(ctx context.Context, part []CourseItem, artifact courseArtifact, durations map[string]float64) error {

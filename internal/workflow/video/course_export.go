@@ -19,6 +19,9 @@ func (s *Service) exportCourseParts(ctx context.Context, targetDir string, cours
 	multipart := len(parts) > 1
 	for i, part := range parts {
 		artifact := courseArtifactPaths(courseDir, folderName, multipart, i)
+		if err := removeIncompleteCourseArtifact(artifact); err != nil {
+			return CourseResponse{}, err
+		}
 		if err := s.writeCoursePart(ctx, part, artifact); err != nil {
 			return CourseResponse{}, err
 		}

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/bhickta/aicli/internal/config"
@@ -481,6 +482,131 @@ func TestCourseCleanupVerifiedPartsRemovesSourcesAndCacheOnlyAfterExport(t *test
 	}
 }
 
+func TestPlanCoursePartsResumeFillsMissingPartBeforeAppending(t *testing.T) {
+	t.Parallel()
+
+	courseDir := t.TempDir()
+	folderName := "philosophy"
+	for _, existing := range []struct {
+		number   int
+		segments []string
+	}{
+		{number: 1, segments: []string{"001 Intro"}},
+		{number: 2, segments: []string{"002 Hume"}},
+		{number: 3, segments: []string{"003 Kant"}},
+		{number: 5, segments: []string{"005 Hegel"}},
+		{number: 6, segments: []string{"006 Moore"}},
+		{number: 7, segments: []string{"007 Russell"}},
+		{number: 8, segments: []string{"008 Wittgenstein"}},
+	} {
+		writeVerifiedCoursePart(t, courseDir, folderName, existing.number, existing.segments)
+	}
+
+	items := []CourseItem{
+		{Source: filepath.Join(courseDir, "004 missing.mp4"), TargetName: "004 Missing"},
+		{Source: filepath.Join(courseDir, "009 next.mp4"), TargetName: "009 Next"},
+	}
+	durations := map[string]float64{
+		items[0].Source: 2,
+		items[1].Source: 2,
+	}
+
+	parts := planCourseParts(
+		courseDir,
+		courseDir,
+		CourseRequest{OutputName: folderName, CleanupVerified: true, MaxMergeHours: 9},
+		items,
+		durations,
+	)
+
+	got := coursePartVideoBasenames(parts)
+	want := []string{
+		"philosophy_Part4_Slideshow.mp4",
+		"philosophy_Part9_Slideshow.mp4",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("planned parts = %#v, want %#v", got, want)
+	}
+}
+
+func TestExportReadyCoursePartsWaitsForEarlierUnreadyPart(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	courseDir := filepath.Join(dir, "Course")
+	if err := os.MkdirAll(courseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	first := writeReadyCourseItem(t, dir, "01")
+	second := writeReadyCourseItem(t, dir, "02")
+	firstArtifact := courseArtifactPaths(courseDir, "course", true, 0)
+	secondArtifact := courseArtifactPaths(courseDir, "course", true, 1)
+	var completed atomic.Int64
+	var firstErr error
+	state := pipelineAggregation{
+		items: []CourseItem{first, second},
+		parts: []plannedCoursePart{
+			{
+				indexes:  []int{0},
+				items:    []CourseItem{first},
+				artifact: firstArtifact,
+			},
+			{
+				indexes:  []int{1},
+				items:    []CourseItem{second},
+				artifact: secondArtifact,
+			},
+		},
+		durations: map[string]float64{
+			first.Source:  2,
+			second.Source: 2,
+		},
+		totalUnits:     10,
+		completedUnits: &completed,
+		response:       &CourseResponse{},
+		setErr: func(err error) {
+			firstErr = err
+		},
+	}
+	ready := []bool{false, true}
+	exported := []bool{false, false}
+	svc := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, &courseRunner{})
+
+	svc.exportReadyCourseParts(context.Background(), state, ready, exported)
+
+	if firstErr != nil {
+		t.Fatalf("exportReadyCourseParts() error = %v", firstErr)
+	}
+	if exported[1] {
+		t.Fatal("second part exported before first part was ready")
+	}
+	if fileExists(secondArtifact.videoPath) {
+		t.Fatalf("second artifact exists before first part is ready: %s", secondArtifact.videoPath)
+	}
+
+	ready[0] = true
+	svc.exportReadyCourseParts(context.Background(), state, ready, exported)
+
+	if firstErr != nil {
+		t.Fatalf("exportReadyCourseParts() error = %v", firstErr)
+	}
+	if !exported[0] || !exported[1] {
+		t.Fatalf("exported = %#v, want both parts exported after first part is ready", exported)
+	}
+	for _, path := range []string{
+		firstArtifact.videoPath,
+		firstArtifact.srtPath,
+		firstArtifact.textPath,
+		secondArtifact.videoPath,
+		secondArtifact.srtPath,
+		secondArtifact.textPath,
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected artifact %s: %v", path, err)
+		}
+	}
+}
+
 func TestCourseUsesCachedSRTWithoutCallingWhisper(t *testing.T) {
 	t.Parallel()
 
@@ -709,6 +835,67 @@ func TestFinalizePipelineMissingTranscriptsRequiresCacheForUnqueuedItems(t *test
 	if err == nil || !strings.Contains(err.Error(), "did not produce both .srt and .txt") {
 		t.Fatalf("finalizePipelineMissingTranscripts() error = %v, want missing transcript cache error", err)
 	}
+}
+
+func writeVerifiedCoursePart(t *testing.T, courseDir string, folderName string, number int, segments []string) {
+	t.Helper()
+	artifact := courseArtifactPaths(courseDir, folderName, true, number-1)
+	if err := os.MkdirAll(filepath.Dir(artifact.videoPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(artifact.videoPath, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(artifact.srtPath, []byte("1\n00:00:00,000 --> 00:00:01,000\nhello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lines := []string{}
+	for _, segment := range segments {
+		lines = append(lines, "--- Segment: "+segment+" ---\nhello")
+	}
+	if err := os.WriteFile(artifact.textPath, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeReadyCourseItem(t *testing.T, dir string, name string) CourseItem {
+	t.Helper()
+	source := filepath.Join(dir, name+".mp4")
+	output := filepath.Join(dir, ".aicli_cache", "slideshows", name+"_slideshow.mp4")
+	srt := filepath.Join(dir, ".aicli_cache", name+".srt")
+	text := filepath.Join(dir, ".aicli_cache", name+".txt")
+	for _, path := range []string{source, output, srt, text} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(source, []byte("source"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(output, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(srt, []byte("1\n00:00:00,000 --> 00:00:01,000\nhello "+name+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(text, []byte("hello "+name), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return CourseItem{
+		Source:     source,
+		Output:     output,
+		SRTPath:    srt,
+		TextPath:   text,
+		TargetName: name,
+	}
+}
+
+func coursePartVideoBasenames(parts []plannedCoursePart) []string {
+	names := make([]string, len(parts))
+	for i, part := range parts {
+		names[i] = filepath.Base(part.artifact.videoPath)
+	}
+	return names
 }
 
 func writeCourseVideoWithSRT(t *testing.T, path string) {
