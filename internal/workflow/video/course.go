@@ -51,7 +51,7 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 	reportCourseProgress(progress, progressmodel.Units(courseStartStage(len(files), len(skipped)), 0, progressPlan.totalUnits, "video second"))
 
 	if response, pipelined, err := s.runCoursePipeline(ctx, targetDir, courseDir, cacheDir, slidesDir, files, durations, skipped, req, progressPlan, progress); pipelined {
-		return response, err
+		return s.finishCourse(ctx, req, response, err, progress)
 	}
 
 	batchTranscribed, batchAttempted, err := s.prepareMissingTranscriptsWithFasterWhisper(ctx, files, cacheDir, req, progress, progressPlan, progressPlan.totalUnits)
@@ -81,5 +81,6 @@ func (s *Service) CourseWithProgress(ctx context.Context, req CourseRequest, pro
 		progressPlan.totalUnits,
 		"video second",
 	))
-	return s.exportCourseParts(ctx, targetDir, courseDir, req.OutputName, items, transcribed, skipped, req.MaxMergeHours)
+	response, err := s.exportCourseParts(ctx, targetDir, courseDir, req.OutputName, items, transcribed, skipped, req.MaxMergeHours)
+	return s.finishCourse(ctx, req, response, err, progress)
 }

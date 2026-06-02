@@ -17,6 +17,7 @@ export const videoWorkflowDefinitions: WorkflowDefinition[] = [
       { type: "number", id: "compression_workers", label: "Compression workers (0 = auto)", min: 0, default: 0 },
       { type: "checkbox", id: "skip_unreadable", label: "Skip unreadable videos", checked: false },
       { type: "checkbox", id: "cleanup_verified_parts", label: "Delete source/cache after verified Course part", checked: false },
+      { type: "checkbox", id: "shutdown_on_complete", label: "Shutdown PC after successful course", checked: false },
       { type: "number", id: "max_merge_hours", label: "Max hours per output video", min: 1, max: 24, default: 9 },
     ],
     buildPayload: (values) => ({
@@ -33,6 +34,7 @@ export const videoWorkflowDefinitions: WorkflowDefinition[] = [
       compression_workers: values.compression_workers || 0,
       skip_unreadable: Boolean(values.skip_unreadable),
       cleanup_verified_parts: Boolean(values.cleanup_verified_parts),
+      shutdown_on_complete: Boolean(values.shutdown_on_complete),
       max_merge_hours: values.max_merge_hours || 9,
       fast_skip: true,
     }),

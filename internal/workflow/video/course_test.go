@@ -17,6 +17,7 @@ type courseRunner struct {
 	calls           []runnerCall
 	ffprobeFailures map[string]bool
 	failOnePassSRT  bool
+	failShutdown    bool
 }
 
 func (r *courseRunner) CombinedOutput(_ context.Context, command string, args ...string) ([]byte, error) {
@@ -31,6 +32,12 @@ func (r *courseRunner) CombinedOutput(_ context.Context, command string, args ..
 	}
 	if command == "whisper-cli" {
 		return writeWhisperOutputs(args)
+	}
+	if command == "systemctl" && hasArg(args, "poweroff") {
+		if r.failShutdown {
+			return []byte("permission denied"), os.ErrPermission
+		}
+		return []byte("ok"), nil
 	}
 	if command == "ffmpeg" && r.failOnePassSRT && hasArg(args, "-f") && hasArg(args, "concat") && hasArg(args, "-map") && hasArg(args, "1:s:0") {
 		return []byte("Packet duration is out of range"), os.ErrInvalid
@@ -161,6 +168,73 @@ func TestCourseUsesRequestedOutputName(t *testing.T) {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected artifact %s: %v", path, err)
 		}
+	}
+}
+
+func TestCourseShutdownOnCompleteRequestsPoweroffAfterSuccess(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	videoPath := filepath.Join(dir, "01 intro.mp4")
+	writeCourseVideoWithSRT(t, videoPath)
+
+	runner := &courseRunner{}
+	res, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, runner).Course(
+		context.Background(),
+		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2", ShutdownOnComplete: true},
+	)
+	if err != nil {
+		t.Fatalf("Course() error = %v", err)
+	}
+	if !res.ShutdownRequested {
+		t.Fatalf("Shutdown = false, want true")
+	}
+	for _, call := range runner.calls {
+		if call.command == "systemctl" && strings.Join(call.args, " ") == "poweroff" {
+			return
+		}
+	}
+	t.Fatalf("no systemctl poweroff call found: %#v", runner.calls)
+}
+
+func TestCourseShutdownOnCompleteDoesNotRunAfterCourseFailure(t *testing.T) {
+	t.Parallel()
+
+	runner := &courseRunner{}
+	_, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, runner).Course(
+		context.Background(),
+		CourseRequest{Path: t.TempDir(), ShutdownOnComplete: true},
+	)
+	if err == nil {
+		t.Fatal("Course() error = nil, want failure")
+	}
+	for _, call := range runner.calls {
+		if call.command == "systemctl" {
+			t.Fatalf("shutdown ran after failed course: %#v", runner.calls)
+		}
+	}
+}
+
+func TestCourseShutdownOnCompleteReportsPoweroffFailure(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	videoPath := filepath.Join(dir, "01 intro.mp4")
+	writeCourseVideoWithSRT(t, videoPath)
+
+	runner := &courseRunner{failShutdown: true}
+	res, err := New(config.ToolConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe"}, runner).Course(
+		context.Background(),
+		CourseRequest{Path: dir, Preset: "slideshow", FPS: "1/2", ShutdownOnComplete: true},
+	)
+	if err == nil {
+		t.Fatal("Course() error = nil, want shutdown failure")
+	}
+	if !strings.Contains(err.Error(), "course completed, but shutdown request failed") {
+		t.Fatalf("Course() error = %v, want shutdown failure context", err)
+	}
+	if !res.ShutdownRequested {
+		t.Fatalf("Shutdown = false, want true")
 	}
 }
 

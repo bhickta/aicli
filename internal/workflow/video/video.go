@@ -58,17 +58,19 @@ type CourseRequest struct {
 	CompressionWorkers int     `json:"compression_workers"`
 	SkipUnreadable     bool    `json:"skip_unreadable"`
 	MaxMergeHours      float64 `json:"max_merge_hours"`
+	ShutdownOnComplete bool    `json:"shutdown_on_complete"`
 }
 
 type CourseResponse struct {
-	CourseDir   string       `json:"course_dir"`
-	VideoPath   string       `json:"video_path,omitempty"`
-	SRTPath     string       `json:"srt_path,omitempty"`
-	TextPath    string       `json:"text_path,omitempty"`
-	Compressed  []CourseItem `json:"compressed"`
-	Transcribed []CourseItem `json:"transcribed,omitempty"`
-	Skipped     []string     `json:"skipped,omitempty"`
-	Cleaned     []string     `json:"cleaned,omitempty"`
+	CourseDir         string       `json:"course_dir"`
+	VideoPath         string       `json:"video_path,omitempty"`
+	SRTPath           string       `json:"srt_path,omitempty"`
+	TextPath          string       `json:"text_path,omitempty"`
+	Compressed        []CourseItem `json:"compressed"`
+	Transcribed       []CourseItem `json:"transcribed,omitempty"`
+	Skipped           []string     `json:"skipped,omitempty"`
+	Cleaned           []string     `json:"cleaned,omitempty"`
+	ShutdownRequested bool         `json:"shutdown_requested,omitempty"`
 }
 
 type CourseItem struct {
