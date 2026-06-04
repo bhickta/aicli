@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, shallowRef, watch } from "vue";
 import type { TopperCopyPage, TopperCopyQuestion, TopperCopyReview } from "../../types";
+import TopperOcrViewer from "./TopperOcrViewer.vue";
 
 type TopperRerunAction = "ocr" | "questions" | "report" | "all";
 
@@ -225,8 +226,7 @@ function emitReview() {
           </div>
         </section>
         <section class="topper-ocr-panel">
-          <h4>OCR text</h4>
-          <textarea :readonly="!editable" :value="activePageEdit?.text || ''" @input="updateActivePageText(($event.target as HTMLTextAreaElement).value)" />
+          <TopperOcrViewer :text="activePageEdit?.text || ''" :editable="editable" @update="updateActivePageText" />
         </section>
       </main>
     </div>
@@ -433,7 +433,6 @@ function emitReview() {
   transform-origin: top center;
 }
 
-.topper-ocr-panel textarea,
 .topper-question-editor,
 .topper-report-editor {
   background: #020617;
