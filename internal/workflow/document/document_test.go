@@ -49,6 +49,19 @@ func (r *pageRunner) CombinedOutput(_ context.Context, command string, args ...s
 	return []byte("ok"), err
 }
 
+type missingPDFInfoRunner struct {
+	rendered bool
+}
+
+func (r *missingPDFInfoRunner) CombinedOutput(_ context.Context, command string, args ...string) ([]byte, error) {
+	if strings.HasSuffix(command, "pdfinfo") {
+		return nil, errors.New("exit status 1")
+	}
+	r.rendered = true
+	prefix := args[len(args)-1]
+	return []byte("ok"), os.WriteFile(prefix+"-1.jpg", []byte("image"), 0o600)
+}
+
 type fakeVision struct{}
 
 func (fakeVision) ID() string { return "fake" }
@@ -128,6 +141,27 @@ func TestRenderPDFToImagesRendersPagesWithDynamicParallelism(t *testing.T) {
 	}
 	if runner.maxActive > 3 {
 		t.Fatalf("maxActive = %d, want <= 3", runner.maxActive)
+	}
+}
+
+func TestRenderPDFToImagesFallsBackWhenPDFInfoUnavailable(t *testing.T) {
+	t.Parallel()
+
+	pdf := filepath.Join(t.TempDir(), "doc.pdf")
+	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &missingPDFInfoRunner{}
+	images, cleanup, err := RenderPDFToImages(context.Background(), config.ToolConfig{PDFToPPM: "pdftoppm"}, runner, pdf, 200, 4)
+	if err != nil {
+		t.Fatalf("RenderPDFToImages() error = %v", err)
+	}
+	defer cleanup()
+	if !runner.rendered {
+		t.Fatal("RenderPDFToImages() did not fall back to normal rendering")
+	}
+	if len(images) != 1 {
+		t.Fatalf("images = %#v, want one image", images)
 	}
 }
 

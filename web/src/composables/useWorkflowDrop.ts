@@ -10,6 +10,7 @@ interface WorkflowDropOptions {
   status: Ref<string>;
   result: Ref<string>;
   sourcePreview: Ref<string>;
+  autoSelectWorkflow?: (fileName: string) => void;
 }
 
 export function useWorkflowDrop(options: WorkflowDropOptions) {
@@ -33,7 +34,12 @@ export function useWorkflowDrop(options: WorkflowDropOptions) {
       const upload = await uploadEntries(entries);
       const uploaded = upload.files[0];
       if (!uploaded) throw new Error("upload finished without a stored file");
-      autoSelectWorkflow(uploaded.name || entries[0].file.name);
+      const fileName = uploaded.name || entries[0].file.name;
+      if (options.autoSelectWorkflow) {
+        options.autoSelectWorkflow(fileName);
+      } else {
+        autoSelectWorkflow(fileName);
+      }
       const primaryPathField = options.activeWorkflow.value?.fields.find((field) => field.type === "path");
       if (primaryPathField?.id) options.updateField(primaryPathField.id, uploaded.path);
       options.sourcePreview.value = uploaded.url || "";

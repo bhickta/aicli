@@ -34,13 +34,27 @@ const {
   runWorkflow: runActiveWorkflow,
   cancelWorkflow,
 } = useWorkflowRunner();
-const { handleDrop } = useWorkflowDrop({ activeWorkflow, updateField, chooseWorkflow, status, result, sourcePreview });
+const { handleDrop } = useWorkflowDrop({
+  activeWorkflow,
+  updateField,
+  chooseWorkflow,
+  status,
+  result,
+  sourcePreview,
+  autoSelectWorkflow: autoSelectStudyWorkflow,
+});
 const { browserField, browse, handleBrowserSelect, closeBrowser } = useWorkflowBrowser({ values, updateField, status, result });
 
 watch(selectedWorkflowId, (workflowId) => writeStoredString("aicli.study.workflow.id", workflowId));
 
 function chooseWorkflow(id: string) {
   selectedWorkflowId.value = id;
+}
+
+function autoSelectStudyWorkflow(fileName: string) {
+  if (fileName.toLowerCase().endsWith(".pdf")) {
+    chooseWorkflow("analyze");
+  }
 }
 
 async function runWorkflow() {
