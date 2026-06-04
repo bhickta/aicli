@@ -7,6 +7,7 @@ import type { Job, ProgressMode, WorkflowDefinition } from "../types";
 export function useWorkflowRunner() {
   const status = shallowRef("Ready");
   const result = shallowRef("");
+  const parsedResult = shallowRef<unknown>(null);
   const markdownPreview = shallowRef("");
   const sourcePreview = shallowRef("");
   const progress = shallowRef(0);
@@ -23,6 +24,7 @@ export function useWorkflowRunner() {
     progressMode.value = "indeterminate";
     progressVisible.value = true;
     result.value = "";
+    parsedResult.value = null;
     markdownPreview.value = "";
     try {
       const response = await api<{ job?: Job; result?: unknown }>(workflow.endpoint, {
@@ -34,7 +36,8 @@ export function useWorkflowRunner() {
         await pollJob(response.job.id, renderWorkflowJob);
         return;
       }
-      result.value = stringify(response.result || response);
+      parsedResult.value = response.result || response;
+      result.value = stringify(parsedResult.value);
       status.value = "Completed";
       progress.value = 100;
       progressMode.value = "determinate";
@@ -71,6 +74,7 @@ export function useWorkflowRunner() {
     progressVisible.value = presentation.visible;
     if (job.status === "completed") {
       const parsed = parseJobOutput(job.output);
+      parsedResult.value = parsed;
       const maybeMarkdown = parsed && typeof parsed === "object" && "markdown" in parsed ? String((parsed as { markdown?: unknown }).markdown || "") : "";
       markdownPreview.value = maybeMarkdown;
       result.value = parsed ? stringify(parsed) : "";
@@ -81,11 +85,13 @@ export function useWorkflowRunner() {
     }
     if (job.status === "failed") {
       result.value = job.error || "Workflow failed";
+      parsedResult.value = null;
       status.value = "Failed";
       progressVisible.value = presentation.visible;
     }
     if (job.status === "cancelled") {
       result.value = job.error || "Workflow cancelled";
+      parsedResult.value = null;
       status.value = "Cancelled";
       progressVisible.value = presentation.visible;
     }
@@ -94,6 +100,7 @@ export function useWorkflowRunner() {
   return {
     status,
     result,
+    parsedResult,
     markdownPreview,
     sourcePreview,
     progress,

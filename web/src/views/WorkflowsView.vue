@@ -18,6 +18,7 @@ const { values, providerModel, nonProviderFields, hasProviderModel, updateField,
 const {
   status,
   result,
+  parsedResult,
   markdownPreview,
   sourcePreview,
   progress,
@@ -85,6 +86,7 @@ function cancelButtonLabel() {
       :progress-mode="progressMode"
       :progress-visible="progressVisible"
       :result="result"
+      :parsed-result="parsedResult"
       :source-preview="sourcePreview"
       :markdown-preview="markdownPreview"
     />

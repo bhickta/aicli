@@ -1,0 +1,355 @@
+<script setup lang="ts">
+import { computed, reactive, shallowRef, watch } from "vue";
+import type { TopperCopyPage, TopperCopyQuestion, TopperCopyReview } from "../../types";
+
+const props = defineProps<{
+  review: TopperCopyReview;
+}>();
+
+const activeTab = shallowRef<"pages" | "questions" | "report">("pages");
+const activePageNumber = shallowRef(props.review.pages[0]?.number || 1);
+const activeQuestionID = shallowRef(props.review.questions[0]?.id || "");
+const zoom = shallowRef(1);
+const fullscreen = shallowRef(false);
+const pageEdits = reactive<Record<number, { text: string; verified: boolean }>>({});
+
+watch(
+  () => props.review,
+  (review) => {
+    for (const page of review.pages) {
+      pageEdits[page.number] = { text: page.text, verified: page.verified };
+    }
+    activePageNumber.value = review.pages[0]?.number || 1;
+    activeQuestionID.value = review.questions[0]?.id || "";
+  },
+  { immediate: true },
+);
+
+const activePage = computed<TopperCopyPage | undefined>(() => {
+  return props.review.pages.find((page) => page.number === activePageNumber.value) || props.review.pages[0];
+});
+const activePageEdit = computed(() => {
+  if (!activePage.value) return null;
+  return pageEdits[activePage.value.number] || { text: activePage.value.text, verified: activePage.value.verified };
+});
+const activeQuestion = computed<TopperCopyQuestion | undefined>(() => {
+  return props.review.questions.find((question) => question.id === activeQuestionID.value) || props.review.questions[0];
+});
+const verifiedCount = computed(() => props.review.pages.filter((page) => pageEdits[page.number]?.verified).length);
+const unclearCount = computed(() => props.review.pages.reduce((total, page) => total + page.unclear_count, 0));
+const sourcePageLabels = computed(() => activeQuestion.value?.source_pages.map((page) => `P${page}`).join(", ") || "");
+
+function selectPage(pageNumber: number) {
+  activeTab.value = "pages";
+  activePageNumber.value = pageNumber;
+}
+
+function selectQuestion(question: TopperCopyQuestion) {
+  activeTab.value = "questions";
+  activeQuestionID.value = question.id;
+  if (question.source_pages[0]) activePageNumber.value = question.source_pages[0];
+}
+
+function setZoom(nextZoom: number) {
+  zoom.value = Math.min(2, Math.max(0.6, nextZoom));
+}
+
+function updateActivePageText(value: string) {
+  if (!activePage.value) return;
+  pageEdits[activePage.value.number] = {
+    text: value,
+    verified: pageEdits[activePage.value.number]?.verified || false,
+  };
+}
+
+function toggleActivePageVerified() {
+  if (!activePage.value) return;
+  pageEdits[activePage.value.number] = {
+    text: activePageEdit.value?.text || activePage.value.text,
+    verified: !activePageEdit.value?.verified,
+  };
+}
+</script>
+
+<template>
+  <section class="topper-review" :class="{ fullscreen }">
+    <header class="topper-review-header">
+      <div>
+        <h3>Topper Copy Review</h3>
+        <p>{{ review.pdf_name }} · {{ review.pages.length }} page(s) · {{ review.questions.length }} question block(s)</p>
+      </div>
+      <div class="topper-review-actions">
+        <span>{{ verifiedCount }}/{{ review.pages.length }} verified</span>
+        <span>{{ unclearCount }} unclear</span>
+        <button type="button" @click="fullscreen = !fullscreen">{{ fullscreen ? "Exit full screen" : "Full screen" }}</button>
+      </div>
+    </header>
+
+    <nav class="topper-review-tabs" aria-label="Topper review views">
+      <button type="button" :class="{ active: activeTab === 'pages' }" @click="activeTab = 'pages'">Page OCR</button>
+      <button type="button" :class="{ active: activeTab === 'questions' }" @click="activeTab = 'questions'">Question-wise</button>
+      <button type="button" :class="{ active: activeTab === 'report' }" @click="activeTab = 'report'">Report</button>
+    </nav>
+
+    <div v-if="activeTab === 'pages'" class="topper-review-grid">
+      <aside class="topper-review-list" aria-label="Pages">
+        <button
+          v-for="page in review.pages"
+          :key="page.number"
+          type="button"
+          :class="{ active: activePage?.number === page.number }"
+          @click="selectPage(page.number)"
+        >
+          <strong>Page {{ page.number }}</strong>
+          <span>{{ page.unclear_count }} unclear · {{ pageEdits[page.number]?.verified ? "verified" : "unchecked" }}</span>
+        </button>
+      </aside>
+
+      <main class="topper-page-workspace">
+        <section class="topper-page-image">
+          <div class="topper-page-toolbar">
+            <span>{{ activePage?.name || "Page" }}</span>
+            <div>
+              <button type="button" @click="toggleActivePageVerified">{{ activePageEdit?.verified ? "Unverify" : "Mark verified" }}</button>
+              <button type="button" @click="setZoom(zoom - 0.1)">-</button>
+              <button type="button" @click="setZoom(1)">Fit</button>
+              <button type="button" @click="setZoom(zoom + 0.1)">+</button>
+            </div>
+          </div>
+          <div class="topper-image-scroll">
+            <img v-if="activePage?.image_url" :src="activePage.image_url" :alt="`Page ${activePage.number}`" :style="{ transform: `scale(${zoom})` }" />
+            <p v-else>No page image available.</p>
+          </div>
+        </section>
+        <section class="topper-ocr-panel">
+          <h4>OCR text</h4>
+          <textarea :value="activePageEdit?.text || ''" @input="updateActivePageText(($event.target as HTMLTextAreaElement).value)" />
+        </section>
+      </main>
+    </div>
+
+    <div v-else-if="activeTab === 'questions'" class="topper-review-grid">
+      <aside class="topper-review-list" aria-label="Questions">
+        <button
+          v-for="question in review.questions"
+          :key="question.id"
+          type="button"
+          :class="{ active: activeQuestion?.id === question.id }"
+          @click="selectQuestion(question)"
+        >
+          <strong>{{ question.label }}</strong>
+          <span>{{ question.status }} · pages {{ question.source_pages.join(", ") }}</span>
+        </button>
+      </aside>
+      <main class="topper-question-workspace">
+        <section class="topper-question-panel">
+          <header>
+            <div>
+              <h4>{{ activeQuestion?.label || "Question" }}</h4>
+              <p>{{ activeQuestion?.title || "Detected answer block" }} · {{ sourcePageLabels }}</p>
+            </div>
+            <span>{{ activeQuestion?.status }}</span>
+          </header>
+          <pre>{{ activeQuestion?.answer_markdown || "" }}</pre>
+        </section>
+        <section class="topper-page-image compact">
+          <div class="topper-page-toolbar">
+            <span>Source page {{ activePage?.number }}</span>
+            <button type="button" @click="activeTab = 'pages'">Open page OCR</button>
+          </div>
+          <div class="topper-image-scroll">
+            <img v-if="activePage?.image_url" :src="activePage.image_url" :alt="`Page ${activePage.number}`" />
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <section v-else class="topper-report-panel">
+      <h4>Final analysis</h4>
+      <pre>{{ review.report }}</pre>
+    </section>
+  </section>
+</template>
+
+<style scoped>
+.topper-review {
+  border: 1px solid #253247;
+  border-radius: 0.5rem;
+  background: #0d121b;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+}
+
+.topper-review.fullscreen {
+  position: fixed;
+  inset: 1rem;
+  z-index: 50;
+  overflow: auto;
+}
+
+.topper-review-header,
+.topper-review-actions,
+.topper-review-tabs,
+.topper-page-toolbar,
+.topper-question-panel header {
+  align-items: center;
+  display: flex;
+  gap: 0.6rem;
+  justify-content: space-between;
+}
+
+.topper-review-header h3,
+.topper-question-panel h4,
+.topper-report-panel h4,
+.topper-ocr-panel h4 {
+  margin: 0;
+}
+
+.topper-review-header p,
+.topper-question-panel p {
+  color: #94a3b8;
+  margin: 0.2rem 0 0;
+}
+
+.topper-review-actions span,
+.topper-question-panel header span {
+  background: #172033;
+  border: 1px solid #2e3c54;
+  border-radius: 999px;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.55rem;
+}
+
+.topper-review button {
+  background: #111827;
+  border: 1px solid #334155;
+  border-radius: 0.42rem;
+  color: #dbeafe;
+  cursor: pointer;
+  font: inherit;
+  padding: 0.42rem 0.65rem;
+}
+
+.topper-review button:hover,
+.topper-review button.active {
+  border-color: #60a5fa;
+}
+
+.topper-review-tabs {
+  justify-content: flex-start;
+}
+
+.topper-review-tabs button.active {
+  background: #1e3a5f;
+}
+
+.topper-review-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr);
+  min-height: 34rem;
+}
+
+.topper-review-list {
+  border-right: 1px solid #253247;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 70vh;
+  overflow: auto;
+  padding-right: 0.75rem;
+}
+
+.topper-review-list button {
+  align-items: flex-start;
+  display: grid;
+  gap: 0.25rem;
+  text-align: left;
+}
+
+.topper-review-list span {
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.topper-page-workspace,
+.topper-question-workspace {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1.1fr) minmax(20rem, 0.9fr);
+  min-width: 0;
+}
+
+.topper-page-image,
+.topper-ocr-panel,
+.topper-question-panel,
+.topper-report-panel {
+  background: #0a0f18;
+  border: 1px solid #253247;
+  border-radius: 0.45rem;
+  min-width: 0;
+  padding: 0.7rem;
+}
+
+.topper-image-scroll {
+  align-items: flex-start;
+  background: #020617;
+  border-radius: 0.35rem;
+  display: flex;
+  justify-content: center;
+  margin-top: 0.6rem;
+  max-height: 68vh;
+  min-height: 28rem;
+  overflow: auto;
+  padding: 1rem;
+}
+
+.topper-image-scroll img {
+  max-width: 100%;
+  transform-origin: top center;
+}
+
+.topper-ocr-panel textarea {
+  background: #020617;
+  border: 1px solid #253247;
+  border-radius: 0.35rem;
+  color: #e5e7eb;
+  font: 0.9rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  min-height: 32rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.topper-question-panel pre,
+.topper-report-panel pre {
+  color: #e5e7eb;
+  font: 0.9rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  margin: 0.8rem 0 0;
+  max-height: 68vh;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.topper-page-image.compact .topper-image-scroll {
+  min-height: 24rem;
+}
+
+@media (max-width: 900px) {
+  .topper-review-grid,
+  .topper-page-workspace,
+  .topper-question-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .topper-review-list {
+    border-right: 0;
+    border-bottom: 1px solid #253247;
+    flex-direction: row;
+    max-height: none;
+    overflow-x: auto;
+    padding: 0 0 0.75rem;
+  }
+}
+</style>

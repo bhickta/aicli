@@ -50,6 +50,8 @@ func (s *Server) routes() {
 	if s.deps.DataDir != "" {
 		uploads := http.Dir(filepath.Join(s.deps.DataDir, "uploads"))
 		s.mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", http.FileServer(uploads)))
+		artifacts := http.Dir(filepath.Join(s.deps.DataDir, "artifacts"))
+		s.mux.Handle("GET /artifacts/", http.StripPrefix("/artifacts/", http.FileServer(artifacts)))
 	}
 	s.mux.HandleFunc("GET /api/tools", s.tools)
 	s.mux.HandleFunc("POST /api/chat", s.chat)

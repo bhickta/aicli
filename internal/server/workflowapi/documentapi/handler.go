@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"path/filepath"
 
 	"github.com/bhickta/aicli/internal/server/workflowapi/core"
 	"github.com/bhickta/aicli/internal/tool"
@@ -84,7 +85,16 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 	h.runtime.StartJob(w, r, "analyze", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		progress(core.Indeterminate("rendering and reading PDF"))
 		progress(core.Indeterminate("analyzing OCR text"))
-		result, err := analyze.New(h.runtime.Settings().Tools, tool.ExecRunner{}, p).Run(ctx, req.Request)
+		artifactDir := ""
+		if h.runtime.DataDir() != "" {
+			artifactDir = filepath.Join(h.runtime.DataDir(), "artifacts")
+		}
+		result, err := analyze.New(
+			h.runtime.Settings().Tools,
+			tool.ExecRunner{},
+			p,
+			analyze.WithArtifactDir(artifactDir),
+		).Run(ctx, req.Request)
 		return result, err
 	})
 }

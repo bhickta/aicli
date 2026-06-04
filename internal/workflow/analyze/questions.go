@@ -1,0 +1,239 @@
+package analyze
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"runtime"
+	"strings"
+	"sync"
+
+	"github.com/bhickta/aicli/internal/provider"
+)
+
+func (s *Service) splitQuestions(ctx context.Context, model string, pages []Page, workers int) ([]Question, error) {
+	if len(pages) == 0 {
+		return nil, nil
+	}
+	workers = normalizeQuestionWorkers(workers, len(pages))
+	jobs := make(chan Page)
+	results := make(chan []Question, len(pages))
+	errCh := make(chan error, 1)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for page := range jobs {
+				questions, err := s.splitPageQuestions(ctx, model, page)
+				if err != nil {
+					select {
+					case errCh <- err:
+						cancel()
+					default:
+					}
+					return
+				}
+				results <- questions
+			}
+		}()
+	}
+sendPages:
+	for _, page := range pages {
+		select {
+		case <-ctx.Done():
+			break sendPages
+		case jobs <- page:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	close(results)
+
+	select {
+	case err := <-errCh:
+		return nil, err
+	default:
+	}
+	merged := []Question{}
+	seen := map[string]int{}
+	for questions := range results {
+		for _, question := range questions {
+			key := normalizeQuestionLabel(question.Label)
+			if key == "" {
+				key = normalizeQuestionLabel(question.ID)
+			}
+			if key == "" {
+				key = fmt.Sprintf("page-%d", firstInt(question.SourcePages))
+			}
+			if idx, ok := seen[key]; ok {
+				merged[idx].AnswerMarkdown = strings.TrimSpace(merged[idx].AnswerMarkdown + "\n\n" + question.AnswerMarkdown)
+				merged[idx].SourcePages = appendUniqueInts(merged[idx].SourcePages, question.SourcePages...)
+				if merged[idx].Title == "" {
+					merged[idx].Title = question.Title
+				}
+				continue
+			}
+			question.ID = key
+			if question.Status == "" {
+				question.Status = "detected"
+			}
+			seen[key] = len(merged)
+			merged = append(merged, question)
+		}
+	}
+	if len(merged) == 0 {
+		return pageFallbackQuestions(pages), nil
+	}
+	sortQuestions(merged)
+	return merged, nil
+}
+
+func (s *Service) splitPageQuestions(ctx context.Context, model string, page Page) ([]Question, error) {
+	res, err := s.provider.Chat(ctx, provider.ChatRequest{
+		Model: model,
+		Messages: []provider.Message{
+			{
+				Role:    "user",
+				Content: topperCopyQuestionPrompt(page),
+			},
+		},
+		Temperature: 0,
+		MaxTokens:   3000,
+	})
+	if err != nil {
+		return nil, err
+	}
+	questions, err := parseQuestionSplit(res.Content, page.Number)
+	if err != nil {
+		return []Question{{
+			ID:             fmt.Sprintf("page-%d", page.Number),
+			Label:          fmt.Sprintf("Page %d", page.Number),
+			AnswerMarkdown: page.Text,
+			SourcePages:    []int{page.Number},
+			Status:         "needs review",
+		}}, nil
+	}
+	return questions, nil
+}
+
+type questionSplitPayload struct {
+	Questions []questionSplitItem `json:"questions"`
+}
+
+type questionSplitItem struct {
+	Label          string `json:"label"`
+	Title          string `json:"title"`
+	AnswerMarkdown string `json:"answer_markdown"`
+	Status         string `json:"status"`
+}
+
+func parseQuestionSplit(content string, pageNumber int) ([]Question, error) {
+	content = strings.TrimSpace(content)
+	content = strings.TrimPrefix(content, "```json")
+	content = strings.TrimPrefix(content, "```")
+	content = strings.TrimSuffix(content, "```")
+	var payload questionSplitPayload
+	if err := json.Unmarshal([]byte(strings.TrimSpace(content)), &payload); err != nil {
+		return nil, err
+	}
+	questions := make([]Question, 0, len(payload.Questions))
+	for i, item := range payload.Questions {
+		answer := strings.TrimSpace(item.AnswerMarkdown)
+		if answer == "" {
+			continue
+		}
+		label := strings.TrimSpace(item.Label)
+		if label == "" {
+			label = fmt.Sprintf("Page %d block %d", pageNumber, i+1)
+		}
+		status := strings.TrimSpace(item.Status)
+		if status == "" {
+			status = "detected"
+		}
+		questions = append(questions, Question{
+			ID:             normalizeQuestionLabel(label),
+			Label:          label,
+			Title:          strings.TrimSpace(item.Title),
+			AnswerMarkdown: answer,
+			SourcePages:    []int{pageNumber},
+			Status:         status,
+		})
+	}
+	return questions, nil
+}
+
+func pageFallbackQuestions(pages []Page) []Question {
+	questions := make([]Question, 0, len(pages))
+	for _, page := range pages {
+		questions = append(questions, Question{
+			ID:             fmt.Sprintf("page-%d", page.Number),
+			Label:          fmt.Sprintf("Page %d", page.Number),
+			AnswerMarkdown: page.Text,
+			SourcePages:    []int{page.Number},
+			Status:         "needs review",
+		})
+	}
+	return questions
+}
+
+func normalizeQuestionWorkers(workers int, total int) int {
+	if total <= 0 {
+		return 1
+	}
+	if workers <= 0 {
+		workers = runtime.NumCPU() / 4
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > 12 {
+		workers = 12
+	}
+	if workers > total {
+		return total
+	}
+	return workers
+}
+
+func appendUniqueInts(values []int, more ...int) []int {
+	seen := map[int]bool{}
+	for _, value := range values {
+		seen[value] = true
+	}
+	for _, value := range more {
+		if !seen[value] {
+			values = append(values, value)
+			seen[value] = true
+		}
+	}
+	return values
+}
+
+func firstInt(values []int) int {
+	if len(values) == 0 {
+		return 0
+	}
+	return values[0]
+}
+
+func normalizeQuestionLabel(label string) string {
+	label = strings.ToLower(strings.TrimSpace(label))
+	label = strings.Trim(label, ".:;-_ ")
+	label = regexp.MustCompile(`\s+`).ReplaceAllString(label, "-")
+	return label
+}
+
+func sortQuestions(questions []Question) {
+	for i := 0; i < len(questions)-1; i++ {
+		for j := i + 1; j < len(questions); j++ {
+			if firstInt(questions[j].SourcePages) < firstInt(questions[i].SourcePages) {
+				questions[i], questions[j] = questions[j], questions[i]
+			}
+		}
+	}
+}

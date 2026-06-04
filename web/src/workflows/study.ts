@@ -1,5 +1,5 @@
 import type { WorkflowDefinition } from "../types";
-import { documentPayload, providerModelField, providerModelPayload } from "./builders";
+import { providerModelField, providerModelPayload, providerPathPayload } from "./builders";
 
 const topperCopyFields: WorkflowDefinition["fields"] = [
   providerModelField,
@@ -7,7 +7,20 @@ const topperCopyFields: WorkflowDefinition["fields"] = [
   { type: "number", id: "dpi", label: "Render DPI", min: 150, max: 400, default: 300 },
   { type: "number", id: "render_workers", label: "Render workers (0 = auto)", min: 0, default: 0 },
   { type: "number", id: "workers", label: "OCR workers (0 = auto)", min: 0, default: 0 },
+  { type: "checkbox", id: "question_split", label: "Question-wise split", checked: true },
+  { type: "number", id: "question_workers", label: "Question split workers (0 = auto)", min: 0, default: 0 },
 ];
+
+function topperCopyPayload(values: Record<string, unknown>) {
+  return {
+    ...providerPathPayload(values),
+    dpi: values.dpi,
+    render_workers: values.render_workers,
+    workers: values.workers,
+    question_split: values.question_split !== false,
+    question_workers: values.question_workers,
+  };
+}
 
 export const studyWorkflowDefinitions: WorkflowDefinition[] = [
   {
@@ -30,6 +43,6 @@ export const studyWorkflowDefinitions: WorkflowDefinition[] = [
     label: "Topper copy analysis",
     endpoint: "/api/workflows/analyze/run",
     fields: topperCopyFields,
-    buildPayload: documentPayload,
+    buildPayload: topperCopyPayload,
   },
 ];

@@ -127,6 +127,34 @@ export interface WorkflowDefinition {
   buildPayload: (values: Record<string, unknown>) => Record<string, unknown>;
 }
 
+export interface TopperCopyPage {
+  number: number;
+  name: string;
+  path: string;
+  image_url: string;
+  text: string;
+  unclear_count: number;
+  verified: boolean;
+}
+
+export interface TopperCopyQuestion {
+  id: string;
+  label: string;
+  title?: string;
+  answer_markdown: string;
+  source_pages: number[];
+  status: string;
+}
+
+export interface TopperCopyReview {
+  kind: "topper_copy_review";
+  review_id: string;
+  pdf_name: string;
+  pages: TopperCopyPage[];
+  questions: TopperCopyQuestion[];
+  report: string;
+}
+
 export interface InboxClaim {
   id: string;
   text: string;
