@@ -19,6 +19,12 @@ func (s *Service) RunPDFWithProgress(ctx context.Context, req Request, progress 
 		return Response{}, err
 	}
 	defer cleanup()
+	if s.artifactDir != "" {
+		images, err = copyRenderedImages(s.artifactDir, images)
+		if err != nil {
+			return Response{}, err
+		}
+	}
 
 	inputs := make([]document.ImageInput, 0, len(images))
 	for i, imagePath := range images {
@@ -38,7 +44,7 @@ func (s *Service) RunPDFWithProgress(ctx context.Context, req Request, progress 
 	if progress != nil {
 		progress("assembling markdown")
 	}
-	return responseFromDocumentPages(pages), nil
+	return s.responseFromDocumentPages(pages), nil
 }
 
 func normalizedWorkerCount(workers int, jobs int) int {

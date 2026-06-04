@@ -225,6 +225,13 @@ func TestSQLiteStoreTopperReviewLifecycle(t *testing.T) {
 	if got.QuestionCount != 4 || got.Status != "edited" {
 		t.Fatalf("updated record = %#v, want edited count", got)
 	}
+
+	if err := store.DeleteTopperReview(context.Background(), "topper-1"); err != nil {
+		t.Fatalf("DeleteTopperReview() error = %v", err)
+	}
+	if _, err := store.GetTopperReview(context.Background(), "topper-1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetTopperReview(deleted) error = %v, want ErrNotFound", err)
+	}
 }
 
 func TestOpenSQLiteConfiguresLockResistantConnection(t *testing.T) {

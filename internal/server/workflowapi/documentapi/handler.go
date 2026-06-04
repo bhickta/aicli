@@ -24,6 +24,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/topper-reviews", h.listTopperReviews)
 	mux.HandleFunc("GET /api/topper-reviews/{id}", h.getTopperReview)
 	mux.HandleFunc("PUT /api/topper-reviews/{id}", h.updateTopperReview)
+	mux.HandleFunc("DELETE /api/topper-reviews/{id}", h.deleteTopperReview)
 	mux.HandleFunc("POST /api/topper-reviews/{id}/rerun", h.rerunTopperReview)
 	mux.HandleFunc("POST /api/workflows/ocr/run", h.runOCR)
 	mux.HandleFunc("POST /api/workflows/ocr/pdf", h.runPDFOCR)
@@ -36,6 +37,9 @@ func (h *Handler) runOCR(w http.ResponseWriter, r *http.Request) {
 		ocr.Request
 	}](w, r)
 	if !ok {
+		return
+	}
+	if h.rejectAlreadyProcessedPDF(w, r, req.Path) {
 		return
 	}
 	p, ok := h.runtime.ProviderOrError(w, req.ProviderID)
@@ -62,14 +66,29 @@ func (h *Handler) runPDFOCR(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	h.runtime.StartJob(w, r, "pdf-ocr", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	job := core.NewJob("pdf-ocr", req.Path)
+	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+		artifactDir := ""
+		if h.runtime.DataDir() != "" {
+			artifactDir = filepath.Join(h.runtime.DataDir(), "artifacts", "pdf-ocr", job.ID)
+		}
 		progress(core.Indeterminate(fmt.Sprintf("rendering PDF pages with %d worker(s)", req.RenderWorkers)))
 		result, err := ocr.New(
 			p,
 			ocr.WithPDFRenderer(h.runtime.Settings().Tools, tool.ExecRunner{}),
+			ocr.WithArtifactDir(artifactDir),
 		).RunPDFWithProgress(ctx, req.Request, func(stage string) {
 			progress(core.Indeterminate(stage))
 		})
+		if err == nil {
+			_ = h.saveTopperReview(ctx, topperReviewFromOCR(job.ID, req.Path, result), topperReviewMeta{
+				JobID:      job.ID,
+				SourcePath: req.Path,
+				ProviderID: req.ProviderID,
+				Model:      req.Model,
+				Status:     "ocr-only",
+			})
+		}
 		return result, err
 	})
 }
@@ -80,6 +99,9 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 		analyze.Request
 	}](w, r)
 	if !ok {
+		return
+	}
+	if h.rejectAlreadyProcessedPDF(w, r, req.Path) {
 		return
 	}
 	p, ok := h.runtime.ProviderOrError(w, req.ProviderID)

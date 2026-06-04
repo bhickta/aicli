@@ -63,6 +63,21 @@ FROM topper_reviews WHERE id = ?`,
 	return record, err
 }
 
+func (s *SQLiteStore) DeleteTopperReview(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM topper_reviews WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *SQLiteStore) ListTopperReviews(ctx context.Context, opts TopperReviewListOptions) ([]TopperReviewRecord, error) {
 	limit := normalizedTopperReviewLimit(opts.Limit)
 	offset := opts.Offset

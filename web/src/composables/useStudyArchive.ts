@@ -11,6 +11,7 @@ export function useStudyArchive() {
   const selectedRecord = shallowRef<TopperReviewRecord | null>(null);
   const selectedReview = shallowRef<TopperCopyReview | null>(null);
   const running = shallowRef(false);
+  const deletePDF = shallowRef(false);
   const providerModel = reactive({ provider_id: "", model: "" });
   const questionWorkers = shallowRef(0);
   const ocrWorkers = shallowRef(0);
@@ -18,6 +19,10 @@ export function useStudyArchive() {
   const summary = computed(() => {
     if (!reviews.value.length) return "No saved reviews";
     return `${reviews.value.length} saved review(s)`;
+  });
+  const canRerunOCR = computed(() => {
+    const review = selectedReview.value;
+    return Boolean(review?.pages.length) && Boolean(review?.pages.every((page) => page.path || page.image_url));
   });
 
   async function loadReviews() {
@@ -85,6 +90,21 @@ export function useStudyArchive() {
     }
   }
 
+  async function deleteReview() {
+    if (!selectedRecord.value) return;
+    const record = selectedRecord.value;
+    status.value = `Deleting ${record.pdf_name || record.id}...`;
+    await api(`/api/topper-reviews/${encodeURIComponent(record.id)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ delete_pdf: deletePDF.value }),
+    });
+    selectedRecord.value = null;
+    selectedReview.value = null;
+    deletePDF.value = false;
+    await loadReviews();
+    status.value = "Deleted";
+  }
+
   function updateSelectedReview(review: TopperCopyReview) {
     selectedReview.value = review;
   }
@@ -96,14 +116,17 @@ export function useStudyArchive() {
     selectedRecord,
     selectedReview,
     running,
+    deletePDF,
     providerModel,
     questionWorkers,
     ocrWorkers,
     summary,
+    canRerunOCR,
     loadReviews,
     openReview,
     saveReview,
     rerunReview,
+    deleteReview,
     updateSelectedReview,
   };
 }

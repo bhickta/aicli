@@ -184,6 +184,21 @@ func (s *SQLiteStore) UpdateJob(ctx context.Context, job Job) error {
 	return nil
 }
 
+func (s *SQLiteStore) DeleteJob(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM jobs WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }

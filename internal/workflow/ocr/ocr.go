@@ -12,9 +12,10 @@ import (
 )
 
 type Service struct {
-	provider provider.Provider
-	tools    config.ToolConfig
-	runner   tool.Runner
+	provider    provider.Provider
+	tools       config.ToolConfig
+	runner      tool.Runner
+	artifactDir string
 }
 
 type Request struct {
@@ -28,6 +29,8 @@ type Request struct {
 type Page struct {
 	Name     string `json:"name"`
 	Markdown string `json:"markdown"`
+	Path     string `json:"path,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
 }
 
 type Response struct {
@@ -52,6 +55,12 @@ func WithPDFRenderer(tools config.ToolConfig, runner tool.Runner) Option {
 	}
 }
 
+func WithArtifactDir(path string) Option {
+	return func(s *Service) {
+		s.artifactDir = path
+	}
+}
+
 func (s *Service) Run(ctx context.Context, req Request) (Response, error) {
 	if strings.TrimSpace(req.Path) == "" {
 		return Response{}, errors.New("path is required")
@@ -64,7 +73,7 @@ func (s *Service) Run(ctx context.Context, req Request) (Response, error) {
 	if err != nil {
 		return Response{}, err
 	}
-	return responseFromDocumentPages(pages), nil
+	return s.responseFromDocumentPages(pages), nil
 }
 
 func (s *Service) ocrInputs(ctx context.Context, req Request, inputs []document.ImageInput) ([]document.OCRPage, error) {
@@ -79,10 +88,15 @@ func (s *Service) ocrInputs(ctx context.Context, req Request, inputs []document.
 	)
 }
 
-func responseFromDocumentPages(pages []document.OCRPage) Response {
+func (s *Service) responseFromDocumentPages(pages []document.OCRPage) Response {
 	out := make([]Page, 0, len(pages))
 	for _, page := range pages {
-		out = append(out, Page{Name: page.Name, Markdown: page.Text})
+		out = append(out, Page{
+			Name:     page.Name,
+			Markdown: page.Text,
+			Path:     page.Path,
+			ImageURL: artifactURL(s.artifactDir, page.Path),
+		})
 	}
 	return Response{Markdown: document.AssembleMarkdown(pages), Pages: out}
 }

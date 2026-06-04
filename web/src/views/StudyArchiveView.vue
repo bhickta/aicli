@@ -28,7 +28,7 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
   <div class="study-archive panel">
     <header class="study-archive-header">
       <div>
-        <h2>Study Archive</h2>
+        <h2>Study</h2>
         <p class="muted">{{ archive.summary.value }}</p>
       </div>
       <div class="study-archive-search">
@@ -36,6 +36,10 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
         <button type="button" @click="archive.loadReviews()">Search</button>
       </div>
     </header>
+
+    <nav class="study-subtabs" aria-label="Study sections">
+      <button type="button" class="active">Topper answer copies</button>
+    </nav>
 
     <p class="status-line" role="status" aria-live="polite">{{ archive.status.value }}</p>
 
@@ -75,7 +79,14 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
               <button type="button" :disabled="archive.running.value" @click="archive.saveReview()">Save edits</button>
               <button type="button" :disabled="archive.running.value" @click="rerun('questions')">Rerun questions</button>
               <button type="button" :disabled="archive.running.value" @click="rerun('report')">Rerun report</button>
-              <button type="button" :disabled="archive.running.value" @click="rerun('all')">Rerun all</button>
+              <button type="button" :disabled="archive.running.value || !archive.canRerunOCR.value" @click="rerun('all')">Rerun all</button>
+            </div>
+            <div class="field archive-delete">
+              <label class="checkbox">
+                <input v-model="archive.deletePDF.value" type="checkbox">
+                Delete uploaded PDF too
+              </label>
+              <button type="button" class="danger-button" :disabled="archive.running.value" @click="archive.deleteReview()">Delete copy + assets</button>
             </div>
           </div>
         </section>
@@ -98,13 +109,16 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 .study-archive {
   display: grid;
   gap: 14px;
+  min-height: calc(100vh - 7.5rem);
 }
 
 .study-archive-header,
 .study-archive-search,
 .study-archive-layout,
 .study-review-controls,
-.archive-actions {
+.archive-actions,
+.archive-delete,
+.study-subtabs {
   display: flex;
   gap: 10px;
 }
@@ -128,17 +142,19 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 }
 
 .study-archive-layout {
-  align-items: flex-start;
+  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);
 }
 
 .study-review-list {
+  background: transparent;
   border-right: 1px solid #2b3440;
   display: grid;
-  flex: 0 0 18rem;
   gap: 8px;
-  max-height: calc(100vh - 13rem);
+  max-height: calc(100vh - 15rem);
   overflow: auto;
-  padding-right: 10px;
+  padding: 0 10px 0 0;
 }
 
 .study-review-list button {
@@ -165,7 +181,6 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 
 .study-review-main {
   display: grid;
-  flex: 1;
   gap: 12px;
   min-width: 0;
 }
@@ -181,6 +196,27 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 .archive-actions {
   align-items: end;
   flex-wrap: wrap;
+}
+
+.archive-delete {
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.study-subtabs {
+  border-bottom: 1px solid #2b3440;
+  padding-bottom: 8px;
+}
+
+.study-subtabs button.active {
+  border-color: #69a1ff;
+  background: #17304f;
+}
+
+.danger-button {
+  border-color: #7f1d1d;
+  background: #3b1115;
+  color: #fecaca;
 }
 
 @media (max-width: 920px) {

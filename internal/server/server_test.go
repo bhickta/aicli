@@ -56,6 +56,13 @@ func (m *memoryStore) UpdateJob(_ context.Context, job storage.Job) error {
 	m.jobs[job.ID] = job
 	return nil
 }
+func (m *memoryStore) DeleteJob(_ context.Context, id string) error {
+	if _, ok := m.jobs[id]; !ok {
+		return storage.ErrNotFound
+	}
+	delete(m.jobs, id)
+	return nil
+}
 func (m *memoryStore) DeleteFinishedJobs(_ context.Context) (int64, error) {
 	var deleted int64
 	for id, job := range m.jobs {
@@ -72,6 +79,14 @@ func (m *memoryStore) SaveTopperReview(_ context.Context, record storage.TopperR
 		m.reviews = map[string]storage.TopperReviewRecord{}
 	}
 	m.reviews[record.ID] = record
+	return nil
+}
+
+func (m *memoryStore) DeleteTopperReview(_ context.Context, id string) error {
+	if _, ok := m.reviews[id]; !ok {
+		return storage.ErrNotFound
+	}
+	delete(m.reviews, id)
 	return nil
 }
 

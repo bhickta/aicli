@@ -76,6 +76,7 @@ const activeQuestionEdit = computed(() => {
 const verifiedCount = computed(() => props.review.pages.filter((page) => pageEdits[page.number]?.verified).length);
 const unclearCount = computed(() => props.review.pages.reduce((total, page) => total + page.unclear_count, 0));
 const sourcePageLabels = computed(() => activeQuestion.value?.source_pages.map((page) => `P${page}`).join(", ") || "");
+const activePageHasImage = computed(() => Boolean(activePage.value?.image_url || activePage.value?.path));
 
 function selectPage(pageNumber: number) {
   activeTab.value = "pages";
@@ -210,9 +211,9 @@ function emitReview() {
             <span>{{ activePage?.name || "Page" }}</span>
             <div>
               <button type="button" :disabled="busy" @click="toggleActivePageVerified">{{ activePageEdit?.verified ? "Unverify" : "Mark verified" }}</button>
-              <button v-if="editable" type="button" :disabled="busy" @click="rerunActivePage('ocr')">OCR page</button>
+              <button v-if="editable" type="button" :disabled="busy || !activePageHasImage" @click="rerunActivePage('ocr')">OCR page</button>
               <button v-if="editable" type="button" :disabled="busy" @click="rerunActivePage('questions')">Split page</button>
-              <button v-if="editable" type="button" :disabled="busy" @click="rerunActivePage('all')">Rerun page</button>
+              <button v-if="editable" type="button" :disabled="busy || !activePageHasImage" @click="rerunActivePage('all')">Rerun page</button>
               <button type="button" @click="setZoom(zoom - 0.1)">-</button>
               <button type="button" @click="setZoom(1)">Fit</button>
               <button type="button" @click="setZoom(zoom + 0.1)">+</button>
@@ -220,7 +221,7 @@ function emitReview() {
           </div>
           <div class="topper-image-scroll">
             <img v-if="activePage?.image_url" :src="activePage.image_url" :alt="`Page ${activePage.number}`" :style="{ transform: `scale(${zoom})` }" />
-            <p v-else>No page image available.</p>
+            <p v-else>No page image saved for this OCR-only record. Question-wise split can still use the OCR text.</p>
           </div>
         </section>
         <section class="topper-ocr-panel">
@@ -297,6 +298,7 @@ function emitReview() {
   background: #0d121b;
   display: grid;
   gap: 0.75rem;
+  min-width: 0;
   padding: 0.85rem;
 }
 
@@ -367,18 +369,19 @@ function emitReview() {
 .topper-review-grid {
   display: grid;
   gap: 0.75rem;
-  grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr);
-  min-height: 34rem;
+  grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr);
+  min-height: min(42rem, calc(100vh - 15rem));
 }
 
 .topper-review-list {
+  background: transparent;
   border-right: 1px solid #253247;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
   max-height: 70vh;
   overflow: auto;
-  padding-right: 0.75rem;
+  padding: 0 0.75rem 0 0;
 }
 
 .topper-review-list button {
@@ -397,7 +400,7 @@ function emitReview() {
 .topper-question-workspace {
   display: grid;
   gap: 0.75rem;
-  grid-template-columns: minmax(0, 1.1fr) minmax(20rem, 0.9fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(22rem, 0.9fr);
   min-width: 0;
 }
 
@@ -420,7 +423,7 @@ function emitReview() {
   justify-content: center;
   margin-top: 0.6rem;
   max-height: 68vh;
-  min-height: 28rem;
+  min-height: 32rem;
   overflow: auto;
   padding: 1rem;
 }

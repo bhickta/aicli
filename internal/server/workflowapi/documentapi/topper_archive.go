@@ -16,12 +16,17 @@ import (
 	"github.com/bhickta/aicli/internal/storage"
 	"github.com/bhickta/aicli/internal/tool"
 	"github.com/bhickta/aicli/internal/workflow/analyze"
+	"github.com/bhickta/aicli/internal/workflow/ocr"
 )
 
 type topperReviewStore interface {
 	SaveTopperReview(ctx context.Context, record storage.TopperReviewRecord) error
 	GetTopperReview(ctx context.Context, id string) (storage.TopperReviewRecord, error)
 	ListTopperReviews(ctx context.Context, opts storage.TopperReviewListOptions) ([]storage.TopperReviewRecord, error)
+}
+
+type topperReviewDeleter interface {
+	DeleteTopperReview(ctx context.Context, id string) error
 }
 
 type topperReviewMeta struct {
@@ -109,6 +114,45 @@ func (h *Handler) updateTopperReview(w http.ResponseWriter, r *http.Request) {
 	core.WriteJSON(w, http.StatusOK, map[string]any{"review": req})
 }
 
+func (h *Handler) deleteTopperReview(w http.ResponseWriter, r *http.Request) {
+	store, ok := h.topperStore(w)
+	if !ok {
+		return
+	}
+	deleter, ok := store.(topperReviewDeleter)
+	if !ok {
+		core.WriteError(w, http.StatusNotImplemented, fmt.Errorf("topper review deletion is not supported by this store"))
+		return
+	}
+	record, ok := h.readTopperReviewRecord(w, r)
+	if !ok {
+		return
+	}
+	req, ok := core.DecodeJSON[struct {
+		DeletePDF bool `json:"delete_pdf"`
+	}](w, r)
+	if !ok {
+		return
+	}
+	result, err := h.deleteTopperReviewFiles(record, req.DeletePDF)
+	if err != nil {
+		core.WriteError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := deleter.DeleteTopperReview(r.Context(), record.ID); err != nil && !errors.Is(err, storage.ErrNotFound) {
+		core.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if jobDeleter, ok := h.runtime.Store().(storage.JobDeleter); ok && record.JobID != "" {
+		if err := jobDeleter.DeleteJob(r.Context(), record.JobID); err != nil && !errors.Is(err, storage.ErrNotFound) {
+			core.WriteError(w, http.StatusInternalServerError, err)
+			return
+		}
+		result.DeletedJob = true
+	}
+	core.WriteJSON(w, http.StatusOK, result)
+}
+
 func (h *Handler) rerunTopperReview(w http.ResponseWriter, r *http.Request) {
 	record, ok := h.readTopperReviewRecord(w, r)
 	if !ok {
@@ -119,6 +163,10 @@ func (h *Handler) rerunTopperReview(w http.ResponseWriter, r *http.Request) {
 		analyze.ReprocessRequest
 	}](w, r)
 	if !ok {
+		return
+	}
+	if (req.Action == "ocr" || req.Action == "all") && !recordHasPageImages(record) {
+		core.WriteError(w, http.StatusBadRequest, fmt.Errorf("saved page images are missing; run a fresh Topper copy analysis or PDF OCR before OCR rerun"))
 		return
 	}
 	providerID := strings.TrimSpace(req.ProviderID)
@@ -167,6 +215,88 @@ func (h *Handler) rerunTopperReview(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type deleteTopperReviewResult struct {
+	DeletedReviewAssets []string `json:"deleted_review_assets"`
+	DeletedOCRAssets    []string `json:"deleted_ocr_assets"`
+	DeletedPDF          string   `json:"deleted_pdf"`
+	SkippedPDF          string   `json:"skipped_pdf"`
+	DeletedJob          bool     `json:"deleted_job"`
+}
+
+func (h *Handler) deleteTopperReviewFiles(record storage.TopperReviewRecord, deletePDF bool) (deleteTopperReviewResult, error) {
+	result := deleteTopperReviewResult{}
+	if h.runtime.DataDir() != "" {
+		reviewDir := filepath.Join(h.runtime.DataDir(), "artifacts", "topper-copy", record.ID)
+		if removeDirIfExists(reviewDir) {
+			result.DeletedReviewAssets = append(result.DeletedReviewAssets, reviewDir)
+		}
+		if record.JobID != "" {
+			ocrDir := filepath.Join(h.runtime.DataDir(), "artifacts", "pdf-ocr", record.JobID)
+			if removeDirIfExists(ocrDir) {
+				result.DeletedOCRAssets = append(result.DeletedOCRAssets, ocrDir)
+			}
+		}
+	}
+	if deletePDF {
+		deleted, skipped, err := h.deleteUploadedPDF(record.SourcePath)
+		if err != nil {
+			return result, err
+		}
+		result.DeletedPDF = deleted
+		result.SkippedPDF = skipped
+	}
+	return result, nil
+}
+
+func removeDirIfExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return false
+	}
+	return os.RemoveAll(path) == nil
+}
+
+func (h *Handler) deleteUploadedPDF(path string) (string, string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", "No source PDF path saved for this review.", nil
+	}
+	if h.runtime.DataDir() == "" {
+		return "", path, fmt.Errorf("data directory is not configured")
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", path, err
+	}
+	uploadRoot, err := filepath.Abs(filepath.Join(h.runtime.DataDir(), "uploads"))
+	if err != nil {
+		return "", path, err
+	}
+	rel, err := filepath.Rel(uploadRoot, abs)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return "", "Skipped PDF outside AICLI uploads: " + path, nil
+	}
+	if err := os.Remove(abs); err != nil && !os.IsNotExist(err) {
+		return "", path, err
+	}
+	return abs, "", nil
+}
+
+func recordHasPageImages(record storage.TopperReviewRecord) bool {
+	review, err := decodeTopperReview(record)
+	if err != nil {
+		return false
+	}
+	for _, page := range review.Pages {
+		if strings.TrimSpace(page.Path) == "" {
+			return false
+		}
+	}
+	return len(review.Pages) > 0
+}
+
 func (h *Handler) readTopperReviewRecord(w http.ResponseWriter, r *http.Request) (storage.TopperReviewRecord, bool) {
 	store, ok := h.topperStore(w)
 	if !ok {
@@ -190,6 +320,43 @@ func (h *Handler) saveTopperReview(ctx context.Context, review analyze.Response,
 		return nil
 	}
 	return h.saveTopperReviewRecord(ctx, store, review, meta, time.Time{})
+}
+
+func (h *Handler) rejectAlreadyProcessedPDF(w http.ResponseWriter, r *http.Request, sourcePath string) bool {
+	record, found, err := h.findProcessedPDFByName(r.Context(), sourcePath)
+	if err != nil {
+		core.WriteError(w, http.StatusInternalServerError, err)
+		return true
+	}
+	if !found {
+		return false
+	}
+	core.WriteError(w, http.StatusConflict, fmt.Errorf("PDF filename already processed as %s (%s)", record.ID, record.PDFName))
+	return true
+}
+
+func (h *Handler) findProcessedPDFByName(ctx context.Context, sourcePath string) (storage.TopperReviewRecord, bool, error) {
+	store, ok := h.runtime.Store().(topperReviewStore)
+	if !ok {
+		return storage.TopperReviewRecord{}, false, nil
+	}
+	if err := h.backfillTopperReviews(ctx, store); err != nil {
+		return storage.TopperReviewRecord{}, false, err
+	}
+	filename := strings.ToLower(filepath.Base(sourcePath))
+	if filename == "." || filename == "" {
+		return storage.TopperReviewRecord{}, false, nil
+	}
+	records, err := store.ListTopperReviews(ctx, storage.TopperReviewListOptions{Query: filename, Limit: 200})
+	if err != nil {
+		return storage.TopperReviewRecord{}, false, err
+	}
+	for _, record := range records {
+		if strings.ToLower(record.PDFName) == filename || strings.ToLower(filepath.Base(record.SourcePath)) == filename {
+			return record, true, nil
+		}
+	}
+	return storage.TopperReviewRecord{}, false, nil
 }
 
 func (h *Handler) saveTopperReviewRecord(ctx context.Context, store topperReviewStore, review analyze.Response, meta topperReviewMeta, createdAt time.Time) error {
@@ -364,24 +531,58 @@ func decodePDFOCRReviewOutput(job storage.Job) (analyze.Response, bool) {
 	if job.Type != "pdf-ocr" || job.Status != storage.JobStatusCompleted {
 		return analyze.Response{}, false
 	}
-	var output struct {
-		Markdown string `json:"markdown"`
-	}
+	var output ocr.Response
 	if err := json.Unmarshal([]byte(job.Output), &output); err != nil {
 		return analyze.Response{}, false
 	}
-	pages := ocrMarkdownPages(output.Markdown)
-	if len(pages) == 0 {
+	review := topperReviewFromOCR(job.ID, job.Input, output)
+	if len(review.Pages) == 0 {
 		return analyze.Response{}, false
+	}
+	return review, true
+}
+
+func topperReviewFromOCR(jobID string, sourcePath string, output ocr.Response) analyze.Response {
+	pages := ocrResponsePages(output)
+	if len(pages) == 0 {
+		pages = ocrMarkdownPages(output.Markdown)
 	}
 	return analyze.Response{
 		Kind:      "topper_copy_review",
-		ReviewID:  "ocr-" + job.ID,
-		PDFName:   filepath.Base(job.Input),
+		ReviewID:  "ocr-" + jobID,
+		PDFName:   filepath.Base(sourcePath),
 		Pages:     pages,
 		Questions: pageReviewQuestions(pages),
 		Report:    "Imported from PDF OCR output. Run page or full review from Study Archive for AI analysis.",
-	}, true
+	}
+}
+
+func ocrResponsePages(output ocr.Response) []analyze.Page {
+	pages := make([]analyze.Page, 0, len(output.Pages))
+	for index, page := range output.Pages {
+		body := strings.TrimSpace(page.Markdown)
+		if body == "" {
+			continue
+		}
+		number := index + 1
+		if parsed, _, ok := parseOCRPageMarker(fmt.Sprintf("<!-- Page %d %s -->", number, page.Name)); ok {
+			number = parsed
+		}
+		name := strings.TrimSpace(page.Name)
+		if name == "" {
+			name = fmt.Sprintf("page-%d", number)
+		}
+		pages = append(pages, analyze.Page{
+			Number:       number,
+			Name:         name,
+			Path:         page.Path,
+			ImageURL:     page.ImageURL,
+			Text:         body,
+			UnclearCount: strings.Count(strings.ToLower(body), "[unclear]"),
+			Verified:     false,
+		})
+	}
+	return pages
 }
 
 func ocrMarkdownPages(markdown string) []analyze.Page {

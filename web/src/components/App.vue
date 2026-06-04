@@ -16,7 +16,7 @@ import ZettelView from "../views/ZettelView.vue";
 const views: Array<{ id: ViewName; label: string }> = [
   { id: "chat", label: "Chat" },
   { id: "workflows", label: "Workflows" },
-  { id: "study-archive", label: "Study Archive" },
+  { id: "study-archive", label: "Study" },
   { id: "zettel", label: "Zettel" },
   { id: "jobs", label: "Jobs" },
   { id: "providers", label: "Providers" },

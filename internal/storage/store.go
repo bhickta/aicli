@@ -38,6 +38,10 @@ type Store interface {
 	UpdateJob(ctx context.Context, job Job) error
 }
 
+type JobDeleter interface {
+	DeleteJob(ctx context.Context, id string) error
+}
+
 type JobListOptions struct {
 	Status string
 	Limit  int

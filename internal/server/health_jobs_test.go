@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -271,5 +273,54 @@ func TestTopperReviewArchiveBackfillsPDFOCRJobs(t *testing.T) {
 	}
 	if review.PageCount != 2 || review.QuestionCount != 2 || review.UnclearCount != 1 {
 		t.Fatalf("counts = pages %d questions %d unclear %d, want 2/2/1", review.PageCount, review.QuestionCount, review.UnclearCount)
+	}
+}
+
+func TestTopperReviewArchiveDeleteRemovesAssetsPDFAndJob(t *testing.T) {
+	t.Parallel()
+
+	dataDir := t.TempDir()
+	sourcePDF := filepath.Join(dataDir, "uploads", "copy.pdf")
+	reviewDir := filepath.Join(dataDir, "artifacts", "topper-copy", "topper-delete")
+	ocrDir := filepath.Join(dataDir, "artifacts", "pdf-ocr", "job-delete")
+	for _, path := range []string{sourcePDF, filepath.Join(reviewDir, "review.json"), filepath.Join(ocrDir, "page-001.jpg")} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := &memoryStore{jobs: map[string]storage.Job{}, reviews: map[string]storage.TopperReviewRecord{}}
+	if err := store.CreateJob(context.Background(), storage.Job{ID: "job-delete", Type: "analyze", Status: storage.JobStatusCompleted}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveTopperReview(context.Background(), storage.TopperReviewRecord{
+		ID:         "topper-delete",
+		JobID:      "job-delete",
+		PDFName:    "copy.pdf",
+		SourcePath: sourcePDF,
+		ReviewJSON: `{"kind":"topper_copy_review","review_id":"topper-delete","pdf_name":"copy.pdf","pages":[],"questions":[]}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := testHandlerWithSettingsAndStore(config.DefaultSettings(), dataDir, store)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/topper-reviews/topper-delete", strings.NewReader(`{"delete_pdf":true}`))
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, want 200, body=%s", res.Code, res.Body.String())
+	}
+	if _, err := store.GetTopperReview(context.Background(), "topper-delete"); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("GetTopperReview error = %v, want ErrNotFound", err)
+	}
+	if _, err := store.GetJob(context.Background(), "job-delete"); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("GetJob error = %v, want ErrNotFound", err)
+	}
+	for _, path := range []string{sourcePDF, reviewDir, ocrDir} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("%s still exists or stat error = %v, want removed", path, err)
+		}
 	}
 }
