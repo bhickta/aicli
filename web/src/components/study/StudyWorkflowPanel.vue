@@ -50,48 +50,51 @@ async function runWorkflow() {
 
 <template>
   <section class="study-workflow-panel">
-    <header class="study-workflow-header">
-      <div>
-        <h3>Study Workflows</h3>
-        <p class="muted">Run recall, OCR, and topper answer-copy analysis from the Study area.</p>
-      </div>
+    <div class="study-workflow-toolbar">
+      <WorkflowSelector
+        :workflows="studyWorkflowDefinitions"
+        :selected-id="activeWorkflow?.id || ''"
+        @select="chooseWorkflow"
+      />
       <WorkflowSoundControl />
-    </header>
+    </div>
 
-    <WorkflowSelector
-      :workflows="studyWorkflowDefinitions"
-      :selected-id="activeWorkflow?.id || ''"
-      @select="chooseWorkflow"
-    />
-    <DropZone @upload="handleDrop" />
-    <WorkflowFields
-      :fields="nonProviderFields"
-      :values="values"
-      :has-provider-model="hasProviderModel"
-      :provider-model="providerModel"
-      :preferred-provider-id="activeWorkflow?.preferredProviderId"
-      :preferred-model="activeWorkflow?.preferredModel"
-      @update-field="updateField"
-      @update-provider-model="Object.assign(providerModel, $event)"
-      @browse="browse"
-    />
-    <WorkflowRunControls
-      :running="running"
-      :can-cancel="Boolean(currentJob)"
-      cancel-label="Cancel workflow"
-      @run="runWorkflow"
-      @cancel="cancelWorkflow"
-    />
-    <WorkflowResult
-      :status="status"
-      :progress="progress"
-      :progress-mode="progressMode"
-      :progress-visible="progressVisible"
-      :result="result"
-      :parsed-result="parsedResult"
-      :source-preview="sourcePreview"
-      :markdown-preview="markdownPreview"
-    />
+    <div class="study-workflow-layout">
+      <section class="study-workflow-controls">
+        <DropZone @upload="handleDrop" />
+        <WorkflowFields
+          :fields="nonProviderFields"
+          :values="values"
+          :has-provider-model="hasProviderModel"
+          :provider-model="providerModel"
+          :preferred-provider-id="activeWorkflow?.preferredProviderId"
+          :preferred-model="activeWorkflow?.preferredModel"
+          @update-field="updateField"
+          @update-provider-model="Object.assign(providerModel, $event)"
+          @browse="browse"
+        />
+        <WorkflowRunControls
+          :running="running"
+          :can-cancel="Boolean(currentJob)"
+          cancel-label="Cancel workflow"
+          @run="runWorkflow"
+          @cancel="cancelWorkflow"
+        />
+      </section>
+
+      <section class="study-workflow-result">
+        <WorkflowResult
+          :status="status"
+          :progress="progress"
+          :progress-mode="progressMode"
+          :progress-visible="progressVisible"
+          :result="result"
+          :parsed-result="parsedResult"
+          :source-preview="sourcePreview"
+          :markdown-preview="markdownPreview"
+        />
+      </section>
+    </div>
     <FileBrowser :field="browserField" @select="handleBrowserSelect" @close="closeBrowser" />
   </section>
 </template>
@@ -99,23 +102,48 @@ async function runWorkflow() {
 <style scoped>
 .study-workflow-panel {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  min-width: 0;
 }
 
-.study-workflow-header {
-  align-items: flex-start;
+.study-workflow-toolbar {
+  align-items: end;
   display: flex;
   gap: 12px;
   justify-content: space-between;
 }
 
-.study-workflow-header h3,
-.study-workflow-header p {
-  margin: 0;
+.study-workflow-layout {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(22rem, 0.42fr) minmax(0, 1fr);
+  min-width: 0;
+}
+
+.study-workflow-controls,
+.study-workflow-result {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.study-workflow-controls {
+  background: #0d121b;
+  border: 1px solid #253247;
+  border-radius: 7px;
+  padding: 10px;
+}
+
+@media (max-width: 980px) {
+  .study-workflow-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
-  .study-workflow-header {
+  .study-workflow-toolbar {
+    align-items: stretch;
     display: grid;
   }
 }

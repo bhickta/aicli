@@ -58,11 +58,12 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
       <main class="study-review-main">
         <section v-if="archive.selectedReview.value" class="study-review-controls">
           <ProviderModelControl
+            class="study-provider-control"
             :provider-id="archive.providerModel.provider_id"
             :model="archive.providerModel.model"
             @change="Object.assign(archive.providerModel, $event)"
           />
-          <div class="field-row">
+          <div class="study-review-action-grid">
             <div class="field">
               <label>OCR workers</label>
               <input v-model.number="archive.ocrWorkers.value" type="number" min="0">
@@ -104,7 +105,7 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 <style scoped>
 .study-archive {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -124,6 +125,7 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 .study-archive-header {
   align-items: start;
   justify-content: space-between;
+  min-width: 0;
 }
 
 .study-archive-header h3,
@@ -132,7 +134,8 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 }
 
 .study-archive-search {
-  min-width: min(34rem, 100%);
+  flex: 0 1 34rem;
+  min-width: min(26rem, 100%);
 }
 
 .study-archive-search input {
@@ -142,7 +145,9 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 .study-archive-layout {
   align-items: stretch;
   display: grid;
-  grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);
+  gap: 12px;
+  grid-template-columns: minmax(17rem, 20rem) minmax(0, 1fr);
+  min-width: 0;
 }
 
 .study-review-list {
@@ -150,7 +155,7 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
   border-right: 1px solid #2b3440;
   display: grid;
   gap: 8px;
-  max-height: calc(100vh - 15rem);
+  max-height: calc(100vh - 14rem);
   overflow: auto;
   padding: 0 10px 0 0;
 }
@@ -179,16 +184,30 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 
 .study-review-main {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
 .study-review-controls {
   background: #0d121b;
   border: 1px solid #253247;
-  border-radius: 6px;
+  border-radius: 7px;
   display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(18rem, 0.8fr) minmax(20rem, 1.2fr);
   padding: 10px;
+}
+
+.study-provider-control {
+  min-width: 0;
+}
+
+.study-review-action-grid {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(7rem, 10rem)) minmax(12rem, 1fr) minmax(12rem, 0.9fr);
+  min-width: 0;
 }
 
 .archive-actions {
@@ -209,8 +228,11 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 
 @media (max-width: 920px) {
   .study-archive-header,
-  .study-archive-layout {
+  .study-archive-layout,
+  .study-review-controls,
+  .study-review-action-grid {
     display: grid;
+    grid-template-columns: 1fr;
   }
 
   .study-review-list {

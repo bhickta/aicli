@@ -13,54 +13,94 @@ const activeSection = shallowRef<StudySection>("topper-copies");
     <header class="study-header">
       <div>
         <h2>Study</h2>
-        <p class="muted">Study workflows and saved answer-copy reviews.</p>
       </div>
+      <nav class="study-tabs" aria-label="Study sections">
+        <button
+          type="button"
+          :class="{ active: activeSection === 'topper-copies' }"
+          @click="activeSection = 'topper-copies'"
+        >
+          Topper copies
+        </button>
+        <button
+          type="button"
+          :class="{ active: activeSection === 'workflows' }"
+          @click="activeSection = 'workflows'"
+        >
+          Workflows
+        </button>
+      </nav>
     </header>
 
-    <nav class="study-subtabs" aria-label="Study sections">
-      <button
-        type="button"
-        :class="{ active: activeSection === 'topper-copies' }"
-        @click="activeSection = 'topper-copies'"
-      >
-        Topper answer copies
-      </button>
-      <button
-        type="button"
-        :class="{ active: activeSection === 'workflows' }"
-        @click="activeSection = 'workflows'"
-      >
-        Workflows
-      </button>
-    </nav>
-
-    <StudyArchiveView v-if="activeSection === 'topper-copies'" />
-    <StudyWorkflowPanel v-else />
+    <main class="study-content">
+      <StudyArchiveView v-if="activeSection === 'topper-copies'" />
+      <StudyWorkflowPanel v-else />
+    </main>
   </div>
 </template>
 
 <style scoped>
 .study-panel {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   min-height: calc(100vh - 7.5rem);
+  padding: 14px;
 }
 
-.study-header h2,
-.study-header p {
-  margin: 0;
-}
-
-.study-subtabs {
+.study-header {
+  align-items: center;
   border-bottom: 1px solid #2b3440;
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding-bottom: 8px;
+  gap: 16px;
+  justify-content: space-between;
+  padding-bottom: 10px;
 }
 
-.study-subtabs button.active {
-  border-color: #69a1ff;
+.study-header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.study-tabs {
+  background: #0f141c;
+  border: 1px solid #2b3440;
+  border-radius: 7px;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+}
+
+.study-tabs button {
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  min-width: 8rem;
+  padding: 7px 12px;
+  text-align: center;
+}
+
+.study-tabs button.active {
   background: #17304f;
+  color: #ffffff;
+}
+
+.study-content {
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .study-header {
+    align-items: stretch;
+    display: grid;
+  }
+
+  .study-tabs {
+    overflow-x: auto;
+  }
+
+  .study-tabs button {
+    min-width: 7rem;
+    white-space: nowrap;
+  }
 }
 </style>
