@@ -48,7 +48,7 @@ output:focus-visible {
 }
 
 .panel {
-  max-width: 980px;
+  width: 100%;
   border: 1px solid #2b313b;
   border-radius: 8px;
   background: #161a21;
