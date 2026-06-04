@@ -43,6 +43,29 @@ type JobListOptions struct {
 	Limit  int
 }
 
+type TopperReviewRecord struct {
+	ID            string    `json:"id"`
+	JobID         string    `json:"job_id"`
+	PDFName       string    `json:"pdf_name"`
+	SourcePath    string    `json:"source_path"`
+	ProviderID    string    `json:"provider_id"`
+	Model         string    `json:"model"`
+	PageCount     int       `json:"page_count"`
+	QuestionCount int       `json:"question_count"`
+	UnclearCount  int       `json:"unclear_count"`
+	Status        string    `json:"status"`
+	ReviewJSON    string    `json:"review_json,omitempty"`
+	SearchText    string    `json:"-"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type TopperReviewListOptions struct {
+	Query  string
+	Limit  int
+	Offset int
+}
+
 var ErrNotFound = errors.New("not found")
 
 type SQLiteStore struct {

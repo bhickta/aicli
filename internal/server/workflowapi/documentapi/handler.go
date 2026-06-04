@@ -21,6 +21,10 @@ func New(runtime *core.Runtime) *Handler {
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/topper-reviews", h.listTopperReviews)
+	mux.HandleFunc("GET /api/topper-reviews/{id}", h.getTopperReview)
+	mux.HandleFunc("PUT /api/topper-reviews/{id}", h.updateTopperReview)
+	mux.HandleFunc("POST /api/topper-reviews/{id}/rerun", h.rerunTopperReview)
 	mux.HandleFunc("POST /api/workflows/ocr/run", h.runOCR)
 	mux.HandleFunc("POST /api/workflows/ocr/pdf", h.runPDFOCR)
 	mux.HandleFunc("POST /api/workflows/analyze/run", h.runAnalyze)
@@ -82,7 +86,8 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	h.runtime.StartJob(w, r, "analyze", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+	job := core.NewJob("analyze", req.Path)
+	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		artifactDir := ""
 		if h.runtime.DataDir() != "" {
 			artifactDir = filepath.Join(h.runtime.DataDir(), "artifacts")
@@ -95,6 +100,15 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 		).RunWithProgress(ctx, req.Request, func(stage string, completed int, total int, label string) {
 			progress(core.Units(stage, completed, total, label))
 		})
+		if err == nil {
+			_ = h.saveTopperReview(ctx, result, topperReviewMeta{
+				JobID:      job.ID,
+				SourcePath: req.Path,
+				ProviderID: req.ProviderID,
+				Model:      req.Model,
+				Status:     "ready",
+			})
+		}
 		return result, err
 	})
 }

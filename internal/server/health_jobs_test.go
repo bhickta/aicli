@@ -141,3 +141,58 @@ func TestClearJobsDeletesFinishedOnly(t *testing.T) {
 		t.Fatalf("completed GetJob error = %v, want ErrNotFound", err)
 	}
 }
+
+func TestTopperReviewArchiveEndpoints(t *testing.T) {
+	t.Parallel()
+
+	store := &memoryStore{jobs: map[string]storage.Job{}, reviews: map[string]storage.TopperReviewRecord{}}
+	reviewJSON := `{"kind":"topper_copy_review","review_id":"topper-1","pdf_name":"copy.pdf","pages":[{"number":1,"name":"page-1","path":"","image_url":"","text":"governance answer","unclear_count":0,"verified":false}],"questions":[],"report":"good answer"}`
+	if err := store.SaveTopperReview(context.Background(), storage.TopperReviewRecord{
+		ID:         "topper-1",
+		PDFName:    "copy.pdf",
+		ReviewJSON: reviewJSON,
+		SearchText: "governance answer",
+		UpdatedAt:  time.Date(2026, 6, 4, 8, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := testHandlerWithSettingsAndStore(config.DefaultSettings(), "", store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/topper-reviews?query=governance", nil)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200, body=%s", res.Code, res.Body.String())
+	}
+	var listPayload struct {
+		Reviews []storage.TopperReviewRecord `json:"reviews"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&listPayload); err != nil {
+		t.Fatal(err)
+	}
+	if len(listPayload.Reviews) != 1 || listPayload.Reviews[0].ID != "topper-1" {
+		t.Fatalf("reviews = %#v, want topper-1", listPayload.Reviews)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/topper-reviews/topper-1", nil)
+	res = httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want 200, body=%s", res.Code, res.Body.String())
+	}
+
+	updated := strings.NewReader(`{"kind":"topper_copy_review","review_id":"topper-1","pdf_name":"copy.pdf","pages":[],"questions":[],"report":"edited"}`)
+	req = httptest.NewRequest(http.MethodPut, "/api/topper-reviews/topper-1", updated)
+	res = httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body=%s", res.Code, res.Body.String())
+	}
+	record, err := store.GetTopperReview(context.Background(), "topper-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(record.ReviewJSON, "edited") || record.Status != "edited" {
+		t.Fatalf("record after update = %#v, want edited review", record)
+	}
+}

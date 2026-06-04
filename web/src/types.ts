@@ -1,4 +1,4 @@
-export type ViewName = "chat" | "workflows" | "zettel" | "jobs" | "providers" | "tools" | "settings";
+export type ViewName = "chat" | "workflows" | "study-archive" | "zettel" | "jobs" | "providers" | "tools" | "settings";
 
 export interface ProviderConfig {
   id: string;
@@ -153,6 +153,21 @@ export interface TopperCopyReview {
   pages: TopperCopyPage[];
   questions: TopperCopyQuestion[];
   report: string;
+}
+
+export interface TopperReviewRecord {
+  id: string;
+  job_id: string;
+  pdf_name: string;
+  source_path: string;
+  provider_id: string;
+  model: string;
+  page_count: number;
+  question_count: number;
+  unclear_count: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface InboxClaim {

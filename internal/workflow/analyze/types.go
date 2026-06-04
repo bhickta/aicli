@@ -23,6 +23,15 @@ type Request struct {
 	QuestionWorkers int    `json:"question_workers"`
 }
 
+type ReprocessRequest struct {
+	Model           string `json:"model"`
+	Action          string `json:"action"`
+	PageNumbers     []int  `json:"page_numbers"`
+	QuestionSplit   bool   `json:"question_split"`
+	QuestionWorkers int    `json:"question_workers"`
+	Workers         int    `json:"workers"`
+}
+
 type Page struct {
 	Number       int    `json:"number"`
 	Name         string `json:"name"`

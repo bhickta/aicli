@@ -26,6 +26,24 @@ CREATE TABLE IF NOT EXISTS jobs (
 	updated_at TIMESTAMP NOT NULL,
 	finished_at TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS topper_reviews (
+	id TEXT PRIMARY KEY,
+	job_id TEXT NOT NULL DEFAULT '',
+	pdf_name TEXT NOT NULL DEFAULT '',
+	source_path TEXT NOT NULL DEFAULT '',
+	provider_id TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	page_count INTEGER NOT NULL DEFAULT 0,
+	question_count INTEGER NOT NULL DEFAULT 0,
+	unclear_count INTEGER NOT NULL DEFAULT 0,
+	status TEXT NOT NULL DEFAULT '',
+	review_json TEXT NOT NULL DEFAULT '',
+	search_text TEXT NOT NULL DEFAULT '',
+	created_at TIMESTAMP NOT NULL,
+	updated_at TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_topper_reviews_updated_at ON topper_reviews(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_topper_reviews_pdf_name ON topper_reviews(pdf_name);
 `)
 	if err != nil {
 		return err

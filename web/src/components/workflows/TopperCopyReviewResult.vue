@@ -2,8 +2,17 @@
 import { computed, reactive, shallowRef, watch } from "vue";
 import type { TopperCopyPage, TopperCopyQuestion, TopperCopyReview } from "../../types";
 
+type TopperRerunAction = "ocr" | "questions" | "report" | "all";
+
 const props = defineProps<{
   review: TopperCopyReview;
+  editable?: boolean;
+  busy?: boolean;
+}>();
+
+const emit = defineEmits<{
+  "update:review": [review: TopperCopyReview];
+  rerunPage: [action: TopperRerunAction, pageNumber: number];
 }>();
 
 const activeTab = shallowRef<"pages" | "questions" | "report">("pages");
@@ -12,6 +21,8 @@ const activeQuestionID = shallowRef(props.review.questions[0]?.id || "");
 const zoom = shallowRef(1);
 const fullscreen = shallowRef(false);
 const pageEdits = reactive<Record<number, { text: string; verified: boolean }>>({});
+const questionEdits = reactive<Record<string, { answer: string; title: string; status: string }>>({});
+const reportEdit = shallowRef(props.review.report);
 
 watch(
   () => props.review,
@@ -19,6 +30,14 @@ watch(
     for (const page of review.pages) {
       pageEdits[page.number] = { text: page.text, verified: page.verified };
     }
+    for (const question of review.questions) {
+      questionEdits[question.id] = {
+        answer: question.answer_markdown,
+        title: question.title || "",
+        status: question.status,
+      };
+    }
+    reportEdit.value = review.report;
     activePageNumber.value = review.pages[0]?.number || 1;
     activeQuestionID.value = review.questions[0]?.id || "";
   },
@@ -34,6 +53,14 @@ const activePageEdit = computed(() => {
 });
 const activeQuestion = computed<TopperCopyQuestion | undefined>(() => {
   return props.review.questions.find((question) => question.id === activeQuestionID.value) || props.review.questions[0];
+});
+const activeQuestionEdit = computed(() => {
+  if (!activeQuestion.value) return null;
+  return questionEdits[activeQuestion.value.id] || {
+    answer: activeQuestion.value.answer_markdown,
+    title: activeQuestion.value.title || "",
+    status: activeQuestion.value.status,
+  };
 });
 const verifiedCount = computed(() => props.review.pages.filter((page) => pageEdits[page.number]?.verified).length);
 const unclearCount = computed(() => props.review.pages.reduce((total, page) => total + page.unclear_count, 0));
@@ -60,6 +87,7 @@ function updateActivePageText(value: string) {
     text: value,
     verified: pageEdits[activePage.value.number]?.verified || false,
   };
+  emitReview();
 }
 
 function toggleActivePageVerified() {
@@ -68,6 +96,66 @@ function toggleActivePageVerified() {
     text: activePageEdit.value?.text || activePage.value.text,
     verified: !activePageEdit.value?.verified,
   };
+  emitReview();
+}
+
+function updateActiveQuestionAnswer(value: string) {
+	if (!activeQuestion.value) return;
+	questionEdits[activeQuestion.value.id] = {
+		answer: value,
+		title: activeQuestionEdit.value?.title || activeQuestion.value.title || "",
+		status: activeQuestionEdit.value?.status || activeQuestion.value.status,
+	};
+	emitReview();
+}
+
+function updateActiveQuestionTitle(value: string) {
+	if (!activeQuestion.value) return;
+	questionEdits[activeQuestion.value.id] = {
+		answer: activeQuestionEdit.value?.answer || activeQuestion.value.answer_markdown,
+		title: value,
+		status: activeQuestionEdit.value?.status || activeQuestion.value.status,
+	};
+	emitReview();
+}
+
+function updateActiveQuestionStatus(value: string) {
+	if (!activeQuestion.value) return;
+	questionEdits[activeQuestion.value.id] = {
+		answer: activeQuestionEdit.value?.answer || activeQuestion.value.answer_markdown,
+		title: activeQuestionEdit.value?.title || activeQuestion.value.title || "",
+		status: value,
+	};
+	emitReview();
+}
+
+function updateReport(value: string) {
+  reportEdit.value = value;
+  emitReview();
+}
+
+function rerunActivePage(action: TopperRerunAction) {
+  if (!activePage.value) return;
+  emit("rerunPage", action, activePage.value.number);
+}
+
+function emitReview() {
+  if (!props.editable) return;
+  emit("update:review", {
+    ...props.review,
+    pages: props.review.pages.map((page) => ({
+      ...page,
+      text: pageEdits[page.number]?.text ?? page.text,
+      verified: pageEdits[page.number]?.verified ?? page.verified,
+    })),
+    questions: props.review.questions.map((question) => ({
+      ...question,
+      title: questionEdits[question.id]?.title ?? question.title,
+      status: questionEdits[question.id]?.status ?? question.status,
+      answer_markdown: questionEdits[question.id]?.answer ?? question.answer_markdown,
+    })),
+    report: reportEdit.value,
+  });
 }
 </script>
 
@@ -110,7 +198,10 @@ function toggleActivePageVerified() {
           <div class="topper-page-toolbar">
             <span>{{ activePage?.name || "Page" }}</span>
             <div>
-              <button type="button" @click="toggleActivePageVerified">{{ activePageEdit?.verified ? "Unverify" : "Mark verified" }}</button>
+              <button type="button" :disabled="busy" @click="toggleActivePageVerified">{{ activePageEdit?.verified ? "Unverify" : "Mark verified" }}</button>
+              <button v-if="editable" type="button" :disabled="busy" @click="rerunActivePage('ocr')">OCR page</button>
+              <button v-if="editable" type="button" :disabled="busy" @click="rerunActivePage('questions')">Split page</button>
+              <button v-if="editable" type="button" :disabled="busy" @click="rerunActivePage('all')">Rerun page</button>
               <button type="button" @click="setZoom(zoom - 0.1)">-</button>
               <button type="button" @click="setZoom(1)">Fit</button>
               <button type="button" @click="setZoom(zoom + 0.1)">+</button>
@@ -123,7 +214,7 @@ function toggleActivePageVerified() {
         </section>
         <section class="topper-ocr-panel">
           <h4>OCR text</h4>
-          <textarea :value="activePageEdit?.text || ''" @input="updateActivePageText(($event.target as HTMLTextAreaElement).value)" />
+          <textarea :readonly="!editable" :value="activePageEdit?.text || ''" @input="updateActivePageText(($event.target as HTMLTextAreaElement).value)" />
         </section>
       </main>
     </div>
@@ -150,7 +241,23 @@ function toggleActivePageVerified() {
             </div>
             <span>{{ activeQuestion?.status }}</span>
           </header>
-          <pre>{{ activeQuestion?.answer_markdown || "" }}</pre>
+          <div v-if="editable" class="topper-question-meta">
+            <label>
+              Title
+              <input :value="activeQuestionEdit?.title || ''" @input="updateActiveQuestionTitle(($event.target as HTMLInputElement).value)">
+            </label>
+            <label>
+              Status
+              <input :value="activeQuestionEdit?.status || ''" @input="updateActiveQuestionStatus(($event.target as HTMLInputElement).value)">
+            </label>
+          </div>
+          <textarea
+            v-if="editable"
+            class="topper-question-editor"
+            :value="activeQuestionEdit?.answer || ''"
+            @input="updateActiveQuestionAnswer(($event.target as HTMLTextAreaElement).value)"
+          />
+          <pre v-else>{{ activeQuestion?.answer_markdown || "" }}</pre>
         </section>
         <section class="topper-page-image compact">
           <div class="topper-page-toolbar">
@@ -166,7 +273,8 @@ function toggleActivePageVerified() {
 
     <section v-else class="topper-report-panel">
       <h4>Final analysis</h4>
-      <pre>{{ review.report }}</pre>
+      <textarea v-if="editable" class="topper-report-editor" :value="reportEdit" @input="updateReport(($event.target as HTMLTextAreaElement).value)" />
+      <pre v-else>{{ review.report }}</pre>
     </section>
   </section>
 </template>
@@ -311,7 +419,9 @@ function toggleActivePageVerified() {
   transform-origin: top center;
 }
 
-.topper-ocr-panel textarea {
+.topper-ocr-panel textarea,
+.topper-question-editor,
+.topper-report-editor {
   background: #020617;
   border: 1px solid #253247;
   border-radius: 0.35rem;
@@ -320,6 +430,25 @@ function toggleActivePageVerified() {
   min-height: 32rem;
   resize: vertical;
   width: 100%;
+}
+
+.topper-question-editor,
+.topper-report-editor {
+  margin-top: 0.8rem;
+}
+
+.topper-question-meta {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: minmax(0, 1fr) minmax(8rem, 12rem);
+  margin-top: 0.75rem;
+}
+
+.topper-question-meta label {
+  color: #94a3b8;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.78rem;
 }
 
 .topper-question-panel pre,

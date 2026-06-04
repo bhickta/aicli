@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/bhickta/aicli/internal/config"
 	"github.com/bhickta/aicli/internal/provider/registry"
@@ -12,11 +13,15 @@ import (
 )
 
 type memoryStore struct {
-	jobs map[string]storage.Job
+	jobs    map[string]storage.Job
+	reviews map[string]storage.TopperReviewRecord
 }
 
 func (m *memoryStore) Migrate() error { return nil }
 func (m *memoryStore) CreateJob(_ context.Context, job storage.Job) error {
+	if m.jobs == nil {
+		m.jobs = map[string]storage.Job{}
+	}
 	m.jobs[job.ID] = job
 	return nil
 }
@@ -45,6 +50,9 @@ func (m *memoryStore) ListJobsFiltered(ctx context.Context, opts storage.JobList
 	return filterJobs(jobs, opts), nil
 }
 func (m *memoryStore) UpdateJob(_ context.Context, job storage.Job) error {
+	if m.jobs == nil {
+		m.jobs = map[string]storage.Job{}
+	}
 	m.jobs[job.ID] = job
 	return nil
 }
@@ -57,6 +65,38 @@ func (m *memoryStore) DeleteFinishedJobs(_ context.Context) (int64, error) {
 		}
 	}
 	return deleted, nil
+}
+
+func (m *memoryStore) SaveTopperReview(_ context.Context, record storage.TopperReviewRecord) error {
+	if m.reviews == nil {
+		m.reviews = map[string]storage.TopperReviewRecord{}
+	}
+	m.reviews[record.ID] = record
+	return nil
+}
+
+func (m *memoryStore) GetTopperReview(_ context.Context, id string) (storage.TopperReviewRecord, error) {
+	record, ok := m.reviews[id]
+	if !ok {
+		return storage.TopperReviewRecord{}, storage.ErrNotFound
+	}
+	return record, nil
+}
+
+func (m *memoryStore) ListTopperReviews(_ context.Context, opts storage.TopperReviewListOptions) ([]storage.TopperReviewRecord, error) {
+	query := strings.ToLower(opts.Query)
+	records := make([]storage.TopperReviewRecord, 0, len(m.reviews))
+	for _, record := range m.reviews {
+		if query != "" && !strings.Contains(strings.ToLower(record.PDFName+" "+record.SourcePath+" "+record.SearchText), query) {
+			continue
+		}
+		record.ReviewJSON = ""
+		records = append(records, record)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].UpdatedAt.After(records[j].UpdatedAt)
+	})
+	return records, nil
 }
 
 func testHandler() http.Handler {

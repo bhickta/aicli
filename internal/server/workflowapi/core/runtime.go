@@ -47,6 +47,10 @@ func (r *Runtime) DataDir() string {
 	return r.dataDir
 }
 
+func (r *Runtime) Store() storage.Store {
+	return r.store
+}
+
 func (r *Runtime) ProviderFor(id string) (provider.Provider, bool) {
 	return r.providerFor(id)
 }

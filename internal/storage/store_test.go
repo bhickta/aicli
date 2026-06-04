@@ -166,6 +166,67 @@ func TestSQLiteStoreDeletesFinishedAndMarksRunningInterrupted(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreTopperReviewLifecycle(t *testing.T) {
+	t.Parallel()
+
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	store := NewSQLiteStore(db)
+	if err := store.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	review := TopperReviewRecord{
+		ID:            "topper-1",
+		JobID:         "job-1",
+		PDFName:       "essay.pdf",
+		SourcePath:    "/tmp/essay.pdf",
+		ProviderID:    "lms",
+		Model:         "vision",
+		PageCount:     2,
+		QuestionCount: 3,
+		UnclearCount:  1,
+		Status:        "ready",
+		ReviewJSON:    `{"kind":"topper_copy_review","review_id":"topper-1"}`,
+		SearchText:    "essay governance ethics",
+	}
+	if err := store.SaveTopperReview(context.Background(), review); err != nil {
+		t.Fatalf("SaveTopperReview() error = %v", err)
+	}
+
+	got, err := store.GetTopperReview(context.Background(), "topper-1")
+	if err != nil {
+		t.Fatalf("GetTopperReview() error = %v", err)
+	}
+	if got.PDFName != "essay.pdf" || got.QuestionCount != 3 || got.ReviewJSON == "" {
+		t.Fatalf("record = %#v, want saved review", got)
+	}
+
+	matches, err := store.ListTopperReviews(context.Background(), TopperReviewListOptions{Query: "ethics"})
+	if err != nil {
+		t.Fatalf("ListTopperReviews() error = %v", err)
+	}
+	if len(matches) != 1 || matches[0].ID != "topper-1" || matches[0].ReviewJSON != "" {
+		t.Fatalf("matches = %#v, want summary without JSON payload", matches)
+	}
+
+	review.QuestionCount = 4
+	review.Status = "edited"
+	if err := store.SaveTopperReview(context.Background(), review); err != nil {
+		t.Fatalf("SaveTopperReview(update) error = %v", err)
+	}
+	got, err = store.GetTopperReview(context.Background(), "topper-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.QuestionCount != 4 || got.Status != "edited" {
+		t.Fatalf("updated record = %#v, want edited count", got)
+	}
+}
+
 func TestOpenSQLiteConfiguresLockResistantConnection(t *testing.T) {
 	t.Parallel()
 

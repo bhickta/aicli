@@ -8,6 +8,7 @@ import ChatView from "../views/ChatView.vue";
 import JobsView from "../views/JobsView.vue";
 import ProvidersView from "../views/ProvidersView.vue";
 import SettingsView from "../views/SettingsView.vue";
+import StudyArchiveView from "../views/StudyArchiveView.vue";
 import ToolsView from "../views/ToolsView.vue";
 import WorkflowsView from "../views/WorkflowsView.vue";
 import ZettelView from "../views/ZettelView.vue";
@@ -15,6 +16,7 @@ import ZettelView from "../views/ZettelView.vue";
 const views: Array<{ id: ViewName; label: string }> = [
   { id: "chat", label: "Chat" },
   { id: "workflows", label: "Workflows" },
+  { id: "study-archive", label: "Study Archive" },
   { id: "zettel", label: "Zettel" },
   { id: "jobs", label: "Jobs" },
   { id: "providers", label: "Providers" },
@@ -26,6 +28,8 @@ const activeComponent = computed(() => {
   switch (appState.view) {
     case "workflows":
       return WorkflowsView;
+    case "study-archive":
+      return StudyArchiveView;
     case "zettel":
       return ZettelView;
     case "jobs":
