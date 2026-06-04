@@ -64,3 +64,7 @@ type Provider interface {
 	ChatStream(ctx context.Context, req ChatRequest, yield func(string) error) error
 	Vision(ctx context.Context, req VisionRequest) (ChatResponse, error)
 }
+
+type ModelUnloader interface {
+	UnloadModel(ctx context.Context, model string) error
+}

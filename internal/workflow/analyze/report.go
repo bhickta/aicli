@@ -33,7 +33,7 @@ func (s *Service) report(ctx context.Context, model string, pages []Page, questi
 			combined.WriteString("\n\n")
 		}
 	}
-	res, err := s.provider.Chat(ctx, provider.ChatRequest{
+	res, err := s.reportProvider.Chat(ctx, provider.ChatRequest{
 		Model: model,
 		Messages: []provider.Message{
 			{

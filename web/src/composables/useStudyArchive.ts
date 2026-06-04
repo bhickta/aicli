@@ -13,8 +13,12 @@ export function useStudyArchive() {
   const running = shallowRef(false);
   const deletePDF = shallowRef(false);
   const providerModel = reactive({ provider_id: "", model: "" });
+  const ocrProviderModel = reactive({ provider_id: "", model: "" });
+  const questionProviderModel = reactive({ provider_id: "", model: "" });
+  const reportProviderModel = reactive({ provider_id: "", model: "" });
   const questionWorkers = shallowRef(0);
   const ocrWorkers = shallowRef(0);
+  const unloadModels = shallowRef(true);
 
   const summary = computed(() => {
     if (!reviews.value.length) return "No saved reviews";
@@ -41,6 +45,12 @@ export function useStudyArchive() {
     selectedReview.value = payload.review;
     providerModel.provider_id = payload.record.provider_id;
     providerModel.model = payload.record.model;
+    ocrProviderModel.provider_id = payload.record.provider_id;
+    ocrProviderModel.model = payload.record.model;
+    questionProviderModel.provider_id = payload.record.provider_id;
+    questionProviderModel.model = payload.record.model;
+    reportProviderModel.provider_id = payload.record.provider_id;
+    reportProviderModel.model = payload.record.model;
     status.value = "Review loaded";
   }
 
@@ -66,11 +76,18 @@ export function useStudyArchive() {
         body: JSON.stringify({
           provider_id: providerModel.provider_id,
           model: providerModel.model,
+          ocr_provider_id: ocrProviderModel.provider_id || providerModel.provider_id,
+          ocr_model: ocrProviderModel.model || providerModel.model,
+          question_provider_id: questionProviderModel.provider_id || providerModel.provider_id,
+          question_model: questionProviderModel.model || providerModel.model,
+          report_provider_id: reportProviderModel.provider_id || providerModel.provider_id,
+          report_model: reportProviderModel.model || providerModel.model,
           action,
           page_numbers: pageNumbers,
           question_split: true,
           question_workers: questionWorkers.value,
           workers: ocrWorkers.value,
+          unload_models: unloadModels.value,
         }),
       });
       const job = await pollJob(payload.job.id, (nextJob) => {
@@ -118,8 +135,12 @@ export function useStudyArchive() {
     running,
     deletePDF,
     providerModel,
+    ocrProviderModel,
+    questionProviderModel,
+    reportProviderModel,
     questionWorkers,
     ocrWorkers,
+    unloadModels,
     summary,
     canRerunOCR,
     loadReviews,

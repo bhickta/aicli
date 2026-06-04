@@ -22,7 +22,7 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 	progressUnits(progress, "loading saved topper copy review", completed, total, "stage")
 
 	if action == "ocr" || action == "all" {
-		if err := s.reprocessOCRPages(ctx, req.Model, &review, selected, req.Workers, func(done int, totalPages int) {
+		if err := s.reprocessOCRPages(ctx, firstNonBlank(req.OCRModel, req.Model), &review, selected, req.Workers, func(done int, totalPages int) {
 			progressUnits(progress, fmt.Sprintf("rerunning OCR for %d page(s)", totalPages), completed+done, total, "page")
 		}); err != nil {
 			return Response{}, err
@@ -33,7 +33,7 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 
 	if action == "questions" || action == "all" {
 		pages := pagesFromSet(review.Pages, selected)
-		questions, err := s.splitQuestions(ctx, req.Model, pages, req.QuestionWorkers, func(done int, totalPages int) {
+		questions, err := s.splitQuestions(ctx, firstNonBlank(req.QuestionModel, req.Model), pages, req.QuestionWorkers, func(done int, totalPages int) {
 			progressUnits(progress, fmt.Sprintf("splitting %d selected page(s)", totalPages), completed+done, total, "page")
 		})
 		if err != nil {
@@ -45,7 +45,7 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 	}
 
 	if action == "report" || action == "questions" || action == "all" {
-		report, err := s.report(ctx, req.Model, review.Pages, review.Questions)
+		report, err := s.report(ctx, firstNonBlank(req.ReportModel, req.Model), review.Pages, review.Questions)
 		if err != nil {
 			return Response{}, err
 		}
@@ -75,7 +75,7 @@ func (s *Service) reprocessOCRPages(ctx context.Context, model string, review *R
 	if len(inputs) == 0 {
 		return nil
 	}
-	ocrPages, err := document.OCRImages(ctx, s.provider, model, inputs, topperCopyOCRPrompt, workers, progress)
+	ocrPages, err := document.OCRImages(ctx, s.ocrProvider, model, inputs, topperCopyOCRPrompt, workers, progress)
 	if err != nil {
 		return err
 	}

@@ -102,7 +102,7 @@ export interface Job {
 }
 
 export interface WorkflowField {
-  type: "providerModel" | "text" | "datetime" | "textarea" | "select" | "number" | "checkbox" | "path" | "whatsappContact";
+  type: "providerModel" | "stepProviderModel" | "text" | "datetime" | "textarea" | "select" | "number" | "checkbox" | "path" | "whatsappContact";
   id?: string;
   label?: string;
   rows?: number;

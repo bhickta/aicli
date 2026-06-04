@@ -86,6 +86,50 @@ func (p *OpenAICompatible) Chat(ctx context.Context, req provider.ChatRequest) (
 	return p.chatRaw(ctx, body)
 }
 
+func (p *OpenAICompatible) UnloadModel(ctx context.Context, model string) error {
+	if p.cfg.ID != "lms" && !strings.Contains(strings.ToLower(p.cfg.BaseURL), "localhost:1234") && !strings.Contains(strings.ToLower(p.cfg.BaseURL), "127.0.0.1:1234") {
+		return nil
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = p.cfg.Model
+	}
+	if model == "" {
+		return nil
+	}
+	body := map[string]any{
+		"model":       model,
+		"instance_id": model,
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	baseURL := strings.TrimRight(p.cfg.BaseURL, "/")
+	if strings.HasSuffix(baseURL, "/v1") {
+		baseURL = strings.TrimSuffix(baseURL, "/v1")
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/v1/models/unload", bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	p.authorize(httpReq)
+	res, err := p.client.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		msg, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return p.apiStatusError("unload model", res.Status, msg)
+	}
+	return nil
+}
+
 func (p *OpenAICompatible) chatRaw(ctx context.Context, body map[string]any) (provider.ChatResponse, error) {
 	data, err := json.Marshal(body)
 	if err != nil {

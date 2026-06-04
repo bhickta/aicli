@@ -7,29 +7,39 @@ import (
 )
 
 type Service struct {
-	tools       config.ToolConfig
-	runner      tool.Runner
-	provider    provider.Provider
-	artifactDir string
+	tools            config.ToolConfig
+	runner           tool.Runner
+	ocrProvider      provider.Provider
+	questionProvider provider.Provider
+	reportProvider   provider.Provider
+	artifactDir      string
 }
 
 type Request struct {
 	Model           string `json:"model"`
+	OCRModel        string `json:"ocr_model"`
+	QuestionModel   string `json:"question_model"`
+	ReportModel     string `json:"report_model"`
 	Path            string `json:"path"`
 	DPI             int    `json:"dpi"`
 	RenderWorkers   int    `json:"render_workers"`
 	Workers         int    `json:"workers"`
 	QuestionSplit   bool   `json:"question_split"`
 	QuestionWorkers int    `json:"question_workers"`
+	UnloadModels    bool   `json:"unload_models"`
 }
 
 type ReprocessRequest struct {
 	Model           string `json:"model"`
+	OCRModel        string `json:"ocr_model"`
+	QuestionModel   string `json:"question_model"`
+	ReportModel     string `json:"report_model"`
 	Action          string `json:"action"`
 	PageNumbers     []int  `json:"page_numbers"`
 	QuestionSplit   bool   `json:"question_split"`
 	QuestionWorkers int    `json:"question_workers"`
 	Workers         int    `json:"workers"`
+	UnloadModels    bool   `json:"unload_models"`
 }
 
 type Page struct {
@@ -67,5 +77,21 @@ type ProgressFunc func(stage string, completed int, total int, label string)
 func WithArtifactDir(path string) Option {
 	return func(s *Service) {
 		s.artifactDir = path
+	}
+}
+
+func WithQuestionProvider(p provider.Provider) Option {
+	return func(s *Service) {
+		if p != nil {
+			s.questionProvider = p
+		}
+	}
+}
+
+func WithReportProvider(p provider.Provider) Option {
+	return func(s *Service) {
+		if p != nil {
+			s.reportProvider = p
+		}
 	}
 }

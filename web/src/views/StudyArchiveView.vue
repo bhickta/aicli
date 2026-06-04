@@ -57,12 +57,32 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
       <main class="study-review-main">
         <section v-if="archive.selectedReview.value" class="study-review-controls">
           <div class="study-review-control-row">
-            <ProviderModelControl
-              class="study-provider-control"
-              :provider-id="archive.providerModel.provider_id"
-              :model="archive.providerModel.model"
-              @change="Object.assign(archive.providerModel, $event)"
-            />
+            <div class="study-step-models">
+              <div class="field">
+                <label>OCR model</label>
+                <ProviderModelControl
+                  :provider-id="archive.ocrProviderModel.provider_id"
+                  :model="archive.ocrProviderModel.model"
+                  @change="Object.assign(archive.ocrProviderModel, $event)"
+                />
+              </div>
+              <div class="field">
+                <label>Question split model</label>
+                <ProviderModelControl
+                  :provider-id="archive.questionProviderModel.provider_id"
+                  :model="archive.questionProviderModel.model"
+                  @change="Object.assign(archive.questionProviderModel, $event)"
+                />
+              </div>
+              <div class="field">
+                <label>Report model</label>
+                <ProviderModelControl
+                  :provider-id="archive.reportProviderModel.provider_id"
+                  :model="archive.reportProviderModel.model"
+                  @change="Object.assign(archive.reportProviderModel, $event)"
+                />
+              </div>
+            </div>
             <div class="study-worker-controls">
               <label>
                 OCR
@@ -82,6 +102,10 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
               <button type="button" :disabled="archive.running.value || !archive.canRerunOCR.value" @click="rerun('all')">Rerun all</button>
             </div>
             <div class="archive-delete">
+              <label class="checkbox">
+                <input v-model="archive.unloadModels.value" type="checkbox">
+                Unload local models after run
+              </label>
               <label class="checkbox">
                 <input v-model="archive.deletePDF.value" type="checkbox">
                 Delete uploaded PDF too
@@ -120,6 +144,7 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 .study-review-controls,
 .study-review-control-row,
 .study-review-action-row,
+.study-step-models,
 .study-worker-controls,
 .archive-actions,
 .archive-delete {
@@ -240,9 +265,14 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
   min-width: 0;
 }
 
-.study-provider-control {
+.study-step-models {
   flex: 1 1 34rem;
+  flex-wrap: wrap;
   min-width: 0;
+}
+
+.study-step-models > .field {
+  flex: 1 1 18rem;
 }
 
 .study-worker-controls {

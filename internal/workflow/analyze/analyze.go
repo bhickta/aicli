@@ -18,7 +18,7 @@ import (
 const defaultTopperCopyDPI = 300
 
 func New(tools config.ToolConfig, runner tool.Runner, provider provider.Provider, options ...Option) *Service {
-	svc := &Service{tools: tools, runner: runner, provider: provider}
+	svc := &Service{tools: tools, runner: runner, ocrProvider: provider, questionProvider: provider, reportProvider: provider}
 	for _, option := range options {
 		option(svc)
 	}
@@ -79,8 +79,8 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 	ocrWorkers := document.EffectiveOCRWorkers(req.Workers, len(inputs))
 	ocrPages, err := document.OCRImages(
 		ctx,
-		s.provider,
-		req.Model,
+		s.ocrProvider,
+		firstNonBlank(req.OCRModel, req.Model),
 		inputs,
 		topperCopyOCRPrompt,
 		req.Workers,
@@ -109,7 +109,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 	questions := pageFallbackQuestions(pages)
 	if req.QuestionSplit {
 		questionWorkers := EffectiveQuestionWorkers(req.QuestionWorkers, len(pages))
-		questions, err = s.splitQuestions(ctx, req.Model, pages, req.QuestionWorkers, func(completedPages int, totalPages int) {
+		questions, err = s.splitQuestions(ctx, firstNonBlank(req.QuestionModel, req.Model), pages, req.QuestionWorkers, func(completedPages int, totalPages int) {
 			progressUnits(progress, fmt.Sprintf("question-wise split with %d worker(s)", questionWorkers), completed+completedPages, total, "stage")
 		})
 		if err != nil {
@@ -119,7 +119,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		progressUnits(progress, "question-wise split complete", completed, total, "stage")
 	}
 	progressUnits(progress, "generating final analysis", completed, total, "stage")
-	report, err := s.report(ctx, req.Model, pages, questions)
+	report, err := s.report(ctx, firstNonBlank(req.ReportModel, req.Model), pages, questions)
 	if err != nil {
 		return Response{}, err
 	}
@@ -140,6 +140,16 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 	}
 	progressUnits(progress, "topper copy review ready", total, total, "stage")
 	return res, nil
+}
+
+func firstNonBlank(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func progressUnits(progress ProgressFunc, stage string, completed int, total int, label string) {

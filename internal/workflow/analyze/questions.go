@@ -109,7 +109,7 @@ func reportQuestionProgress(progress func(completed int, total int), completed *
 }
 
 func (s *Service) splitPageQuestions(ctx context.Context, model string, page Page) ([]Question, error) {
-	res, err := s.provider.Chat(ctx, provider.ChatRequest{
+	res, err := s.questionProvider.Chat(ctx, provider.ChatRequest{
 		Model: model,
 		Messages: []provider.Message{
 			{

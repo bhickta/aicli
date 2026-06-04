@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strings"
 
+	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/server/workflowapi/core"
 	"github.com/bhickta/aicli/internal/tool"
 	"github.com/bhickta/aicli/internal/workflow/analyze"
@@ -95,7 +97,10 @@ func (h *Handler) runPDFOCR(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 	req, ok := core.DecodeJSON[struct {
-		ProviderID string `json:"provider_id"`
+		ProviderID         string `json:"provider_id"`
+		OCRProviderID      string `json:"ocr_provider_id"`
+		QuestionProviderID string `json:"question_provider_id"`
+		ReportProviderID   string `json:"report_provider_id"`
 		analyze.Request
 	}](w, r)
 	if !ok {
@@ -104,12 +109,30 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 	if h.rejectAlreadyProcessedPDF(w, r, req.Path) {
 		return
 	}
-	p, ok := h.runtime.ProviderOrError(w, req.ProviderID)
+	ocrProviderID := firstProviderID(req.OCRProviderID, req.ProviderID)
+	questionProviderID := firstProviderID(req.QuestionProviderID, req.ProviderID, ocrProviderID)
+	reportProviderID := firstProviderID(req.ReportProviderID, req.ProviderID, ocrProviderID)
+	ocrProvider, ok := h.runtime.ProviderOrError(w, ocrProviderID)
+	if !ok {
+		return
+	}
+	questionProvider, ok := h.runtime.ProviderOrError(w, questionProviderID)
+	if !ok {
+		return
+	}
+	reportProvider, ok := h.runtime.ProviderOrError(w, reportProviderID)
 	if !ok {
 		return
 	}
 	job := core.NewJob("analyze", req.Path)
 	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+		if req.UnloadModels {
+			defer h.unloadProviderModels(context.Background(), []providerModelUse{
+				{provider: ocrProvider, model: firstModel(req.OCRModel, req.Model)},
+				{provider: questionProvider, model: firstModel(req.QuestionModel, req.Model)},
+				{provider: reportProvider, model: firstModel(req.ReportModel, req.Model)},
+			})
+		}
 		artifactDir := ""
 		if h.runtime.DataDir() != "" {
 			artifactDir = filepath.Join(h.runtime.DataDir(), "artifacts")
@@ -117,7 +140,9 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 		result, err := analyze.New(
 			h.runtime.Settings().Tools,
 			tool.ExecRunner{},
-			p,
+			ocrProvider,
+			analyze.WithQuestionProvider(questionProvider),
+			analyze.WithReportProvider(reportProvider),
 			analyze.WithArtifactDir(artifactDir),
 		).RunWithProgress(ctx, req.Request, func(stage string, completed int, total int, label string) {
 			progress(core.Units(stage, completed, total, label))
@@ -126,11 +151,55 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 			_ = h.saveTopperReview(ctx, result, topperReviewMeta{
 				JobID:      job.ID,
 				SourcePath: req.Path,
-				ProviderID: req.ProviderID,
-				Model:      req.Model,
+				ProviderID: ocrProviderID,
+				Model:      firstModel(req.OCRModel, req.Model),
 				Status:     "ready",
 			})
 		}
 		return result, err
 	})
+}
+
+type providerModelUse struct {
+	provider provider.Provider
+	model    string
+}
+
+func firstProviderID(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstModel(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func (h *Handler) unloadProviderModels(ctx context.Context, uses []providerModelUse) {
+	seen := map[string]bool{}
+	for _, use := range uses {
+		if use.provider == nil {
+			continue
+		}
+		unloader, ok := use.provider.(provider.ModelUnloader)
+		if !ok {
+			continue
+		}
+		key := use.provider.ID() + "\x00" + strings.TrimSpace(use.model)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		_ = unloader.UnloadModel(ctx, use.model)
+	}
 }

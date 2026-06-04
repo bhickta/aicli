@@ -26,6 +26,11 @@ export function useWorkflowForm(activeWorkflow: ComputedRef<WorkflowDefinition |
     const stored = readStoredRecord(workflowStorageKey(workflow.id));
     for (const field of workflow.fields) {
       if (!field.id) continue;
+      if (field.type === "stepProviderModel") {
+        values[field.id + "_provider_id"] = stored[field.id + "_provider_id"] || workflow.preferredProviderId || "";
+        values[field.id + "_model"] = stored[field.id + "_model"] || workflow.preferredModel || "";
+        continue;
+      }
       const storedValue = stored[field.id];
       if (storedValue !== undefined) {
         values[field.id] = storedValue;
@@ -45,7 +50,9 @@ export function useWorkflowForm(activeWorkflow: ComputedRef<WorkflowDefinition |
 
   function updateField(id: string, value: unknown) {
     values[id] = value;
-    appState.workflow.pathValues[id] = typeof value === "string" ? value : appState.workflow.pathValues[id] || "";
+    if (activeWorkflow.value?.fields.some((field) => field.id === id && field.type === "path")) {
+      appState.workflow.pathValues[id] = typeof value === "string" ? value : appState.workflow.pathValues[id] || "";
+    }
     saveWorkflowValues();
   }
 

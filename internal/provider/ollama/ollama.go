@@ -95,6 +95,44 @@ func (p *Ollama) Chat(ctx context.Context, req provider.ChatRequest) (provider.C
 	return provider.ChatResponse{Content: payload.Message.Content}, nil
 }
 
+func (p *Ollama) UnloadModel(ctx context.Context, model string) error {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = p.cfg.Model
+	}
+	if model == "" {
+		return nil
+	}
+	data, err := json.Marshal(map[string]any{
+		"model":      model,
+		"stream":     false,
+		"keep_alive": 0,
+	})
+	if err != nil {
+		return err
+	}
+	httpReq, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		strings.TrimRight(p.cfg.BaseURL, "/")+"/api/generate",
+		bytes.NewReader(data),
+	)
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	res, err := p.client.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		msg, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return fmt.Errorf("unload model: %s: %s", res.Status, strings.TrimSpace(string(msg)))
+	}
+	return nil
+}
+
 func (p *Ollama) chatModel(model string) string {
 	if model != "" {
 		return model

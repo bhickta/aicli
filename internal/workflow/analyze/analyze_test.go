@@ -22,13 +22,20 @@ func (r *fakeRunner) CombinedOutput(_ context.Context, _ string, args ...string)
 }
 
 type fakeProvider struct {
+	id            string
+	visionContent string
 	visionPrompt  string
 	chatPrompt    string
 	chatPrompts   []string
 	chatResponses []string
 }
 
-func (fakeProvider) ID() string { return "fake" }
+func (p *fakeProvider) ID() string {
+	if p.id != "" {
+		return p.id
+	}
+	return "fake"
+}
 func (fakeProvider) Health(context.Context) error {
 	return nil
 }
@@ -52,6 +59,9 @@ func (fakeProvider) ChatStream(context.Context, provider.ChatRequest, func(strin
 }
 func (p *fakeProvider) Vision(_ context.Context, req provider.VisionRequest) (provider.ChatResponse, error) {
 	p.visionPrompt = req.Prompt
+	if p.visionContent != "" {
+		return provider.ChatResponse{Content: p.visionContent}, nil
+	}
 	return provider.ChatResponse{Content: "page text"}, nil
 }
 
@@ -138,6 +148,48 @@ func TestRunAnalyzeSplitsQuestionsAndWritesArtifacts(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "artifacts", "topper-copy", res.ReviewID, "review.json")); err != nil {
 		t.Fatalf("review artifact not written: %v", err)
+	}
+}
+
+func TestRunAnalyzeUsesSeparateStepProviders(t *testing.T) {
+	t.Parallel()
+
+	pdf := filepath.Join(t.TempDir(), "answers.pdf")
+	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ocrProvider := &fakeProvider{id: "ocr", visionContent: "ocr page text"}
+	questionProvider := &fakeProvider{id: "question", chatResponses: []string{
+		`{"questions":[{"label":"Q1","answer_markdown":"question answer","status":"detected"}]}`,
+	}}
+	reportProvider := &fakeProvider{id: "report", chatResponses: []string{"report text"}}
+	res, err := New(
+		config.ToolConfig{PDFToPPM: "pdftoppm"},
+		&fakeRunner{},
+		ocrProvider,
+		WithQuestionProvider(questionProvider),
+		WithReportProvider(reportProvider),
+	).Run(context.Background(), Request{
+		Path:          pdf,
+		OCRModel:      "vision-model",
+		QuestionModel: "split-model",
+		ReportModel:   "report-model",
+		QuestionSplit: true,
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if res.Report != "report text" || len(res.Questions) != 1 || res.Questions[0].AnswerMarkdown != "question answer" {
+		t.Fatalf("Response = %#v, want split question and report", res)
+	}
+	if ocrProvider.visionPrompt == "" {
+		t.Fatal("ocr provider was not used")
+	}
+	if !strings.Contains(questionProvider.chatPrompt, "Split this OCR") {
+		t.Fatalf("question provider prompt = %q, want question split prompt", questionProvider.chatPrompt)
+	}
+	if !strings.Contains(reportProvider.chatPrompt, "Answer-Wise Analysis") {
+		t.Fatalf("report provider prompt = %q, want report prompt", reportProvider.chatPrompt)
 	}
 }
 

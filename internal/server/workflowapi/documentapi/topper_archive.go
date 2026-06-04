@@ -159,7 +159,10 @@ func (h *Handler) rerunTopperReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req, ok := core.DecodeJSON[struct {
-		ProviderID string `json:"provider_id"`
+		ProviderID         string `json:"provider_id"`
+		OCRProviderID      string `json:"ocr_provider_id"`
+		QuestionProviderID string `json:"question_provider_id"`
+		ReportProviderID   string `json:"report_provider_id"`
 		analyze.ReprocessRequest
 	}](w, r)
 	if !ok {
@@ -169,20 +172,34 @@ func (h *Handler) rerunTopperReview(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusBadRequest, fmt.Errorf("saved page images are missing; run a fresh Topper copy analysis or PDF OCR before OCR rerun"))
 		return
 	}
-	providerID := strings.TrimSpace(req.ProviderID)
-	if providerID == "" {
-		providerID = record.ProviderID
+	ocrProviderID := firstProviderID(req.OCRProviderID, req.ProviderID, record.ProviderID)
+	questionProviderID := firstProviderID(req.QuestionProviderID, req.ProviderID, record.ProviderID, ocrProviderID)
+	reportProviderID := firstProviderID(req.ReportProviderID, req.ProviderID, record.ProviderID, ocrProviderID)
+	model := firstModel(req.Model, record.Model)
+	ocrModel := firstModel(req.OCRModel, model)
+	questionModel := firstModel(req.QuestionModel, model)
+	reportModel := firstModel(req.ReportModel, model)
+	ocrProvider, found := h.runtime.ProviderOrError(w, ocrProviderID)
+	if !found {
+		return
 	}
-	model := strings.TrimSpace(req.Model)
-	if model == "" {
-		model = record.Model
+	questionProvider, found := h.runtime.ProviderOrError(w, questionProviderID)
+	if !found {
+		return
 	}
-	p, found := h.runtime.ProviderOrError(w, providerID)
+	reportProvider, found := h.runtime.ProviderOrError(w, reportProviderID)
 	if !found {
 		return
 	}
 	job := core.NewJob("topper-review-rerun", record.ID)
 	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
+		if req.UnloadModels {
+			defer h.unloadProviderModels(context.Background(), []providerModelUse{
+				{provider: ocrProvider, model: ocrModel},
+				{provider: questionProvider, model: questionModel},
+				{provider: reportProvider, model: reportModel},
+			})
+		}
 		store, ok := h.runtime.Store().(topperReviewStore)
 		if !ok {
 			return nil, fmt.Errorf("topper review archive is not supported by this store")
@@ -196,7 +213,16 @@ func (h *Handler) rerunTopperReview(w http.ResponseWriter, r *http.Request) {
 			return nil, err
 		}
 		req.Model = model
-		result, err := analyze.New(h.runtime.Settings().Tools, tool.ExecRunner{}, p).ReprocessReview(ctx, review, req.ReprocessRequest, func(stage string, completed int, total int, label string) {
+		req.OCRModel = ocrModel
+		req.QuestionModel = questionModel
+		req.ReportModel = reportModel
+		result, err := analyze.New(
+			h.runtime.Settings().Tools,
+			tool.ExecRunner{},
+			ocrProvider,
+			analyze.WithQuestionProvider(questionProvider),
+			analyze.WithReportProvider(reportProvider),
+		).ReprocessReview(ctx, review, req.ReprocessRequest, func(stage string, completed int, total int, label string) {
 			progress(core.Units(stage, completed, total, label))
 		})
 		if err != nil {
@@ -205,8 +231,8 @@ func (h *Handler) rerunTopperReview(w http.ResponseWriter, r *http.Request) {
 		if err := h.saveTopperReviewRecord(ctx, store, result, topperReviewMeta{
 			JobID:      job.ID,
 			SourcePath: latest.SourcePath,
-			ProviderID: providerID,
-			Model:      model,
+			ProviderID: ocrProviderID,
+			Model:      ocrModel,
 			Status:     "ready",
 		}, latest.CreatedAt); err != nil {
 			return nil, err
