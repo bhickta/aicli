@@ -4,6 +4,15 @@ import { documentPayload, providerModelField } from "./builders";
 const documentFields: WorkflowDefinition["fields"] = [
   providerModelField,
   { type: "path", id: "path", label: "Input PDF file" },
+  { type: "number", id: "dpi", label: "Render DPI", min: 100, max: 400, default: 200 },
+  { type: "number", id: "render_workers", label: "Render workers (0 = auto)", min: 0, default: 0 },
+  { type: "number", id: "workers", label: "OCR workers (0 = auto)", min: 0, default: 0 },
+];
+
+const topperCopyFields: WorkflowDefinition["fields"] = [
+  providerModelField,
+  { type: "path", id: "path", label: "Topper copy PDF" },
+  { type: "number", id: "dpi", label: "Render DPI", min: 150, max: 400, default: 300 },
   { type: "number", id: "render_workers", label: "Render workers (0 = auto)", min: 0, default: 0 },
   { type: "number", id: "workers", label: "OCR workers (0 = auto)", min: 0, default: 0 },
 ];
@@ -32,10 +41,10 @@ export const documentWorkflowDefinitions: WorkflowDefinition[] = [
   },
   {
     id: "analyze",
-    category: "Documents",
-    label: "Analyze: PDF report",
+    category: "Study",
+    label: "Topper copy analysis",
     endpoint: "/api/workflows/analyze/run",
-    fields: documentFields,
+    fields: topperCopyFields,
     buildPayload: documentPayload,
   },
 ];

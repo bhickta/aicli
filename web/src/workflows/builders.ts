@@ -25,6 +25,7 @@ export function providerPathPayload(values: Values, pathKey = "path") {
 export function documentPayload(values: Values) {
   return {
     ...providerPathPayload(values),
+    dpi: values.dpi,
     render_workers: values.render_workers,
     workers: values.workers,
   };

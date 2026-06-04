@@ -4,20 +4,27 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bhickta/aicli/internal/config"
 	"github.com/bhickta/aicli/internal/provider"
 )
 
-type fakeRunner struct{}
+type fakeRunner struct {
+	args []string
+}
 
-func (fakeRunner) CombinedOutput(_ context.Context, _ string, args ...string) ([]byte, error) {
+func (r *fakeRunner) CombinedOutput(_ context.Context, _ string, args ...string) ([]byte, error) {
+	r.args = append([]string(nil), args...)
 	prefix := args[len(args)-1]
 	return []byte("ok"), os.WriteFile(prefix+"-1.jpg", []byte("image"), 0o600)
 }
 
-type fakeProvider struct{}
+type fakeProvider struct {
+	visionPrompt string
+	chatPrompt   string
+}
 
 func (fakeProvider) ID() string { return "fake" }
 func (fakeProvider) Health(context.Context) error {
@@ -26,13 +33,17 @@ func (fakeProvider) Health(context.Context) error {
 func (fakeProvider) ListModels(context.Context) ([]provider.Model, error) {
 	return []provider.Model{}, nil
 }
-func (fakeProvider) Chat(context.Context, provider.ChatRequest) (provider.ChatResponse, error) {
+func (p *fakeProvider) Chat(_ context.Context, req provider.ChatRequest) (provider.ChatResponse, error) {
+	if len(req.Messages) > 0 {
+		p.chatPrompt = req.Messages[0].Content
+	}
 	return provider.ChatResponse{Content: "report"}, nil
 }
 func (fakeProvider) ChatStream(context.Context, provider.ChatRequest, func(string) error) error {
 	return nil
 }
-func (fakeProvider) Vision(context.Context, provider.VisionRequest) (provider.ChatResponse, error) {
+func (p *fakeProvider) Vision(_ context.Context, req provider.VisionRequest) (provider.ChatResponse, error) {
+	p.visionPrompt = req.Prompt
 	return provider.ChatResponse{Content: "page text"}, nil
 }
 
@@ -43,7 +54,9 @@ func TestRunAnalyzePipeline(t *testing.T) {
 	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	res, err := New(config.ToolConfig{PDFToPPM: "pdftoppm"}, fakeRunner{}, fakeProvider{}).Run(
+	runner := &fakeRunner{}
+	fp := &fakeProvider{}
+	res, err := New(config.ToolConfig{PDFToPPM: "pdftoppm"}, runner, fp).Run(
 		context.Background(),
 		Request{Path: pdf, Model: "model"},
 	)
@@ -53,4 +66,46 @@ func TestRunAnalyzePipeline(t *testing.T) {
 	if len(res.Pages) != 1 || res.Report != "report" {
 		t.Fatalf("Response = %#v, want one page and report", res)
 	}
+	if !hasArgPair(runner.args, "-r", "300") {
+		t.Fatalf("pdftoppm args = %#v, want default 300 DPI", runner.args)
+	}
+	for _, want := range []string{"UPSC topper answer-copy", "diagrams", "marks", "[unclear]"} {
+		if !strings.Contains(fp.visionPrompt, want) {
+			t.Fatalf("vision prompt missing %q:\n%s", want, fp.visionPrompt)
+		}
+	}
+	for _, want := range []string{"Answer-Wise Analysis", "Reusable Patterns", "Do not invent official model answers", "page text"} {
+		if !strings.Contains(fp.chatPrompt, want) {
+			t.Fatalf("chat prompt missing %q:\n%s", want, fp.chatPrompt)
+		}
+	}
+}
+
+func TestRunAnalyzeHonorsExplicitDPI(t *testing.T) {
+	t.Parallel()
+
+	pdf := filepath.Join(t.TempDir(), "answers.pdf")
+	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &fakeRunner{}
+	_, err := New(config.ToolConfig{PDFToPPM: "pdftoppm"}, runner, &fakeProvider{}).Run(
+		context.Background(),
+		Request{Path: pdf, Model: "model", DPI: 220},
+	)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !hasArgPair(runner.args, "-r", "220") {
+		t.Fatalf("pdftoppm args = %#v, want explicit 220 DPI", runner.args)
+	}
+}
+
+func hasArgPair(args []string, key string, value string) bool {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == key && args[i+1] == value {
+			return true
+		}
+	}
+	return false
 }
