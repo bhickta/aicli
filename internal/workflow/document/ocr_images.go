@@ -18,6 +18,7 @@ func OCRImages(
 	inputs []ImageInput,
 	prompt string,
 	workers int,
+	progress func(completed int, total int),
 ) ([]OCRPage, error) {
 	if vision == nil {
 		return nil, errors.New("provider is required")
@@ -26,11 +27,13 @@ func OCRImages(
 	pages := make([]OCRPage, len(inputs))
 	jobs := make(chan int)
 	errCh := make(chan pageError, len(inputs))
+	completed := 0
+	var completedMu sync.Mutex
 
 	var wg sync.WaitGroup
 	for range workers {
 		wg.Add(1)
-		go ocrImageWorker(ctx, vision, model, inputs, prompt, pages, jobs, errCh, &wg)
+		go ocrImageWorker(ctx, vision, model, inputs, prompt, pages, jobs, errCh, progress, &completed, &completedMu, &wg)
 	}
 	for index := range inputs {
 		select {
@@ -76,6 +79,9 @@ func ocrImageWorker(
 	pages []OCRPage,
 	jobs <-chan int,
 	errCh chan<- pageError,
+	progress func(completed int, total int),
+	completed *int,
+	completedMu *sync.Mutex,
 	wg *sync.WaitGroup,
 ) {
 	defer wg.Done()
@@ -84,10 +90,22 @@ func ocrImageWorker(
 		if err != nil {
 			errCh <- pageError{Name: inputs[index].Name, Err: err}
 			pages[index] = failedOCRPage(inputs[index], err)
-			continue
+		} else {
+			pages[index] = page
 		}
-		pages[index] = page
+		reportPageProgress(progress, completed, completedMu, len(inputs))
 	}
+}
+
+func reportPageProgress(progress func(completed int, total int), completed *int, completedMu *sync.Mutex, total int) {
+	if progress == nil {
+		return
+	}
+	completedMu.Lock()
+	*completed = *completed + 1
+	done := *completed
+	completedMu.Unlock()
+	progress(done, total)
 }
 
 func ocrImage(ctx context.Context, vision provider.Provider, model string, input ImageInput, prompt string) (OCRPage, error) {

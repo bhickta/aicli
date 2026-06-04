@@ -75,6 +75,7 @@ func (s *Service) ocrInputs(ctx context.Context, req Request, inputs []document.
 		inputs,
 		"Extract all text from this page image as Markdown. Preserve headings, lists, tables, and reading order. Output Markdown only.",
 		req.Workers,
+		nil,
 	)
 }
 

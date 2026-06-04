@@ -12,7 +12,7 @@ import (
 	"github.com/bhickta/aicli/internal/provider"
 )
 
-func (s *Service) splitQuestions(ctx context.Context, model string, pages []Page, workers int) ([]Question, error) {
+func (s *Service) splitQuestions(ctx context.Context, model string, pages []Page, workers int, progress func(completed int, total int)) ([]Question, error) {
 	if len(pages) == 0 {
 		return nil, nil
 	}
@@ -22,6 +22,8 @@ func (s *Service) splitQuestions(ctx context.Context, model string, pages []Page
 	errCh := make(chan error, 1)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	completed := 0
+	var completedMu sync.Mutex
 
 	var wg sync.WaitGroup
 	for range workers {
@@ -39,6 +41,7 @@ func (s *Service) splitQuestions(ctx context.Context, model string, pages []Page
 					return
 				}
 				results <- questions
+				reportQuestionProgress(progress, &completed, &completedMu, len(pages))
 			}
 		}()
 	}
@@ -91,6 +94,17 @@ sendPages:
 	}
 	sortQuestions(merged)
 	return merged, nil
+}
+
+func reportQuestionProgress(progress func(completed int, total int), completed *int, completedMu *sync.Mutex, total int) {
+	if progress == nil {
+		return
+	}
+	completedMu.Lock()
+	*completed = *completed + 1
+	done := *completed
+	completedMu.Unlock()
+	progress(done, total)
 }
 
 func (s *Service) splitPageQuestions(ctx context.Context, model string, page Page) ([]Question, error) {

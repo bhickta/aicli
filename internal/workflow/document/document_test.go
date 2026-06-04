@@ -141,6 +141,7 @@ func TestOCRImagesKeepsInputOrder(t *testing.T) {
 		[]ImageInput{{Name: "b", Data: []byte("2")}, {Name: "a", Data: []byte("1")}},
 		"prompt",
 		2,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("OCRImages() error = %v", err)
@@ -160,6 +161,7 @@ func TestOCRImagesKeepsPartialPageFailures(t *testing.T) {
 		[]ImageInput{{Name: "page-1", Data: []byte("ok")}, {Name: "page-2", Data: []byte("fail")}},
 		"prompt",
 		0,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("OCRImages() error = %v", err)
@@ -169,5 +171,31 @@ func TestOCRImagesKeepsPartialPageFailures(t *testing.T) {
 	}
 	if !strings.Contains(pages[1].Text, "server overloaded") {
 		t.Fatalf("page 2 text = %q, want failure marker", pages[1].Text)
+	}
+}
+
+func TestOCRImagesReportsProgress(t *testing.T) {
+	t.Parallel()
+
+	updates := []int{}
+	_, err := OCRImages(
+		context.Background(),
+		fakeVision{},
+		"model",
+		[]ImageInput{{Name: "p1", Data: []byte("1")}, {Name: "p2", Data: []byte("2")}},
+		"prompt",
+		1,
+		func(completed int, total int) {
+			if total != 2 {
+				t.Fatalf("total = %d, want 2", total)
+			}
+			updates = append(updates, completed)
+		},
+	)
+	if err != nil {
+		t.Fatalf("OCRImages() error = %v", err)
+	}
+	if len(updates) != 2 || updates[0] != 1 || updates[1] != 2 {
+		t.Fatalf("updates = %#v, want [1 2]", updates)
 	}
 }

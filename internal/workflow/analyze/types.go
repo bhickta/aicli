@@ -53,6 +53,8 @@ type Response struct {
 
 type Option func(*Service)
 
+type ProgressFunc func(stage string, completed int, total int, label string)
+
 func WithArtifactDir(path string) Option {
 	return func(s *Service) {
 		s.artifactDir = path

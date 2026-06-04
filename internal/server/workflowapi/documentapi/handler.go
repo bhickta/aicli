@@ -83,8 +83,6 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.runtime.StartJob(w, r, "analyze", req.Path, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
-		progress(core.Indeterminate("rendering and reading PDF"))
-		progress(core.Indeterminate("analyzing OCR text"))
 		artifactDir := ""
 		if h.runtime.DataDir() != "" {
 			artifactDir = filepath.Join(h.runtime.DataDir(), "artifacts")
@@ -94,7 +92,9 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 			tool.ExecRunner{},
 			p,
 			analyze.WithArtifactDir(artifactDir),
-		).Run(ctx, req.Request)
+		).RunWithProgress(ctx, req.Request, func(stage string, completed int, total int, label string) {
+			progress(core.Units(stage, completed, total, label))
+		})
 		return result, err
 	})
 }

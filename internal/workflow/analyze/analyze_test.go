@@ -64,9 +64,16 @@ func TestRunAnalyzePipeline(t *testing.T) {
 	}
 	runner := &fakeRunner{}
 	fp := &fakeProvider{}
-	res, err := New(config.ToolConfig{PDFToPPM: "pdftoppm"}, runner, fp).Run(
+	progressStages := []string{}
+	res, err := New(config.ToolConfig{PDFToPPM: "pdftoppm"}, runner, fp).RunWithProgress(
 		context.Background(),
 		Request{Path: pdf, Model: "model"},
+		func(stage string, completed int, total int, label string) {
+			if total <= 0 {
+				t.Fatalf("progress total = %d, want positive", total)
+			}
+			progressStages = append(progressStages, stage)
+		},
 	)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -76,6 +83,9 @@ func TestRunAnalyzePipeline(t *testing.T) {
 	}
 	if res.Kind != "topper_copy_review" || len(res.Questions) != 1 {
 		t.Fatalf("Response = %#v, want review kind and fallback question", res)
+	}
+	if len(progressStages) == 0 || progressStages[len(progressStages)-1] != "topper copy review ready" {
+		t.Fatalf("progress stages = %#v, want final ready stage", progressStages)
 	}
 	if !hasArgPair(runner.args, "-r", "300") {
 		t.Fatalf("pdftoppm args = %#v, want default 300 DPI", runner.args)
