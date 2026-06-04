@@ -26,7 +26,10 @@ const reportEdit = shallowRef(props.review.report);
 
 watch(
   () => props.review,
-  (review) => {
+  (review, previousReview) => {
+    const previousPageNumber = activePageNumber.value;
+    const previousQuestionID = activeQuestionID.value;
+    const reviewChanged = review.review_id !== previousReview?.review_id;
     for (const page of review.pages) {
       pageEdits[page.number] = { text: page.text, verified: page.verified };
     }
@@ -38,8 +41,16 @@ watch(
       };
     }
     reportEdit.value = review.report;
-    activePageNumber.value = review.pages[0]?.number || 1;
-    activeQuestionID.value = review.questions[0]?.id || "";
+    activePageNumber.value = reviewChanged
+      ? review.pages[0]?.number || 1
+      : review.pages.some((page) => page.number === previousPageNumber)
+        ? previousPageNumber
+        : review.pages[0]?.number || 1;
+    activeQuestionID.value = reviewChanged
+      ? review.questions[0]?.id || ""
+      : review.questions.some((question) => question.id === previousQuestionID)
+        ? previousQuestionID
+        : review.questions[0]?.id || "";
   },
   { immediate: true },
 );
