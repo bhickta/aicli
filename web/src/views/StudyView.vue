@@ -11,7 +11,7 @@ const activeSection = shallowRef<StudySection>("topper-copies");
 <template>
   <div class="study-panel panel">
     <header class="study-header">
-      <div>
+      <div class="study-title">
         <h2>Study</h2>
       </div>
       <nav class="study-tabs" aria-label="Study sections">
@@ -42,29 +42,38 @@ const activeSection = shallowRef<StudySection>("topper-copies");
 <style scoped>
 .study-panel {
   display: grid;
-  gap: 12px;
+  align-content: start;
+  gap: 10px;
   min-height: calc(100vh - 7.5rem);
-  padding: 14px;
+  padding: 12px;
 }
 
 .study-header {
   align-items: center;
-  border-bottom: 1px solid #2b3440;
+  background: #0f141c;
+  border: 1px solid #2b3440;
+  border-radius: 7px;
   display: flex;
   gap: 16px;
   justify-content: space-between;
-  padding-bottom: 10px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.study-title {
+  min-width: 0;
 }
 
 .study-header h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
+  line-height: 1.2;
 }
 
 .study-tabs {
-  background: #0f141c;
+  background: #0a0f18;
   border: 1px solid #2b3440;
-  border-radius: 7px;
+  border-radius: 6px;
   display: flex;
   gap: 2px;
   padding: 3px;
@@ -72,10 +81,11 @@ const activeSection = shallowRef<StudySection>("topper-copies");
 
 .study-tabs button {
   border: 0;
-  border-radius: 5px;
+  border-radius: 4px;
   background: transparent;
-  min-width: 8rem;
-  padding: 7px 12px;
+  min-height: 2rem;
+  min-width: 7.5rem;
+  padding: 5px 10px;
   text-align: center;
 }
 
@@ -85,6 +95,7 @@ const activeSection = shallowRef<StudySection>("topper-copies");
 }
 
 .study-content {
+  align-self: start;
   min-width: 0;
 }
 

@@ -183,7 +183,7 @@ function cleanInline(text: string) {
 <style scoped>
 .ocr-viewer {
   display: grid;
-  gap: 0.55rem;
+  gap: 0.45rem;
   min-width: 0;
 }
 
@@ -196,21 +196,23 @@ function cleanInline(text: string) {
 }
 
 .ocr-viewer h4 {
+  font-size: 0.9rem;
+  line-height: 1.2;
   margin: 0;
 }
 
 .ocr-viewer-tabs {
   background: #0f1724;
   border: 1px solid #253247;
-  border-radius: 0.4rem;
-  padding: 0.15rem;
+  border-radius: 0.35rem;
+  padding: 0.12rem;
 }
 
 .ocr-viewer-tabs button {
   border: 0;
-  border-radius: 0.3rem;
+  border-radius: 0.25rem;
   background: transparent;
-  padding: 0.25rem 0.55rem;
+  padding: 0.22rem 0.5rem;
 }
 
 .ocr-viewer-tabs button.active {
@@ -222,9 +224,9 @@ function cleanInline(text: string) {
   border: 1px solid #253247;
   border-radius: 0.35rem;
   color: #e5e7eb;
-  min-height: 32rem;
+  min-height: 29rem;
   overflow: auto;
-  padding: 0.85rem;
+  padding: 0.7rem;
 }
 
 .ocr-rendered h5 {
@@ -275,7 +277,7 @@ function cleanInline(text: string) {
   border-radius: 0.35rem;
   color: #e5e7eb;
   font: 0.9rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  min-height: 32rem;
+  min-height: 29rem;
   resize: vertical;
   width: 100%;
 }

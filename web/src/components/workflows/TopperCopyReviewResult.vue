@@ -297,9 +297,9 @@ function emitReview() {
   border-radius: 0.5rem;
   background: #0d121b;
   display: grid;
-  gap: 0.75rem;
+  gap: 0.55rem;
   min-width: 0;
-  padding: 0.85rem;
+  padding: 0.65rem;
 }
 
 .topper-review.fullscreen {
@@ -316,8 +316,15 @@ function emitReview() {
 .topper-question-panel header {
   align-items: center;
   display: flex;
-  gap: 0.6rem;
+  gap: 0.5rem;
   justify-content: space-between;
+}
+
+.topper-review-header {
+  background: #0f141c;
+  border: 1px solid #253247;
+  border-radius: 0.4rem;
+  padding: 0.45rem 0.55rem;
 }
 
 .topper-review-header h3,
@@ -327,10 +334,15 @@ function emitReview() {
   margin: 0;
 }
 
+.topper-review-header h3 {
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
 .topper-review-header p,
 .topper-question-panel p {
   color: #94a3b8;
-  margin: 0.2rem 0 0;
+  margin: 0.15rem 0 0;
 }
 
 .topper-review-actions span,
@@ -339,18 +351,18 @@ function emitReview() {
   border: 1px solid #2e3c54;
   border-radius: 999px;
   color: #cbd5e1;
-  font-size: 0.78rem;
-  padding: 0.25rem 0.55rem;
+  font-size: 0.74rem;
+  padding: 0.2rem 0.5rem;
 }
 
 .topper-review button {
   background: #111827;
   border: 1px solid #334155;
-  border-radius: 0.42rem;
+  border-radius: 0.35rem;
   color: #dbeafe;
   cursor: pointer;
   font: inherit;
-  padding: 0.42rem 0.65rem;
+  padding: 0.32rem 0.55rem;
 }
 
 .topper-review button:hover,
@@ -359,7 +371,17 @@ function emitReview() {
 }
 
 .topper-review-tabs {
+  background: #0f141c;
+  border: 1px solid #253247;
+  border-radius: 0.4rem;
   justify-content: flex-start;
+  padding: 0.15rem;
+  width: max-content;
+}
+
+.topper-review-tabs button {
+  border: 0;
+  background: transparent;
 }
 
 .topper-review-tabs button.active {
@@ -368,9 +390,9 @@ function emitReview() {
 
 .topper-review-grid {
   display: grid;
-  gap: 0.75rem;
-  grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr);
-  min-height: min(42rem, calc(100vh - 15rem));
+  gap: 0.6rem;
+  grid-template-columns: minmax(10rem, 13rem) minmax(0, 1fr);
+  min-height: min(40rem, calc(100vh - 13rem));
 }
 
 .topper-review-list {
@@ -378,29 +400,34 @@ function emitReview() {
   border-right: 1px solid #253247;
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 0.35rem;
   max-height: 70vh;
   overflow: auto;
-  padding: 0 0.75rem 0 0;
+  padding: 0 0.55rem 0 0;
 }
 
 .topper-review-list button {
   align-items: flex-start;
   display: grid;
-  gap: 0.25rem;
+  gap: 0.2rem;
   text-align: left;
+}
+
+.topper-review-list strong {
+  font-size: 0.84rem;
+  line-height: 1.25;
 }
 
 .topper-review-list span {
   color: #94a3b8;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
 }
 
 .topper-page-workspace,
 .topper-question-workspace {
   display: grid;
-  gap: 0.75rem;
-  grid-template-columns: minmax(0, 1.1fr) minmax(22rem, 0.9fr);
+  gap: 0.6rem;
+  grid-template-columns: minmax(0, 1.08fr) minmax(20rem, 0.92fr);
   min-width: 0;
 }
 
@@ -412,7 +439,7 @@ function emitReview() {
   border: 1px solid #253247;
   border-radius: 0.45rem;
   min-width: 0;
-  padding: 0.7rem;
+  padding: 0.55rem;
 }
 
 .topper-image-scroll {
@@ -421,11 +448,11 @@ function emitReview() {
   border-radius: 0.35rem;
   display: flex;
   justify-content: center;
-  margin-top: 0.6rem;
+  margin-top: 0.5rem;
   max-height: 68vh;
-  min-height: 32rem;
+  min-height: 29rem;
   overflow: auto;
-  padding: 1rem;
+  padding: 0.75rem;
 }
 
 .topper-image-scroll img {
@@ -440,21 +467,21 @@ function emitReview() {
   border-radius: 0.35rem;
   color: #e5e7eb;
   font: 0.9rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  min-height: 32rem;
+  min-height: 29rem;
   resize: vertical;
   width: 100%;
 }
 
 .topper-question-editor,
 .topper-report-editor {
-  margin-top: 0.8rem;
+  margin-top: 0.6rem;
 }
 
 .topper-question-meta {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.5rem;
   grid-template-columns: minmax(0, 1fr) minmax(8rem, 12rem);
-  margin-top: 0.75rem;
+  margin-top: 0.6rem;
 }
 
 .topper-question-meta label {
@@ -468,7 +495,7 @@ function emitReview() {
 .topper-report-panel pre {
   color: #e5e7eb;
   font: 0.9rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  margin: 0.8rem 0 0;
+  margin: 0.6rem 0 0;
   max-height: 68vh;
   overflow: auto;
   white-space: pre-wrap;
@@ -479,6 +506,17 @@ function emitReview() {
 }
 
 @media (max-width: 900px) {
+  .topper-review-header,
+  .topper-review-actions {
+    align-items: stretch;
+    display: grid;
+    justify-content: stretch;
+  }
+
+  .topper-review-tabs {
+    width: auto;
+  }
+
   .topper-review-grid,
   .topper-page-workspace,
   .topper-question-workspace {
