@@ -3,8 +3,10 @@ import { api, parseJobOutput, pollJob } from "../lib/api";
 import { stringify } from "../lib/format";
 import { describeJobProgress } from "../lib/jobProgress";
 import type { Job, ProgressMode, WorkflowDefinition } from "../types";
+import { useTaskSound } from "./useTaskSound";
 
 export function useWorkflowRunner() {
+  const taskSound = useTaskSound();
   const status = shallowRef("Ready");
   const result = shallowRef("");
   const parsedResult = shallowRef<unknown>(null);
@@ -26,6 +28,7 @@ export function useWorkflowRunner() {
     result.value = "";
     parsedResult.value = null;
     markdownPreview.value = "";
+    void taskSound.unlockSound();
     try {
       const response = await api<{ job?: Job; result?: unknown }>(workflow.endpoint, {
         method: "POST",
@@ -42,10 +45,12 @@ export function useWorkflowRunner() {
       progress.value = 100;
       progressMode.value = "determinate";
       progressVisible.value = true;
+      void taskSound.play("success");
     } catch (error) {
       status.value = "Failed";
       progressVisible.value = false;
       result.value = error instanceof Error ? error.message : "Workflow failed";
+      void taskSound.play("error");
     } finally {
       running.value = false;
       currentJob.value = null;
@@ -82,18 +87,21 @@ export function useWorkflowRunner() {
       progress.value = 100;
       progressMode.value = "determinate";
       progressVisible.value = true;
+      void taskSound.play("success");
     }
     if (job.status === "failed") {
       result.value = job.error || "Workflow failed";
       parsedResult.value = null;
       status.value = "Failed";
       progressVisible.value = presentation.visible;
+      void taskSound.play("error");
     }
     if (job.status === "cancelled") {
       result.value = job.error || "Workflow cancelled";
       parsedResult.value = null;
       status.value = "Cancelled";
       progressVisible.value = presentation.visible;
+      void taskSound.play("cancelled");
     }
   }
 

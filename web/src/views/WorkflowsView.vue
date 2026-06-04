@@ -5,6 +5,7 @@ import WorkflowCategoryTabs from "../components/workflows/WorkflowCategoryTabs.v
 import WorkflowFields from "../components/workflows/WorkflowFields.vue";
 import WorkflowRunControls from "../components/workflows/WorkflowRunControls.vue";
 import WorkflowSelector from "../components/workflows/WorkflowSelector.vue";
+import WorkflowSoundControl from "../components/workflows/WorkflowSoundControl.vue";
 import WorkflowResult from "../components/workflows/WorkflowResult.vue";
 import { useWorkflowBrowser } from "../composables/useWorkflowBrowser";
 import { useWorkflowDrop } from "../composables/useWorkflowDrop";
@@ -60,6 +61,7 @@ function cancelButtonLabel() {
       @select="chooseWorkflow"
     />
     <DropZone @upload="handleDrop" />
+    <WorkflowSoundControl />
     <p class="muted">Workflow controls are shown only for the selected workflow. Recall is included in the <strong>Study</strong> workflow set.</p>
     <p v-if="resourceHint" class="status-line compact">{{ resourceHint }}</p>
     <WorkflowFields
