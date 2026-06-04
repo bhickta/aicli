@@ -62,7 +62,7 @@ function cancelButtonLabel() {
     />
     <DropZone @upload="handleDrop" />
     <WorkflowSoundControl />
-    <p class="muted">Workflow controls are shown only for the selected workflow. Recall is included in the <strong>Study</strong> workflow set.</p>
+    <p class="muted">Workflow controls are shown only for the selected workflow. Study-specific workflows live in the Study tab.</p>
     <p v-if="resourceHint" class="status-line compact">{{ resourceHint }}</p>
     <WorkflowFields
       :fields="nonProviderFields"

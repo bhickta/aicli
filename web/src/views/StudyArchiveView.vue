@@ -25,10 +25,10 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 </script>
 
 <template>
-  <div class="study-archive panel">
+  <div class="study-archive">
     <header class="study-archive-header">
       <div>
-        <h2>Study</h2>
+        <h3>Topper Answer Copies</h3>
         <p class="muted">{{ archive.summary.value }}</p>
       </div>
       <div class="study-archive-search">
@@ -36,10 +36,6 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
         <button type="button" @click="archive.loadReviews()">Search</button>
       </div>
     </header>
-
-    <nav class="study-subtabs" aria-label="Study sections">
-      <button type="button" class="active">Topper answer copies</button>
-    </nav>
 
     <p class="status-line" role="status" aria-live="polite">{{ archive.status.value }}</p>
 
@@ -109,7 +105,9 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 .study-archive {
   display: grid;
   gap: 14px;
-  min-height: calc(100vh - 7.5rem);
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .study-archive-header,
@@ -128,7 +126,7 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
   justify-content: space-between;
 }
 
-.study-archive-header h2,
+.study-archive-header h3,
 .study-archive-header p {
   margin: 0;
 }
@@ -201,16 +199,6 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 .archive-delete {
   align-items: end;
   flex-wrap: wrap;
-}
-
-.study-subtabs {
-  border-bottom: 1px solid #2b3440;
-  padding-bottom: 8px;
-}
-
-.study-subtabs button.active {
-  border-color: #69a1ff;
-  background: #17304f;
 }
 
 .danger-button {

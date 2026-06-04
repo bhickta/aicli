@@ -8,7 +8,7 @@ import ChatView from "../views/ChatView.vue";
 import JobsView from "../views/JobsView.vue";
 import ProvidersView from "../views/ProvidersView.vue";
 import SettingsView from "../views/SettingsView.vue";
-import StudyArchiveView from "../views/StudyArchiveView.vue";
+import StudyView from "../views/StudyView.vue";
 import ToolsView from "../views/ToolsView.vue";
 import WorkflowsView from "../views/WorkflowsView.vue";
 import ZettelView from "../views/ZettelView.vue";
@@ -29,7 +29,7 @@ const activeComponent = computed(() => {
     case "workflows":
       return WorkflowsView;
     case "study-archive":
-      return StudyArchiveView;
+      return StudyView;
     case "zettel":
       return ZettelView;
     case "jobs":

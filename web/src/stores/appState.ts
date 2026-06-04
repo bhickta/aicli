@@ -1,10 +1,10 @@
 import { computed, reactive, watch } from "vue";
 import { readStoredRecord, readStoredString, readStoredValue, writeStoredJSON, writeStoredString } from "../lib/persistence";
 import type { Model, Settings, SystemResources, ViewName, WhatsAppContact } from "../types";
-import { workflowDefinitions } from "../workflows/definitions";
+import { workflowCategories, workflowDefinitions } from "../workflows/definitions";
 
 const storedView = readStoredString("aicli.view", "chat") as ViewName;
-const storedWorkflowCategory = readStoredString("aicli.workflow.category", "Study");
+const storedWorkflowCategory = normalizedWorkflowCategory(readStoredString("aicli.workflow.category", "Codex"));
 const storedWorkflowID = readStoredString("aicli.workflow.id", "recall");
 
 export const appState = reactive({
@@ -47,6 +47,10 @@ export function selectWorkflowCategory(category: string) {
   }
   appState.workflow.category = category;
   appState.workflow.workflowId = activeWorkflowDefinitions.value[0]?.id || "";
+}
+
+function normalizedWorkflowCategory(category: string) {
+  return workflowCategories.includes(category) ? category : workflowCategories[0] || "Codex";
 }
 
 watch(() => appState.view, (view) => writeStoredString("aicli.view", view));
