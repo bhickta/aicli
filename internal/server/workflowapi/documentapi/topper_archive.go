@@ -287,12 +287,19 @@ func (h *Handler) backfillTopperReviewJobs(ctx context.Context, store topperRevi
 		}
 		review, ok := decodeTopperReviewOutput(job.Output)
 		if !ok {
-			continue
+			review, ok = decodePDFOCRReviewOutput(job)
+			if !ok {
+				continue
+			}
+		}
+		status := "ready"
+		if strings.HasPrefix(review.ReviewID, "ocr-") {
+			status = "ocr-only"
 		}
 		if err := store.SaveTopperReview(ctx, buildTopperReviewRecord(review, topperReviewMeta{
 			JobID:      job.ID,
 			SourcePath: job.Input,
-			Status:     "ready",
+			Status:     status,
 		}, job.CreatedAt)); err != nil {
 			return err
 		}
@@ -351,4 +358,118 @@ func decodeTopperReviewOutput(output string) (analyze.Response, bool) {
 		return analyze.Response{}, false
 	}
 	return review, true
+}
+
+func decodePDFOCRReviewOutput(job storage.Job) (analyze.Response, bool) {
+	if job.Type != "pdf-ocr" || job.Status != storage.JobStatusCompleted {
+		return analyze.Response{}, false
+	}
+	var output struct {
+		Markdown string `json:"markdown"`
+	}
+	if err := json.Unmarshal([]byte(job.Output), &output); err != nil {
+		return analyze.Response{}, false
+	}
+	pages := ocrMarkdownPages(output.Markdown)
+	if len(pages) == 0 {
+		return analyze.Response{}, false
+	}
+	return analyze.Response{
+		Kind:      "topper_copy_review",
+		ReviewID:  "ocr-" + job.ID,
+		PDFName:   filepath.Base(job.Input),
+		Pages:     pages,
+		Questions: pageReviewQuestions(pages),
+		Report:    "Imported from PDF OCR output. Run page or full review from Study Archive for AI analysis.",
+	}, true
+}
+
+func ocrMarkdownPages(markdown string) []analyze.Page {
+	var pages []analyze.Page
+	currentNumber := 0
+	currentName := ""
+	var text strings.Builder
+
+	flush := func() {
+		body := strings.TrimSpace(text.String())
+		if currentNumber == 0 || body == "" {
+			text.Reset()
+			return
+		}
+		lowerBody := strings.ToLower(body)
+		pages = append(pages, analyze.Page{
+			Number:       currentNumber,
+			Name:         currentName,
+			Text:         body,
+			UnclearCount: strings.Count(lowerBody, "[unclear]"),
+			Verified:     false,
+		})
+		text.Reset()
+	}
+
+	for _, line := range strings.Split(markdown, "\n") {
+		number, name, ok := parseOCRPageMarker(strings.TrimSpace(line))
+		if ok {
+			flush()
+			currentNumber = number
+			currentName = name
+			continue
+		}
+		if currentNumber == 0 {
+			continue
+		}
+		text.WriteString(line)
+		text.WriteString("\n")
+	}
+	flush()
+
+	if len(pages) > 0 {
+		return pages
+	}
+	body := strings.TrimSpace(markdown)
+	if body == "" {
+		return nil
+	}
+	return []analyze.Page{{
+		Number:       1,
+		Name:         "page-1",
+		Text:         body,
+		UnclearCount: strings.Count(strings.ToLower(body), "[unclear]"),
+		Verified:     false,
+	}}
+}
+
+func parseOCRPageMarker(line string) (int, string, bool) {
+	if !strings.HasPrefix(line, "<!-- Page ") || !strings.HasSuffix(line, " -->") {
+		return 0, "", false
+	}
+	content := strings.TrimSuffix(strings.TrimPrefix(line, "<!-- Page "), " -->")
+	parts := strings.Fields(content)
+	if len(parts) == 0 {
+		return 0, "", false
+	}
+	number, err := strconv.Atoi(parts[0])
+	if err != nil || number <= 0 {
+		return 0, "", false
+	}
+	name := fmt.Sprintf("page-%d", number)
+	if len(parts) > 1 {
+		name = parts[1]
+	}
+	return number, name, true
+}
+
+func pageReviewQuestions(pages []analyze.Page) []analyze.Question {
+	questions := make([]analyze.Question, 0, len(pages))
+	for _, page := range pages {
+		questions = append(questions, analyze.Question{
+			ID:             fmt.Sprintf("page-%d", page.Number),
+			Label:          fmt.Sprintf("Page %d OCR", page.Number),
+			Title:          "OCR text",
+			AnswerMarkdown: page.Text,
+			SourcePages:    []int{page.Number},
+			Status:         "needs review",
+		})
+	}
+	return questions
 }

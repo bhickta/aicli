@@ -231,3 +231,45 @@ func TestTopperReviewArchiveBackfillsCompletedAnalyzeJobs(t *testing.T) {
 		t.Fatalf("reviews = %#v, want backfilled old review", payload.Reviews)
 	}
 }
+
+func TestTopperReviewArchiveBackfillsPDFOCRJobs(t *testing.T) {
+	t.Parallel()
+
+	store := &memoryStore{jobs: map[string]storage.Job{}, reviews: map[string]storage.TopperReviewRecord{}}
+	output := `{"markdown":"<!-- Page 1 page-1 -->\nGovernance answer text\n\n<!-- Page 2 page-2 -->\nSecond page [unclear] text"}`
+	if err := store.CreateJob(context.Background(), storage.Job{
+		ID:        "pdf-ocr-1",
+		Type:      "pdf-ocr",
+		Status:    storage.JobStatusCompleted,
+		Input:     "/tmp/topper-copy.pdf",
+		Output:    output,
+		CreatedAt: time.Date(2026, 6, 4, 8, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 6, 4, 8, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := testHandlerWithSettingsAndStore(config.DefaultSettings(), "", store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/topper-reviews?query=governance", nil)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200, body=%s", res.Code, res.Body.String())
+	}
+	var payload struct {
+		Reviews []storage.TopperReviewRecord `json:"reviews"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Reviews) != 1 {
+		t.Fatalf("reviews = %#v, want one OCR backfill", payload.Reviews)
+	}
+	review := payload.Reviews[0]
+	if review.ID != "ocr-pdf-ocr-1" || review.Status != "ocr-only" || review.PDFName != "topper-copy.pdf" {
+		t.Fatalf("review = %#v, want OCR-only archive record", review)
+	}
+	if review.PageCount != 2 || review.QuestionCount != 2 || review.UnclearCount != 1 {
+		t.Fatalf("counts = pages %d questions %d unclear %d, want 2/2/1", review.PageCount, review.QuestionCount, review.UnclearCount)
+	}
+}
