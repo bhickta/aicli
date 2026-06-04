@@ -55,7 +55,7 @@ function cancelButtonLabel() {
     />
     <WorkflowSelector
       :workflows="activeWorkflowDefinitions"
-      :selected-id="appState.workflow.workflowId"
+      :selected-id="activeWorkflow?.id || ''"
       @select="chooseWorkflow"
     />
     <DropZone @upload="handleDrop" />
