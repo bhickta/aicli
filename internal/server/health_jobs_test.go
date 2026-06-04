@@ -196,3 +196,38 @@ func TestTopperReviewArchiveEndpoints(t *testing.T) {
 		t.Fatalf("record after update = %#v, want edited review", record)
 	}
 }
+
+func TestTopperReviewArchiveBackfillsCompletedAnalyzeJobs(t *testing.T) {
+	t.Parallel()
+
+	store := &memoryStore{jobs: map[string]storage.Job{}, reviews: map[string]storage.TopperReviewRecord{}}
+	output := `{"kind":"topper_copy_review","review_id":"topper-old","pdf_name":"old-copy.pdf","pages":[{"number":1,"name":"page-1","path":"","image_url":"","text":"old OCR text","unclear_count":0,"verified":false}],"questions":[],"report":"old report"}`
+	if err := store.CreateJob(context.Background(), storage.Job{
+		ID:        "analyze-1",
+		Type:      "analyze",
+		Status:    storage.JobStatusCompleted,
+		Input:     "/tmp/old-copy.pdf",
+		Output:    output,
+		CreatedAt: time.Date(2026, 6, 4, 8, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 6, 4, 8, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := testHandlerWithSettingsAndStore(config.DefaultSettings(), "", store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/topper-reviews", nil)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200, body=%s", res.Code, res.Body.String())
+	}
+	var payload struct {
+		Reviews []storage.TopperReviewRecord `json:"reviews"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Reviews) != 1 || payload.Reviews[0].ID != "topper-old" || payload.Reviews[0].SourcePath != "/tmp/old-copy.pdf" {
+		t.Fatalf("reviews = %#v, want backfilled old review", payload.Reviews)
+	}
+}

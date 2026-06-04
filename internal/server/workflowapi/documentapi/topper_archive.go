@@ -46,6 +46,10 @@ func (h *Handler) listTopperReviews(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if err := h.backfillTopperReviews(r.Context(), store); err != nil {
+		core.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	records, err := store.ListTopperReviews(r.Context(), storage.TopperReviewListOptions{
@@ -263,4 +267,88 @@ func topperSearchText(review analyze.Response) string {
 	b.WriteString("\n")
 	b.WriteString(review.Report)
 	return strings.ToLower(b.String())
+}
+
+func (h *Handler) backfillTopperReviews(ctx context.Context, store topperReviewStore) error {
+	if err := h.backfillTopperReviewJobs(ctx, store); err != nil {
+		return err
+	}
+	return h.backfillTopperReviewArtifacts(ctx, store)
+}
+
+func (h *Handler) backfillTopperReviewJobs(ctx context.Context, store topperReviewStore) error {
+	jobs, err := h.runtime.Store().ListJobs(ctx)
+	if err != nil {
+		return err
+	}
+	for _, job := range jobs {
+		if job.Output == "" {
+			continue
+		}
+		review, ok := decodeTopperReviewOutput(job.Output)
+		if !ok {
+			continue
+		}
+		if err := store.SaveTopperReview(ctx, buildTopperReviewRecord(review, topperReviewMeta{
+			JobID:      job.ID,
+			SourcePath: job.Input,
+			Status:     "ready",
+		}, job.CreatedAt)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *Handler) backfillTopperReviewArtifacts(ctx context.Context, store topperReviewStore) error {
+	if h.runtime.DataDir() == "" {
+		return nil
+	}
+	root := filepath.Join(h.runtime.DataDir(), "artifacts", "topper-copy")
+	entries, err := os.ReadDir(root)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(root, entry.Name(), "review.json")
+		data, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		review, ok := decodeTopperReviewOutput(string(data))
+		if !ok {
+			continue
+		}
+		info, _ := os.Stat(path)
+		createdAt := time.Time{}
+		if info != nil {
+			createdAt = info.ModTime().UTC()
+		}
+		if err := store.SaveTopperReview(ctx, buildTopperReviewRecord(review, topperReviewMeta{
+			Status: "ready",
+		}, createdAt)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func decodeTopperReviewOutput(output string) (analyze.Response, bool) {
+	var review analyze.Response
+	if err := json.Unmarshal([]byte(output), &review); err != nil {
+		return analyze.Response{}, false
+	}
+	if review.Kind != "topper_copy_review" || review.ReviewID == "" {
+		return analyze.Response{}, false
+	}
+	return review, true
 }
