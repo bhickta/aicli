@@ -78,6 +78,11 @@ const verifiedCount = computed(() => props.review.pages.filter((page) => pageEdi
 const unclearCount = computed(() => props.review.pages.reduce((total, page) => total + page.unclear_count, 0));
 const sourcePageLabels = computed(() => activeQuestion.value?.source_pages.map((page) => `P${page}`).join(", ") || "");
 const activePageHasImage = computed(() => Boolean(activePage.value?.image_url || activePage.value?.path));
+const hasQuestionBlocks = computed(() => props.review.questions.some((question) => !isPageFallbackQuestion(question)));
+const questionTabLabel = computed(() => {
+  const count = props.review.questions.length;
+  return count > 0 ? `Question-wise (${count})` : "Question-wise";
+});
 
 function selectPage(pageNumber: number) {
   activeTab.value = "pages";
@@ -152,6 +157,10 @@ function rerunActivePage(action: TopperRerunAction) {
   emit("rerunPage", action, activePage.value.number);
 }
 
+function isPageFallbackQuestion(question: TopperCopyQuestion) {
+  return question.status === "needs review" && /^Page \d+( OCR)?$/i.test(question.label);
+}
+
 function emitReview() {
   if (!props.editable) return;
   emit("update:review", {
@@ -188,7 +197,7 @@ function emitReview() {
 
     <nav class="topper-review-tabs" aria-label="Topper review views">
       <button type="button" :class="{ active: activeTab === 'pages' }" @click="activeTab = 'pages'">Page OCR</button>
-      <button type="button" :class="{ active: activeTab === 'questions' }" @click="activeTab = 'questions'">Question-wise</button>
+      <button type="button" :class="{ active: activeTab === 'questions' }" @click="activeTab = 'questions'">{{ questionTabLabel }}</button>
       <button type="button" :class="{ active: activeTab === 'report' }" @click="activeTab = 'report'">Report</button>
     </nav>
 
@@ -233,6 +242,7 @@ function emitReview() {
 
     <div v-else-if="activeTab === 'questions'" class="topper-review-grid">
       <aside class="topper-review-list" aria-label="Questions">
+        <p v-if="!review.questions.length" class="topper-empty-state">No question blocks saved.</p>
         <button
           v-for="question in review.questions"
           :key="question.id"
@@ -244,8 +254,11 @@ function emitReview() {
           <span>{{ question.status }} · pages {{ question.source_pages.join(", ") }}</span>
         </button>
       </aside>
-      <main class="topper-question-workspace">
+      <main v-if="activeQuestion" class="topper-question-workspace">
         <section class="topper-question-panel">
+          <p v-if="!hasQuestionBlocks" class="topper-warning">
+            Question-wise split has not produced answer blocks yet. These are page-level OCR fallback blocks; rerun questions after choosing a capable model.
+          </p>
           <header>
             <div>
               <h4>{{ activeQuestion?.label || "Question" }}</h4>
@@ -280,6 +293,9 @@ function emitReview() {
             <img v-if="activePage?.image_url" :src="activePage.image_url" :alt="`Page ${activePage.number}`" />
           </div>
         </section>
+      </main>
+      <main v-else class="topper-question-panel">
+        <p class="topper-empty-state">No question answer block is available. Rerun question-wise split for this review.</p>
       </main>
     </div>
 
@@ -421,6 +437,26 @@ function emitReview() {
 .topper-review-list span {
   color: #94a3b8;
   font-size: 0.72rem;
+}
+
+.topper-empty-state,
+.topper-warning {
+  border-radius: 0.35rem;
+  color: #cbd5e1;
+  margin: 0;
+  padding: 0.65rem;
+}
+
+.topper-empty-state {
+  background: #0f1724;
+  border: 1px solid #253247;
+}
+
+.topper-warning {
+  background: #2a1d0d;
+  border: 1px solid #5f3b13;
+  color: #f8d49a;
+  margin-bottom: 0.6rem;
 }
 
 .topper-page-workspace,

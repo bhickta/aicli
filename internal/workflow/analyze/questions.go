@@ -3,6 +3,7 @@ package analyze
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"runtime"
@@ -124,13 +125,7 @@ func (s *Service) splitPageQuestions(ctx context.Context, model string, page Pag
 	}
 	questions, err := parseQuestionSplit(res.Content, page.Number)
 	if err != nil {
-		return []Question{{
-			ID:             fmt.Sprintf("page-%d", page.Number),
-			Label:          fmt.Sprintf("Page %d", page.Number),
-			AnswerMarkdown: page.Text,
-			SourcePages:    []int{page.Number},
-			Status:         "needs review",
-		}}, nil
+		return nil, fmt.Errorf("question-wise split failed for page %d: %w", page.Number, err)
 	}
 	return questions, nil
 }
@@ -141,16 +136,18 @@ type questionSplitPayload struct {
 
 type questionSplitItem struct {
 	Label          string `json:"label"`
+	Question       string `json:"question"`
 	Title          string `json:"title"`
 	AnswerMarkdown string `json:"answer_markdown"`
+	Answer         string `json:"answer"`
 	Status         string `json:"status"`
 }
 
 func parseQuestionSplit(content string, pageNumber int) ([]Question, error) {
-	content = strings.TrimSpace(content)
-	content = strings.TrimPrefix(content, "```json")
-	content = strings.TrimPrefix(content, "```")
-	content = strings.TrimSuffix(content, "```")
+	content, err := extractQuestionSplitJSON(content)
+	if err != nil {
+		return nil, err
+	}
 	var payload questionSplitPayload
 	if err := json.Unmarshal([]byte(strings.TrimSpace(content)), &payload); err != nil {
 		return nil, err
@@ -159,9 +156,15 @@ func parseQuestionSplit(content string, pageNumber int) ([]Question, error) {
 	for i, item := range payload.Questions {
 		answer := strings.TrimSpace(item.AnswerMarkdown)
 		if answer == "" {
+			answer = strings.TrimSpace(item.Answer)
+		}
+		if answer == "" {
 			continue
 		}
 		label := strings.TrimSpace(item.Label)
+		if label == "" {
+			label = strings.TrimSpace(item.Question)
+		}
 		if label == "" {
 			label = fmt.Sprintf("Page %d block %d", pageNumber, i+1)
 		}
@@ -178,7 +181,37 @@ func parseQuestionSplit(content string, pageNumber int) ([]Question, error) {
 			Status:         status,
 		})
 	}
+	if len(questions) == 0 {
+		return nil, errors.New("question split returned no answer blocks")
+	}
 	return questions, nil
+}
+
+func extractQuestionSplitJSON(content string) (string, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return "", errors.New("empty question split response")
+	}
+	if strings.HasPrefix(content, "```") {
+		lines := strings.Split(content, "\n")
+		if len(lines) >= 2 {
+			content = strings.Join(lines[1:], "\n")
+		}
+		content = strings.TrimSpace(strings.TrimSuffix(content, "```"))
+	}
+	if json.Valid([]byte(content)) {
+		return content, nil
+	}
+	start := strings.Index(content, "{")
+	end := strings.LastIndex(content, "}")
+	if start < 0 || end <= start {
+		return "", errors.New("question split response did not contain JSON object")
+	}
+	candidate := strings.TrimSpace(content[start : end+1])
+	if !json.Valid([]byte(candidate)) {
+		return "", errors.New("question split response contained invalid JSON")
+	}
+	return candidate, nil
 }
 
 func pageFallbackQuestions(pages []Page) []Question {

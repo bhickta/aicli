@@ -141,6 +141,31 @@ func TestRunAnalyzeSplitsQuestionsAndWritesArtifacts(t *testing.T) {
 	}
 }
 
+func TestParseQuestionSplitAcceptsWrappedJSONAndAnswerAlias(t *testing.T) {
+	t.Parallel()
+
+	content := "Here is the split:\n```json\n{\"questions\":[{\"question\":\"Q.1\",\"title\":\"Women in ancient India\",\"answer\":\"full answer text\",\"status\":\"detected\"}]}\n```"
+	questions, err := parseQuestionSplit(content, 3)
+	if err != nil {
+		t.Fatalf("parseQuestionSplit() error = %v", err)
+	}
+	if len(questions) != 1 {
+		t.Fatalf("questions = %#v, want one question", questions)
+	}
+	if questions[0].Label != "Q.1" || questions[0].AnswerMarkdown != "full answer text" || questions[0].SourcePages[0] != 3 {
+		t.Fatalf("question = %#v, want parsed alias fields", questions[0])
+	}
+}
+
+func TestParseQuestionSplitRejectsEmptyQuestionBlocks(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseQuestionSplit(`{"questions":[]}`, 1)
+	if err == nil {
+		t.Fatal("parseQuestionSplit() error = nil, want empty-block error")
+	}
+}
+
 func TestRunAnalyzeHonorsExplicitDPI(t *testing.T) {
 	t.Parallel()
 
