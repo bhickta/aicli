@@ -161,6 +161,28 @@ func TestRunAnalyzeHonorsExplicitDPI(t *testing.T) {
 	}
 }
 
+func TestEffectiveQuestionWorkersHonorsExplicitWorkers(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		workers int
+		total   int
+		want    int
+	}{
+		{name: "uses explicit worker count", workers: 48, total: 48, want: 48},
+		{name: "caps explicit workers by available pages", workers: 48, total: 8, want: 8},
+		{name: "single page needs one worker", workers: 48, total: 1, want: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := EffectiveQuestionWorkers(tt.workers, tt.total); got != tt.want {
+				t.Fatalf("EffectiveQuestionWorkers(%d, %d) = %d, want %d", tt.workers, tt.total, got, tt.want)
+			}
+		})
+	}
+}
+
 func hasArgPair(args []string, key string, value string) bool {
 	for i := 0; i < len(args)-1; i++ {
 		if args[i] == key && args[i+1] == value {

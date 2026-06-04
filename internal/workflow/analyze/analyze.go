@@ -76,6 +76,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 			MIMEType: "image/jpeg",
 		})
 	}
+	ocrWorkers := document.EffectiveOCRWorkers(req.Workers, len(inputs))
 	ocrPages, err := document.OCRImages(
 		ctx,
 		s.provider,
@@ -84,7 +85,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		topperCopyOCRPrompt,
 		req.Workers,
 		func(completedPages int, totalPages int) {
-			progressUnits(progress, "OCR pages", completed+completedPages, total, "stage")
+			progressUnits(progress, fmt.Sprintf("OCR pages with %d worker(s)", ocrWorkers), completed+completedPages, total, "stage")
 		},
 	)
 	if err != nil {
@@ -107,8 +108,9 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 
 	questions := pageFallbackQuestions(pages)
 	if req.QuestionSplit {
+		questionWorkers := EffectiveQuestionWorkers(req.QuestionWorkers, len(pages))
 		questions, err = s.splitQuestions(ctx, req.Model, pages, req.QuestionWorkers, func(completedPages int, totalPages int) {
-			progressUnits(progress, "question-wise split", completed+completedPages, total, "stage")
+			progressUnits(progress, fmt.Sprintf("question-wise split with %d worker(s)", questionWorkers), completed+completedPages, total, "stage")
 		})
 		if err != nil {
 			return Response{}, err

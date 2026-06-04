@@ -23,7 +23,7 @@ func OCRImages(
 	if vision == nil {
 		return nil, errors.New("provider is required")
 	}
-	workers = normalizeOCRWorkers(workers, len(inputs))
+	workers = EffectiveOCRWorkers(workers, len(inputs))
 	pages := make([]OCRPage, len(inputs))
 	jobs := make(chan int)
 	errCh := make(chan pageError, len(inputs))
@@ -57,7 +57,7 @@ func OCRImages(
 	return pages, nil
 }
 
-func normalizeOCRWorkers(workers int, jobs int) int {
+func EffectiveOCRWorkers(workers int, jobs int) int {
 	if jobs <= 1 {
 		return 1
 	}

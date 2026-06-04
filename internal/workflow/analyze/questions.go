@@ -16,7 +16,7 @@ func (s *Service) splitQuestions(ctx context.Context, model string, pages []Page
 	if len(pages) == 0 {
 		return nil, nil
 	}
-	workers = normalizeQuestionWorkers(workers, len(pages))
+	workers = EffectiveQuestionWorkers(workers, len(pages))
 	jobs := make(chan Page)
 	results := make(chan []Question, len(pages))
 	errCh := make(chan error, 1)
@@ -195,7 +195,7 @@ func pageFallbackQuestions(pages []Page) []Question {
 	return questions
 }
 
-func normalizeQuestionWorkers(workers int, total int) int {
+func EffectiveQuestionWorkers(workers int, total int) int {
 	if total <= 0 {
 		return 1
 	}
@@ -204,9 +204,6 @@ func normalizeQuestionWorkers(workers int, total int) int {
 	}
 	if workers < 1 {
 		workers = 1
-	}
-	if workers > 12 {
-		workers = 12
 	}
 	if workers > total {
 		return total

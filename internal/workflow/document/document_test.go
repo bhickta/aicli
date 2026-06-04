@@ -199,3 +199,25 @@ func TestOCRImagesReportsProgress(t *testing.T) {
 		t.Fatalf("updates = %#v, want [1 2]", updates)
 	}
 }
+
+func TestEffectiveOCRWorkersHonorsExplicitWorkers(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		workers int
+		jobs    int
+		want    int
+	}{
+		{name: "uses explicit worker count", workers: 48, jobs: 48, want: 48},
+		{name: "caps explicit workers by available jobs", workers: 48, jobs: 8, want: 8},
+		{name: "single job needs one worker", workers: 48, jobs: 1, want: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := EffectiveOCRWorkers(tt.workers, tt.jobs); got != tt.want {
+				t.Fatalf("EffectiveOCRWorkers(%d, %d) = %d, want %d", tt.workers, tt.jobs, got, tt.want)
+			}
+		})
+	}
+}
