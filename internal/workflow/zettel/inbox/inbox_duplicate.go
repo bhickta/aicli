@@ -69,7 +69,9 @@ func processExactDuplicateInboxSource(v vault, archive archivepkg.Store, runID s
 			Reason:          "No merge needed because the destination already contains the whole source note byte-for-byte.",
 		}},
 	}
-	if _, err := archive.WriteInboxItem(runID, result, sourceContent, nil, nil); err != nil {
+	destinationBefore := map[string]string{destinationPath: sourceContent}
+	destinationAfter := map[string]string{destinationPath: sourceContent}
+	if _, err := archive.WriteInboxItem(runID, result, sourceContent, destinationBefore, destinationAfter); err != nil {
 		return result, err
 	}
 	processedPath, err := moveInboxSourceToProcessed(v, options, sourcePath)

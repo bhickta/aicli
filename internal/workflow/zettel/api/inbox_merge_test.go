@@ -64,6 +64,27 @@ func TestServiceInboxMergeWritesFinalNoteAndRollbackRestores(t *testing.T) {
 	if len(llmArchives) != 1 {
 		t.Fatalf("llm archives = %v, want saved merge request/response", llmArchives)
 	}
+	manifest := readInboxRunManifest(t, resp.ArchivePath)
+	if len(manifest.Items) != 1 || manifest.Items[0].AuditArchive == "" {
+		t.Fatalf("manifest items = %#v, want one item with audit archive", manifest.Items)
+	}
+	audit := readInboxAuditItem(t, resp.ArchivePath, manifest.Items[0].AuditArchive)
+	if audit.SourcePath != "inbox-to-merge/batch/inflation.md" || audit.SourceContent != "Inflation rose to 7% due to oil prices.\n" {
+		t.Fatalf("audit source = %#v, want archived source path and content", audit)
+	}
+	if audit.ProcessedPath == "" {
+		t.Fatalf("audit processed path is empty, want moved source path")
+	}
+	if len(audit.Destinations) != 1 {
+		t.Fatalf("audit destinations = %#v, want one destination", audit.Destinations)
+	}
+	destination := audit.Destinations[0]
+	if destination.Path != "zettelkasten/economy.md" {
+		t.Fatalf("audit destination path = %q, want zettelkasten/economy.md", destination.Path)
+	}
+	if !strings.Contains(destination.Before, "Inflation") || !strings.Contains(destination.After, "Inflation Spike") || destination.Diff == "" {
+		t.Fatalf("audit destination = %#v, want before/after/diff content", destination)
+	}
 
 	rollback, err := service.Rollback(context.Background(), RollbackRequest{Options: options}, nil)
 	if err != nil {
@@ -111,6 +132,20 @@ func TestServiceInboxMergeProcessesExactDuplicateWithoutProviders(t *testing.T) 
 	manifest := readInboxRunManifest(t, resp.ArchivePath)
 	if manifest.Status != "completed" || manifest.ProcessedCount != 1 || manifest.PendingCount != 0 || manifest.FailedCount != 0 {
 		t.Fatalf("manifest = %#v, want completed exact duplicate run", manifest)
+	}
+	if len(manifest.Items) != 1 || manifest.Items[0].AuditArchive == "" {
+		t.Fatalf("manifest items = %#v, want exact duplicate audit archive", manifest.Items)
+	}
+	audit := readInboxAuditItem(t, resp.ArchivePath, manifest.Items[0].AuditArchive)
+	if len(audit.Destinations) != 1 {
+		t.Fatalf("audit destinations = %#v, want duplicate destination", audit.Destinations)
+	}
+	destination := audit.Destinations[0]
+	if destination.Path != "zettelkasten/Economy/Economy Shivin/002.md" {
+		t.Fatalf("audit destination path = %q, want exact duplicate destination", destination.Path)
+	}
+	if destination.Before != content || destination.After != content || destination.Diff != "" {
+		t.Fatalf("audit destination = %#v, want identical before/after without diff", destination)
 	}
 }
 
@@ -216,6 +251,17 @@ func TestServiceInboxMergeKeepsSourcePendingWhenModelDeclines(t *testing.T) {
 	}
 	if got := readTestFile(t, sourcePath); got != sourceContent {
 		t.Fatalf("source changed = %q, want unchanged pending source", got)
+	}
+	manifest := readInboxRunManifest(t, resp.ArchivePath)
+	if len(manifest.Items) != 1 || manifest.Items[0].AuditArchive == "" {
+		t.Fatalf("manifest items = %#v, want pending audit archive", manifest.Items)
+	}
+	audit := readInboxAuditItem(t, resp.ArchivePath, manifest.Items[0].AuditArchive)
+	if audit.Status != "pending" || audit.SourceContent != sourceContent || !strings.Contains(audit.Reason, "no semantically similar") {
+		t.Fatalf("audit = %#v, want pending source audit with reason", audit)
+	}
+	if len(audit.Destinations) != 0 {
+		t.Fatalf("audit destinations = %#v, want none for pending source", audit.Destinations)
 	}
 }
 
@@ -345,6 +391,14 @@ func TestServiceInboxMergeFailsFastWhenEmbeddingProviderUnavailable(t *testing.T
 	if !strings.Contains(resp.Failed[0].Reason, "connect: connection refused") {
 		t.Fatalf("failed reason = %q, want embedding provider error", resp.Failed[0].Reason)
 	}
+	manifest := readInboxRunManifest(t, resp.ArchivePath)
+	if len(manifest.Items) != 1 || manifest.Items[0].AuditArchive == "" {
+		t.Fatalf("manifest items = %#v, want failed audit archive", manifest.Items)
+	}
+	audit := readInboxAuditItem(t, resp.ArchivePath, manifest.Items[0].AuditArchive)
+	if audit.Status != "failed" || !strings.Contains(audit.Reason, "connect: connection refused") {
+		t.Fatalf("audit = %#v, want failed audit with provider error", audit)
+	}
 }
 
 func inboxMergeTestOptions(vaultDir string, inboxFolder string) Options {
@@ -367,10 +421,32 @@ type testInboxRunManifest struct {
 	FailedCount    int          `json:"failed_count"`
 	APICalls       APICallUsage `json:"api_calls"`
 	Items          []struct {
-		SourcePath string `json:"source_path"`
-		Status     string `json:"status"`
-		Reason     string `json:"reason"`
+		SourcePath    string `json:"source_path"`
+		Status        string `json:"status"`
+		Reason        string `json:"reason"`
+		SourceArchive string `json:"source_archive"`
+		AuditArchive  string `json:"audit_archive"`
 	} `json:"items"`
+}
+
+type testInboxAuditItem struct {
+	SourcePath    string                      `json:"source_path"`
+	SourceArchive string                      `json:"source_archive"`
+	SourceContent string                      `json:"source_content"`
+	Status        string                      `json:"status"`
+	ProcessedPath string                      `json:"processed_path"`
+	Reason        string                      `json:"reason"`
+	Destinations  []testInboxAuditDestination `json:"destinations"`
+}
+
+type testInboxAuditDestination struct {
+	Path          string `json:"path"`
+	Before        string `json:"before"`
+	After         string `json:"after"`
+	Diff          string `json:"diff"`
+	BeforeArchive string `json:"before_archive"`
+	AfterArchive  string `json:"after_archive"`
+	DiffArchive   string `json:"diff_archive"`
 }
 
 func readInboxRunManifest(t *testing.T, archivePath string) testInboxRunManifest {
@@ -384,4 +460,17 @@ func readInboxRunManifest(t *testing.T, archivePath string) testInboxRunManifest
 		t.Fatalf("parse inbox manifest: %v", err)
 	}
 	return manifest
+}
+
+func readInboxAuditItem(t *testing.T, archivePath string, auditArchive string) testInboxAuditItem {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(archivePath, auditArchive))
+	if err != nil {
+		t.Fatalf("read inbox audit item: %v", err)
+	}
+	var audit testInboxAuditItem
+	if err := json.Unmarshal(data, &audit); err != nil {
+		t.Fatalf("parse inbox audit item: %v", err)
+	}
+	return audit
 }

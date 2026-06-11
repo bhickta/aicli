@@ -17,6 +17,7 @@ type InboxMergeResponse = model.InboxMergeResponse
 type InboxSourceResult = model.InboxSourceResult
 type InboxClaim = model.InboxClaim
 type InboxClaimLedger = model.InboxClaimLedger
+type InboxDestinationDiff = model.InboxDestinationDiff
 
 type inboxRunManifest struct {
 	RunID          string             `json:"run_id"`
@@ -41,6 +42,7 @@ type inboxArchiveItem struct {
 	Status        string                    `json:"status"`
 	ProcessedPath string                    `json:"processed_path,omitempty"`
 	SourceArchive string                    `json:"source_archive"`
+	AuditArchive  string                    `json:"audit_archive"`
 	Destinations  []inboxArchiveDestination `json:"destinations,omitempty"`
 	Ledger        []InboxClaimLedger        `json:"ledger,omitempty"`
 	Claims        []InboxClaim              `json:"claims,omitempty"`
@@ -53,6 +55,30 @@ type inboxArchiveDestination struct {
 	AfterArchive  string `json:"after_archive"`
 	DiffArchive   string `json:"diff_archive"`
 	Created       bool   `json:"created,omitempty"`
+}
+
+type inboxAuditItem struct {
+	RunID         string                  `json:"run_id"`
+	SourcePath    string                  `json:"source_path"`
+	SourceArchive string                  `json:"source_archive"`
+	SourceContent string                  `json:"source_content"`
+	Status        string                  `json:"status"`
+	ProcessedPath string                  `json:"processed_path,omitempty"`
+	Reason        string                  `json:"reason,omitempty"`
+	Claims        []InboxClaim            `json:"claims,omitempty"`
+	Ledger        []InboxClaimLedger      `json:"ledger,omitempty"`
+	Destinations  []inboxAuditDestination `json:"destinations"`
+}
+
+type inboxAuditDestination struct {
+	Path          string `json:"path"`
+	Before        string `json:"before"`
+	After         string `json:"after"`
+	Diff          string `json:"diff,omitempty"`
+	Created       bool   `json:"created,omitempty"`
+	BeforeArchive string `json:"before_archive,omitempty"`
+	AfterArchive  string `json:"after_archive,omitempty"`
+	DiffArchive   string `json:"diff_archive,omitempty"`
 }
 
 type LLMExchange struct {
@@ -152,6 +178,9 @@ func (s Store) WriteInboxItem(runID string, result InboxSourceResult, sourceCont
 	if err := os.MkdirAll(filepath.Join(base, "destinations"), 0o755); err != nil {
 		return "", fmt.Errorf("create inbox destination archive folder: %w", err)
 	}
+	if err := os.MkdirAll(filepath.Join(base, "audit"), 0o755); err != nil {
+		return "", fmt.Errorf("create inbox audit archive folder: %w", err)
+	}
 
 	index := len(s.readInboxManifestOrEmpty(runID).Items) + 1
 	sourceArchive := fmt.Sprintf("sources/source-%03d-%s.md", index, sanitizeFileName(strings.TrimSuffix(filepath.Base(result.SourcePath), ".md")))
@@ -183,6 +212,20 @@ func (s Store) WriteInboxItem(runID string, result InboxSourceResult, sourceCont
 		})
 	}
 
+	auditArchive := fmt.Sprintf("audit/source-%03d-%s.json", index, sanitizeFileName(strings.TrimSuffix(filepath.Base(result.SourcePath), ".md")))
+	if err := writeInboxAuditItem(
+		filepath.Join(base, auditArchive),
+		runID,
+		result,
+		sourceArchive,
+		sourceContent,
+		destinations,
+		destinationBefore,
+		destinationAfter,
+	); err != nil {
+		return "", err
+	}
+
 	manifest := s.readInboxManifestOrEmpty(runID)
 	if manifest.RunID == "" {
 		manifest.RunID = runID
@@ -194,6 +237,7 @@ func (s Store) WriteInboxItem(runID string, result InboxSourceResult, sourceCont
 		Status:        result.Status,
 		ProcessedPath: result.ProcessedPath,
 		SourceArchive: sourceArchive,
+		AuditArchive:  auditArchive,
 		Destinations:  destinations,
 		Ledger:        result.Ledger,
 		Claims:        result.Claims,
@@ -217,10 +261,133 @@ func (s Store) UpdateInboxItemProcessedPath(runID string, sourcePath string, pro
 	for i := range manifest.Items {
 		if manifest.Items[i].SourcePath == sourcePath {
 			manifest.Items[i].ProcessedPath = processedPath
+			if manifest.Items[i].AuditArchive != "" {
+				if err := updateInboxAuditProcessedPath(filepath.Join(base, manifest.Items[i].AuditArchive), processedPath); err != nil {
+					return err
+				}
+			}
 			break
 		}
 	}
 	return s.writeInboxManifest(base, manifest)
+}
+
+func writeInboxAuditItem(
+	path string,
+	runID string,
+	result InboxSourceResult,
+	sourceArchive string,
+	sourceContent string,
+	destinations []inboxArchiveDestination,
+	destinationBefore map[string]string,
+	destinationAfter map[string]string,
+) error {
+	audit := inboxAuditItem{
+		RunID:         runID,
+		SourcePath:    result.SourcePath,
+		SourceArchive: sourceArchive,
+		SourceContent: sourceContent,
+		Status:        result.Status,
+		ProcessedPath: result.ProcessedPath,
+		Reason:        result.Reason,
+		Claims:        result.Claims,
+		Ledger:        result.Ledger,
+		Destinations:  buildInboxAuditDestinations(result, destinations, destinationBefore, destinationAfter),
+	}
+	data, err := json.MarshalIndent(audit, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal inbox audit item: %w", err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		return fmt.Errorf("archive inbox audit item: %w", err)
+	}
+	return nil
+}
+
+func buildInboxAuditDestinations(
+	result InboxSourceResult,
+	destinations []inboxArchiveDestination,
+	destinationBefore map[string]string,
+	destinationAfter map[string]string,
+) []inboxAuditDestination {
+	archiveByPath := make(map[string]inboxArchiveDestination, len(destinations))
+	diffByPath := make(map[string]InboxDestinationDiff, len(result.Diffs))
+	paths := make([]string, 0, len(result.DestinationPaths)+len(result.Diffs))
+	for _, destination := range destinations {
+		archiveByPath[destination.Path] = destination
+		paths = appendUniqueAuditPath(paths, destination.Path)
+	}
+	for _, diff := range result.Diffs {
+		diffByPath[diff.Path] = diff
+		paths = appendUniqueAuditPath(paths, diff.Path)
+	}
+	for _, path := range result.DestinationPaths {
+		paths = appendUniqueAuditPath(paths, path)
+	}
+	for _, item := range result.Ledger {
+		if item.DestinationPath != "" {
+			paths = appendUniqueAuditPath(paths, item.DestinationPath)
+		}
+	}
+
+	auditDestinations := make([]inboxAuditDestination, 0, len(paths))
+	for _, path := range paths {
+		destination := inboxAuditDestination{
+			Path:   path,
+			Before: destinationBefore[path],
+			After:  destinationAfter[path],
+		}
+		if diff, ok := diffByPath[path]; ok {
+			destination.Diff = diff.Diff
+			destination.Created = diff.Created
+			if destination.Before == "" {
+				destination.Before = diff.Before
+			}
+			if destination.After == "" {
+				destination.After = diff.After
+			}
+		}
+		if archived, ok := archiveByPath[path]; ok {
+			destination.BeforeArchive = archived.BeforeArchive
+			destination.AfterArchive = archived.AfterArchive
+			destination.DiffArchive = archived.DiffArchive
+			destination.Created = archived.Created
+		}
+		auditDestinations = append(auditDestinations, destination)
+	}
+	return auditDestinations
+}
+
+func appendUniqueAuditPath(paths []string, path string) []string {
+	for _, existing := range paths {
+		if existing == path {
+			return paths
+		}
+	}
+	return append(paths, path)
+}
+
+func updateInboxAuditProcessedPath(path string, processedPath string) error {
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read inbox audit item: %w", err)
+	}
+	var audit inboxAuditItem
+	if err := json.Unmarshal(data, &audit); err != nil {
+		return fmt.Errorf("parse inbox audit item: %w", err)
+	}
+	audit.ProcessedPath = processedPath
+	data, err = json.MarshalIndent(audit, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal inbox audit item: %w", err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		return fmt.Errorf("update inbox audit item: %w", err)
+	}
+	return nil
 }
 
 func (s Store) InboxItemExists(runID string, sourcePath string) bool {
