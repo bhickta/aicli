@@ -7,6 +7,7 @@ import (
 	"github.com/bhickta/aicli/internal/config"
 	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/provider/codexcli"
+	"github.com/bhickta/aicli/internal/provider/geminicli"
 	"github.com/bhickta/aicli/internal/provider/ollama"
 	"github.com/bhickta/aicli/internal/provider/openai"
 	"github.com/bhickta/aicli/internal/tool"
@@ -29,6 +30,8 @@ func New(configs []config.ProviderConfig, toolConfigs ...config.ToolConfig) *Reg
 			providers[cfg.ID] = ollama.New(cfg, client)
 		case "codex-cli":
 			providers[cfg.ID] = codexcli.New(cfg, tools, tool.ExecRunner{})
+		case "gemini-cli":
+			providers[cfg.ID] = geminicli.New(cfg, tools, tool.ExecRunner{})
 		default:
 			providers[cfg.ID] = openai.NewCompatible(cfg, client)
 		}

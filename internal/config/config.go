@@ -37,6 +37,7 @@ type ToolConfig struct {
 	PDFToPPM   string `json:"pdftoppm"`
 	WhisperCLI string `json:"whisper_cli"`
 	CodexCLI   string `json:"codex_cli"`
+	GeminiCLI  string `json:"gemini_cli"`
 	Firefox    string `json:"firefox"`
 	XDoTool    string `json:"xdotool"`
 }
@@ -93,6 +94,11 @@ func DefaultSettings() Settings {
 				ReasoningEffort: "medium",
 				TextVerbosity:   "low",
 			},
+			{
+				ID:   "gemini-cli",
+				Type: "gemini-cli",
+				Name: "Gemini CLI",
+			},
 		},
 		Tools: ToolConfig{
 			FFmpeg:     "ffmpeg",
@@ -100,6 +106,7 @@ func DefaultSettings() Settings {
 			PDFToPPM:   "pdftoppm",
 			WhisperCLI: "whisper",
 			CodexCLI:   "codex",
+			GeminiCLI:  "gemini",
 			Firefox:    "firefox",
 			XDoTool:    "xdotool",
 		},

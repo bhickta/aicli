@@ -5,6 +5,7 @@ import (
 
 	"github.com/bhickta/aicli/internal/server/workflowapi/audioapi"
 	"github.com/bhickta/aicli/internal/server/workflowapi/codexapi"
+	"github.com/bhickta/aicli/internal/server/workflowapi/geminiapi"
 	"github.com/bhickta/aicli/internal/server/workflowapi/core"
 	"github.com/bhickta/aicli/internal/server/workflowapi/documentapi"
 	"github.com/bhickta/aicli/internal/server/workflowapi/imageapi"
@@ -29,6 +30,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/jobs/{id}/cancel", h.cancelJob)
 	studyapi.New(h.runtime).Register(mux)
 	codexapi.New(h.runtime).Register(mux)
+	geminiapi.New(h.runtime).Register(mux)
 	imageapi.New(h.runtime).Register(mux)
 	newsapi.New(h.runtime).Register(mux)
 	documentapi.New(h.runtime).Register(mux)
