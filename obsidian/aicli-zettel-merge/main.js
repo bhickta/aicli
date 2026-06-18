@@ -15,7 +15,15 @@ const DEFAULT_SETTINGS = {
   embeddingWorkers: 4,
   inboxWorkers: 1,
   inboxRandom: false,
-  shorthandPromptPath: "example_prompts.md"
+  shorthandPromptPath: "example_prompts.md",
+  lectureProviderId: "lms",
+  lectureModel: "",
+  lectureStyle: "crisp comprehensive UPSC lecture",
+  lectureMaxNotes: 25,
+  lectureMaxInputChars: 120000,
+  lectureSynthesizeAudio: true,
+  lectureTTSCommand: "ots.TTS",
+  lectureTTSArgs: 'SOAR --input "{script}" --output "{audio}"'
 };
 
 module.exports = class AICLIZettelMergePlugin extends Plugin {
@@ -37,6 +45,16 @@ module.exports = class AICLIZettelMergePlugin extends Plugin {
       id: "rollback-latest-aicli-inbox-merge",
       name: "Rollback Latest AICLI Inbox Merge",
       callback: () => this.rollbackLatest()
+    });
+    this.addCommand({
+      id: "generate-aicli-lecture-active-note",
+      name: "Generate AICLI Lecture from Active Note",
+      callback: () => this.generateLectureFromActiveNote()
+    });
+    this.addCommand({
+      id: "generate-aicli-lecture-active-folder",
+      name: "Generate AICLI Lecture from Active Folder",
+      callback: () => this.generateLectureFromActiveFolder()
     });
     this.addSettingTab(new AICLIZettelMergeSettingTab(this.app, this));
   }
@@ -64,6 +82,42 @@ module.exports = class AICLIZettelMergePlugin extends Plugin {
     await this.run("Rolling back latest inbox merge", "/api/workflows/zettel/rollback", (result) => {
       new Notice(`Rolled back zettel merge job ${result.job_id}.`, 10000);
     });
+  }
+
+  async generateLectureFromActiveNote() {
+    const file = this.app.workspace.getActiveFile();
+    if (!file || file.extension !== "md") {
+      new Notice("Open a Markdown note first.", 6000);
+      return;
+    }
+    await this.runLecture(file.path, file.basename || "Obsidian Lecture");
+  }
+
+  async generateLectureFromActiveFolder() {
+    const file = this.app.workspace.getActiveFile();
+    const folder = file?.parent?.path || this.settings.rootFolder || "";
+    if (!folder) {
+      new Notice("Open a note inside the folder you want to convert.", 6000);
+      return;
+    }
+    await this.runLecture(folder, folder.split("/").filter(Boolean).pop() || "Obsidian Lecture");
+  }
+
+  async runLecture(sourcePath, title) {
+    try {
+      new Notice(`Generating lecture for ${sourcePath}...`, 5000);
+      const result = await this.client.runWorkflow("/api/workflows/study/lecture", this.lecturePayload(sourcePath, title), (job) => {
+        if (job.stage) new Notice(job.stage, 2500);
+      });
+      const script = result.script_url ? `${this.settings.baseUrl.replace(/\/+$/, "")}${result.script_url}` : "";
+      const audio = result.audio_url ? `${this.settings.baseUrl.replace(/\/+$/, "")}${result.audio_url}` : "";
+      const lines = [`Lecture ready: ${result.title || title}`];
+      if (script) lines.push(`Script: ${script}`);
+      if (audio) lines.push(`Audio: ${audio}`);
+      new Notice(lines.join("\n"), 15000);
+    } catch (error) {
+      new Notice(`Lecture generation failed: ${error.message}`, 12000);
+    }
   }
 
   async run(label, endpoint, onDone) {
@@ -95,6 +149,22 @@ module.exports = class AICLIZettelMergePlugin extends Plugin {
       embedding_workers: Number(this.settings.embeddingWorkers) || DEFAULT_SETTINGS.embeddingWorkers,
       inbox_workers: Number(this.settings.inboxWorkers) || DEFAULT_SETTINGS.inboxWorkers,
       inbox_random: Boolean(this.settings.inboxRandom)
+    };
+  }
+
+  lecturePayload(sourcePath, title) {
+    return {
+      provider_id: this.settings.lectureProviderId || this.settings.providerId,
+      model: this.settings.lectureModel || this.settings.mergeModel,
+      vault_path: this.vaultPath(),
+      source_path: sourcePath,
+      output_name: title,
+      style: this.settings.lectureStyle,
+      max_notes: Number(this.settings.lectureMaxNotes) || DEFAULT_SETTINGS.lectureMaxNotes,
+      max_input_chars: Number(this.settings.lectureMaxInputChars) || DEFAULT_SETTINGS.lectureMaxInputChars,
+      synthesize_audio: Boolean(this.settings.lectureSynthesizeAudio),
+      tts_command: this.settings.lectureTTSCommand,
+      tts_args: this.settings.lectureTTSArgs
     };
   }
 
@@ -168,6 +238,15 @@ class AICLIZettelMergeSettingTab extends PluginSettingTab {
     this.number("Embedding batch size", "Notes per embedding batch while building the index.", "embeddingBatchSize");
     this.number("Embedding workers", "Parallel embedding workers while building the index.", "embeddingWorkers");
     this.text("Prompt file", "Vault-relative prompt style file, or builtin.", "shorthandPromptPath");
+    containerEl.createEl("h3", { text: "Lecture generation" });
+    this.text("Lecture provider ID", "AICLI provider id for notes-to-lecture generation.", "lectureProviderId");
+    this.text("Lecture model", "Local model used to write the lecture script.", "lectureModel");
+    this.text("Lecture style", "Prompt style for the spoken lecture.", "lectureStyle");
+    this.number("Lecture max notes", "Maximum notes included from a folder.", "lectureMaxNotes");
+    this.number("Lecture max input characters", "Maximum characters sent to the lecture model.", "lectureMaxInputChars");
+    this.toggle("Generate lecture audio", "Use ots.TTS SOAR after script generation.", "lectureSynthesizeAudio");
+    this.text("TTS command", "Command or absolute path for ots.TTS.", "lectureTTSCommand");
+    this.text("TTS args", "Argument template. Supports {script}, {audio}, and {voice}.", "lectureTTSArgs");
   }
 
   text(name, desc, key) {
