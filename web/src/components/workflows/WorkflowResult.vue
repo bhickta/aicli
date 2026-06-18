@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { progressBarWidth } from "../../lib/jobProgress";
-import type { ProgressMode, TopperCopyReview } from "../../types";
+import type { LectureResult as LectureResultType, ProgressMode, TopperCopyReview } from "../../types";
+import LectureResult from "./LectureResult.vue";
 import TopperCopyReviewResult from "./TopperCopyReviewResult.vue";
 
 const props = defineProps<{
@@ -28,6 +29,12 @@ const topperCopyReview = computed(() => {
   }
   return null;
 });
+const lectureResult = computed(() => {
+  if (props.parsedResult && typeof props.parsedResult === "object" && (props.parsedResult as { kind?: unknown }).kind === "lecture") {
+    return props.parsedResult as LectureResultType;
+  }
+  return null;
+});
 </script>
 
 <template>
@@ -39,11 +46,12 @@ const topperCopyReview = computed(() => {
     <div :style="progressStyle" />
   </div>
   <TopperCopyReviewResult v-if="topperCopyReview" :review="topperCopyReview" />
+  <LectureResult v-else-if="lectureResult" :result="lectureResult" />
   <div v-else class="field">
     <h3>Result</h3>
     <pre id="workflow-result" role="status" aria-live="polite">{{ result }}</pre>
   </div>
-  <div v-if="!topperCopyReview" id="review-pane" class="review-pane" :class="{ hidden: !sourcePreview && !markdownPreview }">
+  <div v-if="!topperCopyReview && !lectureResult" id="review-pane" class="review-pane" :class="{ hidden: !sourcePreview && !markdownPreview }">
     <iframe id="source-preview" title="Source file preview" :src="sourcePreview || undefined" />
     <textarea id="markdown-preview" :value="markdownPreview" readonly placeholder="Markdown preview appears here" />
   </div>

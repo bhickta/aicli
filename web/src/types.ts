@@ -155,6 +155,21 @@ export interface TopperCopyReview {
   report: string;
 }
 
+export interface LectureResult {
+  kind: "lecture";
+  id: string;
+  title: string;
+  script: string;
+  script_path: string;
+  script_url: string;
+  audio_path?: string;
+  audio_url?: string;
+  source_notes: string[];
+  skipped_notes: number;
+  input_chars: number;
+  tts_command_line?: string[];
+}
+
 export interface TopperReviewRecord {
   id: string;
   job_id: string;

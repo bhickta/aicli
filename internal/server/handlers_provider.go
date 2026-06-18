@@ -98,6 +98,7 @@ func (s *Server) tools(w http.ResponseWriter, r *http.Request) {
 		checker.Check(r.Context(), "pdftoppm", s.deps.Settings.Tools.PDFToPPM, "-v"),
 		checker.Check(r.Context(), "whisper", s.deps.Settings.Tools.WhisperCLI, "--help"),
 		checker.Check(r.Context(), "codex", s.deps.Settings.Tools.CodexCLI, "--version"),
+		checker.Check(r.Context(), "ots.TTS", s.deps.Settings.Tools.OTSTTS, "--help"),
 		checker.Check(r.Context(), "firefox", s.deps.Settings.Tools.Firefox, "--version"),
 		checker.Check(r.Context(), "xdotool", s.deps.Settings.Tools.XDoTool, "--version"),
 	}

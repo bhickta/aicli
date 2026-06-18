@@ -34,6 +34,44 @@ function topperCopyPayload(values: Record<string, unknown>) {
   };
 }
 
+const lectureFields: WorkflowDefinition["fields"] = [
+  providerModelField,
+  { type: "path", id: "vault_path", label: "Obsidian vault", picker: "directory", default: "/home/bhickta/development/upsc" },
+  { type: "path", id: "source_path", label: "Notes folder or note", picker: "directory", default: "/home/bhickta/development/upsc/zettelkasten" },
+  { type: "text", id: "output_name", label: "Lecture title", placeholder: "Optional, generated from note/folder if empty" },
+  {
+    type: "select",
+    id: "style",
+    label: "Lecture style",
+    default: "crisp comprehensive UPSC lecture",
+    options: [
+      { value: "crisp comprehensive UPSC lecture", label: "Crisp comprehensive" },
+      { value: "Hinglish UPSC classroom lecture with English technical terms", label: "Hinglish classroom" },
+      { value: "exam-focused revision lecture with examples and recall hooks", label: "Revision lecture" },
+    ],
+  },
+  { type: "number", id: "max_notes", label: "Max notes", min: 1, default: 25 },
+  { type: "number", id: "max_input_chars", label: "Max input characters", min: 4000, default: 120000 },
+  { type: "checkbox", id: "synthesize_audio", label: "Generate audio with ots.TTS SOAR", checked: true },
+  { type: "text", id: "tts_command", label: "TTS command", default: "ots.TTS" },
+  { type: "text", id: "tts_args", label: "TTS args", default: 'SOAR --input "{script}" --output "{audio}"' },
+];
+
+function lecturePayload(values: Record<string, unknown>) {
+  return {
+    ...providerModelPayload(values),
+    vault_path: values.vault_path,
+    source_path: values.source_path,
+    output_name: values.output_name,
+    style: values.style,
+    max_notes: values.max_notes,
+    max_input_chars: values.max_input_chars,
+    synthesize_audio: values.synthesize_audio !== false,
+    tts_command: values.tts_command,
+    tts_args: values.tts_args,
+  };
+}
+
 export const studyWorkflowDefinitions: WorkflowDefinition[] = [
   {
     id: "recall",
@@ -56,5 +94,13 @@ export const studyWorkflowDefinitions: WorkflowDefinition[] = [
     endpoint: "/api/workflows/analyze/run",
     fields: topperCopyFields,
     buildPayload: topperCopyPayload,
+  },
+  {
+    id: "lecture",
+    category: "Study",
+    label: "Notes to lecture",
+    endpoint: "/api/workflows/study/lecture",
+    fields: lectureFields,
+    buildPayload: lecturePayload,
   },
 ];

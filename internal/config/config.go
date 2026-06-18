@@ -38,6 +38,8 @@ type ToolConfig struct {
 	WhisperCLI string `json:"whisper_cli"`
 	CodexCLI   string `json:"codex_cli"`
 	GeminiCLI  string `json:"gemini_cli"`
+	OTSTTS     string `json:"ots_tts"`
+	OTSTTSArgs string `json:"ots_tts_args"`
 	Firefox    string `json:"firefox"`
 	XDoTool    string `json:"xdotool"`
 }
@@ -107,6 +109,8 @@ func DefaultSettings() Settings {
 			WhisperCLI: "whisper",
 			CodexCLI:   "codex",
 			GeminiCLI:  "gemini",
+			OTSTTS:     "ots.TTS",
+			OTSTTSArgs: `SOAR --input "{script}" --output "{audio}"`,
 			Firefox:    "firefox",
 			XDoTool:    "xdotool",
 		},
@@ -176,6 +180,15 @@ func withDefaults(settings Settings) Settings {
 	}
 	if settings.Tools.CodexCLI == "" {
 		settings.Tools.CodexCLI = defaults.Tools.CodexCLI
+	}
+	if settings.Tools.GeminiCLI == "" {
+		settings.Tools.GeminiCLI = defaults.Tools.GeminiCLI
+	}
+	if settings.Tools.OTSTTS == "" {
+		settings.Tools.OTSTTS = defaults.Tools.OTSTTS
+	}
+	if settings.Tools.OTSTTSArgs == "" {
+		settings.Tools.OTSTTSArgs = defaults.Tools.OTSTTSArgs
 	}
 	if settings.Tools.Firefox == "" {
 		settings.Tools.Firefox = defaults.Tools.Firefox
