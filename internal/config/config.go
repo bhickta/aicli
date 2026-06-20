@@ -77,6 +77,15 @@ func DefaultSettings() Settings {
 				BaseURL: "https://openrouter.ai/api/v1",
 			},
 			{
+				ID:          "deepseek",
+				Type:        "openai-compatible",
+				Name:        "DeepSeek",
+				BaseURL:     "https://api.deepseek.com",
+				APIKeyEnv:   "DEEPSEEK_API_KEY",
+				Model:       "deepseek-v4-flash",
+				ModelFilter: "deepseek",
+			},
+			{
 				ID:              "codex",
 				Type:            "openai-responses",
 				Name:            "OpenAI Codex",
