@@ -64,7 +64,7 @@ Return strict JSON only. Do not wrap in markdown fences.
 Use this exact shape:
 {
   "pages": [
-    {"number": 1, "name": "page-1", "text": "brief page OCR or notes useful for inspection", "unclear_count": 0}
+    {"number": 1, "name": "page-1", "text": "brief source notes useful for inspection", "unclear_count": 0}
   ],
   "questions": [
     {
@@ -84,7 +84,7 @@ Rules:
 - Preserve question numbers, page references, diagrams/flowcharts/maps as visible labels and arrows.
 - Do not invent official model answers or facts not visible in the copy.
 - Mark unreadable words as [unclear].
-- If page OCR is too long, keep pages[].text concise but questions[].answer_markdown must contain the full visible answer text.
+- Keep pages[].text concise; questions[].answer_markdown must contain the full visible answer text.
 - The report must be based only on visible PDF content.
 
 PDF name: ` + pdfName
@@ -163,11 +163,12 @@ func parseDirectPDFReview(content string, reviewID string, pdfName string) (Resp
 		return Response{}, errors.New("direct PDF response returned no usable question answers")
 	}
 	return Response{
-		Kind:      "topper_copy_review",
-		ReviewID:  reviewID,
-		PDFName:   pdfName,
-		Pages:     pages,
-		Questions: questions,
-		Report:    strings.TrimSpace(payload.Report),
+		Kind:       "topper_copy_review",
+		ReviewID:   reviewID,
+		PDFName:    pdfName,
+		SourceMode: OCRInputModePDFDirect,
+		Pages:      pages,
+		Questions:  questions,
+		Report:     strings.TrimSpace(payload.Report),
 	}, nil
 }

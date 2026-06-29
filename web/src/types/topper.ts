@@ -21,6 +21,7 @@ export interface TopperCopyReview {
   kind: "topper_copy_review";
   review_id: string;
   pdf_name: string;
+  source_mode?: "pdf_direct" | "images" | string;
   pages: TopperCopyPage[];
   questions: TopperCopyQuestion[];
   report: string;

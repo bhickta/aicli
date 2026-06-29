@@ -13,7 +13,7 @@ export function useTopperCopyReview(
   emitReviewUpdate: (review: TopperCopyReview) => void,
   emitRerunPage: (action: TopperRerunAction, pageNumber: number) => void,
 ) {
-  const activeTab = shallowRef<"pages" | "questions" | "report">("pages");
+  const activeTab = shallowRef<"pages" | "questions" | "report">(initialTab(props.review));
   const activePageNumber = shallowRef(props.review.pages[0]?.number || 1);
   const activeQuestionID = shallowRef(props.review.questions[0]?.id || "");
   const zoom = shallowRef(1);
@@ -46,8 +46,12 @@ export function useTopperCopyReview(
   const unclearCount = computed(() => props.review.pages.reduce((total, page) => total + page.unclear_count, 0));
   const sourcePageLabels = computed(() => activeQuestion.value?.source_pages.map((page) => `P${page}`).join(", ") || "");
   const activePageHasImage = computed(() => Boolean(activePage.value?.image_url || activePage.value?.path));
-  const hasQuestionBlocks = computed(() => props.review.questions.some((question) => !isPageFallbackQuestion(question)));
+  const isPDFDirect = computed(() => props.review.source_mode === "pdf_direct");
+  const hasQuestionBlocks = computed(() => isPDFDirect.value || props.review.questions.some((question) => !isPageFallbackQuestion(question)));
   const questionTabLabel = computed(() => props.review.questions.length > 0 ? `Question-wise (${props.review.questions.length})` : "Question-wise");
+  const pageTabLabel = computed(() => isPDFDirect.value ? "Source Pages" : "Page OCR");
+  const pagePanelTitle = computed(() => isPDFDirect.value ? "Source text" : "OCR text");
+  const pagePanelEmptyText = computed(() => isPDFDirect.value ? "No source notes were saved for this PDF page." : "No OCR text for this page.");
 
   function syncEdits(review: TopperCopyReview, previousReview?: TopperCopyReview) {
     const previousPageNumber = activePageNumber.value;
@@ -60,6 +64,7 @@ export function useTopperCopyReview(
     reportEdit.value = review.report;
     activePageNumber.value = pickActivePage(review, reviewChanged, previousPageNumber);
     activeQuestionID.value = pickActiveQuestion(review, reviewChanged, previousQuestionID);
+    if (reviewChanged) activeTab.value = initialTab(review);
   }
 
   function emitReview() {
@@ -94,8 +99,12 @@ export function useTopperCopyReview(
     unclearCount,
     sourcePageLabels,
     activePageHasImage,
+    isPDFDirect,
     hasQuestionBlocks,
     questionTabLabel,
+    pageTabLabel,
+    pagePanelTitle,
+    pagePanelEmptyText,
     selectPage: (pageNumber: number) => {
       activeTab.value = "pages";
       activePageNumber.value = pageNumber;
@@ -121,6 +130,10 @@ export function useTopperCopyReview(
       if (activePage.value) emitRerunPage(action, activePage.value.number);
     },
   };
+}
+
+function initialTab(review: TopperCopyReview): "pages" | "questions" | "report" {
+  return review.source_mode === "pdf_direct" && review.questions.length > 0 ? "questions" : "pages";
 }
 
 function pickActivePage(review: TopperCopyReview, changed: boolean, previous: number) {

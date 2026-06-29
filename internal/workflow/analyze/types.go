@@ -72,12 +72,13 @@ type Question struct {
 }
 
 type Response struct {
-	Kind      string     `json:"kind"`
-	ReviewID  string     `json:"review_id"`
-	PDFName   string     `json:"pdf_name"`
-	Pages     []Page     `json:"pages"`
-	Questions []Question `json:"questions"`
-	Report    string     `json:"report"`
+	Kind       string     `json:"kind"`
+	ReviewID   string     `json:"review_id"`
+	PDFName    string     `json:"pdf_name"`
+	SourceMode string     `json:"source_mode,omitempty"`
+	Pages      []Page     `json:"pages"`
+	Questions  []Question `json:"questions"`
+	Report     string     `json:"report"`
 }
 
 type Option func(*Service)

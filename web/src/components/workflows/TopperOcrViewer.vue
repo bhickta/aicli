@@ -9,10 +9,15 @@ type OCRBlock =
   | { type: "table"; rows: string[][] }
   | { type: "diagram"; text: string };
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   text: string;
   editable?: boolean;
-}>();
+  title?: string;
+  emptyText?: string;
+}>(), {
+  title: "OCR text",
+  emptyText: "No OCR text for this page.",
+});
 
 const emit = defineEmits<{
   update: [value: string];
@@ -146,7 +151,7 @@ function cleanInline(text: string) {
 <template>
   <section class="ocr-viewer">
     <div class="ocr-viewer-toolbar">
-      <h4>OCR text</h4>
+      <h4>{{ title }}</h4>
       <div class="ocr-viewer-tabs" role="group" aria-label="OCR display mode">
         <button type="button" :class="{ active: mode === 'rendered' }" @click="mode = 'rendered'">Rendered</button>
         <button type="button" :class="{ active: mode === 'raw' }" @click="mode = 'raw'">Raw</button>
@@ -169,7 +174,7 @@ function cleanInline(text: string) {
         </table>
         <pre v-else>{{ block.text }}</pre>
       </template>
-      <p v-if="!blocks.length" class="muted">No OCR text for this page.</p>
+      <p v-if="!blocks.length" class="muted">{{ emptyText }}</p>
     </div>
 
     <textarea

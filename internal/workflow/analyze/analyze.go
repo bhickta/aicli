@@ -164,12 +164,13 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		}
 		if s.ocrCheckpoint != nil {
 			checkpoint := Response{
-				Kind:      "topper_copy_review",
-				ReviewID:  reviewIDValue,
-				PDFName:   filepath.Base(req.Path),
-				Pages:     pages,
-				Questions: pageFallbackQuestions(pages),
-				Report:    "OCR checkpoint saved. Complete question split and report generation to finish analysis.",
+				Kind:       "topper_copy_review",
+				ReviewID:   reviewIDValue,
+				PDFName:    filepath.Base(req.Path),
+				SourceMode: OCRInputModeImages,
+				Pages:      pages,
+				Questions:  pageFallbackQuestions(pages),
+				Report:     "OCR checkpoint saved. Complete question split and report generation to finish analysis.",
 			}
 			if err := s.ocrCheckpoint(checkpoint); err != nil {
 				return Response{}, err
@@ -208,12 +209,13 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 	completedSteps++
 	progressUnits(progress, "final analysis complete", completedSteps, totalSteps, "step")
 	res := Response{
-		Kind:      "topper_copy_review",
-		ReviewID:  reviewIDValue,
-		PDFName:   filepath.Base(req.Path),
-		Pages:     pages,
-		Questions: questions,
-		Report:    report,
+		Kind:       "topper_copy_review",
+		ReviewID:   reviewIDValue,
+		PDFName:    filepath.Base(req.Path),
+		SourceMode: OCRInputModeImages,
+		Pages:      pages,
+		Questions:  questions,
+		Report:     report,
 	}
 	if reviewDir != "" {
 		if err := writeReview(filepath.Join(reviewDir, "review.json"), res); err != nil {

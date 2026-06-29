@@ -29,8 +29,12 @@ const {
   unclearCount,
   sourcePageLabels,
   activePageHasImage,
+  isPDFDirect,
   hasQuestionBlocks,
   questionTabLabel,
+  pageTabLabel,
+  pagePanelTitle,
+  pagePanelEmptyText,
   selectPage,
   selectQuestion,
   setZoom,
@@ -53,7 +57,7 @@ const {
     <header class="topper-review-header">
       <div>
         <h3>Topper Copy Review</h3>
-        <p>{{ review.pdf_name }} · {{ review.pages.length }} page(s) · {{ review.questions.length }} question block(s)</p>
+        <p>{{ review.pdf_name }} · {{ isPDFDirect ? "PDF direct" : "Page OCR" }} · {{ review.questions.length }} question block(s)</p>
       </div>
       <div class="topper-review-actions">
         <span>{{ verifiedCount }}/{{ review.pages.length }} verified</span>
@@ -63,7 +67,7 @@ const {
     </header>
 
     <nav class="topper-review-tabs" aria-label="Topper review views">
-      <button type="button" :class="{ active: activeTab === 'pages' }" @click="activeTab = 'pages'">Page OCR</button>
+      <button type="button" :class="{ active: activeTab === 'pages' }" @click="activeTab = 'pages'">{{ pageTabLabel }}</button>
       <button type="button" :class="{ active: activeTab === 'questions' }" @click="activeTab = 'questions'">{{ questionTabLabel }}</button>
       <button type="button" :class="{ active: activeTab === 'report' }" @click="activeTab = 'report'">Report</button>
     </nav>
@@ -88,9 +92,9 @@ const {
             <span>{{ activePage?.name || "Page" }}</span>
             <div>
               <button type="button" :disabled="busy" @click="toggleActivePageVerified">{{ activePageEdit?.verified ? "Unverify" : "Mark verified" }}</button>
-              <button v-if="editable" type="button" :disabled="busy || !activePageHasImage" @click="rerunActivePage('ocr')">OCR page</button>
-              <button v-if="editable" type="button" :disabled="busy" @click="rerunActivePage('questions')">Split page</button>
-              <button v-if="editable" type="button" :disabled="busy || !activePageHasImage" @click="rerunActivePage('all')">Rerun page</button>
+              <button v-if="editable && !isPDFDirect" type="button" :disabled="busy || !activePageHasImage" @click="rerunActivePage('ocr')">OCR page</button>
+              <button v-if="editable && !isPDFDirect" type="button" :disabled="busy" @click="rerunActivePage('questions')">Split page</button>
+              <button v-if="editable && !isPDFDirect" type="button" :disabled="busy || !activePageHasImage" @click="rerunActivePage('all')">Rerun page</button>
               <button type="button" @click="setZoom(zoom - 0.1)">-</button>
               <button type="button" @click="setZoom(1)">Fit</button>
               <button type="button" @click="setZoom(zoom + 0.1)">+</button>
@@ -98,11 +102,11 @@ const {
           </div>
           <div class="topper-image-scroll">
             <img v-if="activePage?.image_url" :src="activePage.image_url" :alt="`Page ${activePage.number}`" :style="{ transform: `scale(${zoom})` }" />
-            <p v-else>No page image saved for this OCR-only record. Question-wise split can still use the OCR text.</p>
+            <p v-else>{{ isPDFDirect ? "No page image is saved for PDF-direct review. Use the question-wise output as the primary result." : "No page image saved for this OCR-only record. Question-wise split can still use the OCR text." }}</p>
           </div>
         </section>
         <section class="topper-ocr-panel">
-          <TopperOcrViewer :text="activePageEdit?.text || ''" :editable="editable" @update="updateActivePageText" />
+          <TopperOcrViewer :text="activePageEdit?.text || ''" :editable="editable" :title="pagePanelTitle" :empty-text="pagePanelEmptyText" @update="updateActivePageText" />
         </section>
       </main>
     </div>
@@ -151,10 +155,10 @@ const {
           />
           <pre v-else>{{ activeQuestion?.answer_markdown || "" }}</pre>
         </section>
-        <section class="topper-page-image compact">
+        <section v-if="!isPDFDirect" class="topper-page-image compact">
           <div class="topper-page-toolbar">
             <span>Source page {{ activePage?.number }}</span>
-            <button type="button" @click="activeTab = 'pages'">Open page OCR</button>
+            <button type="button" @click="activeTab = 'pages'">Open source page</button>
           </div>
           <div class="topper-image-scroll">
             <img v-if="activePage?.image_url" :src="activePage.image_url" :alt="`Page ${activePage.number}`" />

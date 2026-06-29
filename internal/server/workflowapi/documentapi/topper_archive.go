@@ -575,12 +575,13 @@ func topperReviewFromOCR(jobID string, sourcePath string, output ocr.Response) a
 		pages = ocrMarkdownPages(output.Markdown)
 	}
 	return analyze.Response{
-		Kind:      "topper_copy_review",
-		ReviewID:  "ocr-" + jobID,
-		PDFName:   filepath.Base(sourcePath),
-		Pages:     pages,
-		Questions: pageReviewQuestions(pages),
-		Report:    "Imported from PDF OCR output. Run page or full review from Study Archive for AI analysis.",
+		Kind:       "topper_copy_review",
+		ReviewID:   "ocr-" + jobID,
+		PDFName:    filepath.Base(sourcePath),
+		SourceMode: analyze.OCRInputModeImages,
+		Pages:      pages,
+		Questions:  pageReviewQuestions(pages),
+		Report:     "Imported from PDF OCR output. Run page or full review from Study Archive for AI analysis.",
 	}
 }
 

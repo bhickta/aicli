@@ -428,7 +428,7 @@ func TestParseDirectPDFReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseDirectPDFReview() error = %v", err)
 	}
-	if review.Kind != "topper_copy_review" || review.ReviewID != "review-1" || review.PDFName != "copy.pdf" {
+	if review.Kind != "topper_copy_review" || review.ReviewID != "review-1" || review.PDFName != "copy.pdf" || review.SourceMode != OCRInputModePDFDirect {
 		t.Fatalf("review metadata = %#v", review)
 	}
 	if len(review.Pages) != 1 || review.Pages[0].Text != "ocr text" || review.Pages[0].UnclearCount != 1 {
