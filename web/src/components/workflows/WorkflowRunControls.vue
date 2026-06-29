@@ -12,7 +12,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="field">
+  <div class="workflow-run-controls field">
     <button id="workflow-run" type="button" :disabled="running" @click="emit('run')">Run workflow</button>
     <button v-if="running && canCancel" type="button" @click="emit('cancel')">{{ cancelLabel }}</button>
   </div>

@@ -109,6 +109,9 @@ func reportQuestionProgress(progress func(completed int, total int), completed *
 }
 
 func (s *Service) splitPageQuestions(ctx context.Context, model string, page Page) ([]Question, error) {
+	if isOCRFailureText(page.Text) {
+		return pageFallbackQuestions([]Page{page}), nil
+	}
 	res, err := s.questionProvider.Chat(ctx, provider.ChatRequest{
 		Model: model,
 		Messages: []provider.Message{
@@ -128,6 +131,10 @@ func (s *Service) splitPageQuestions(ctx context.Context, model string, page Pag
 		return pageFallbackQuestions([]Page{page}), nil
 	}
 	return questions, nil
+}
+
+func isOCRFailureText(text string) bool {
+	return strings.HasPrefix(strings.TrimSpace(text), "> OCR failed for this page:")
 }
 
 type questionSplitPayload struct {

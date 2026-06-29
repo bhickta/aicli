@@ -103,6 +103,27 @@ func (flakyVision) Vision(_ context.Context, req provider.VisionRequest) (provid
 	return provider.ChatResponse{Content: "ok"}, nil
 }
 
+type badOCRVision struct {
+	response provider.ChatResponse
+}
+
+func (badOCRVision) ID() string { return "bad-ocr" }
+func (badOCRVision) Health(context.Context) error {
+	return nil
+}
+func (badOCRVision) ListModels(context.Context) ([]provider.Model, error) {
+	return []provider.Model{}, nil
+}
+func (badOCRVision) Chat(context.Context, provider.ChatRequest) (provider.ChatResponse, error) {
+	return provider.ChatResponse{}, nil
+}
+func (badOCRVision) ChatStream(context.Context, provider.ChatRequest, func(string) error) error {
+	return nil
+}
+func (v badOCRVision) Vision(context.Context, provider.VisionRequest) (provider.ChatResponse, error) {
+	return v.response, nil
+}
+
 func TestRenderPDFToImages(t *testing.T) {
 	t.Parallel()
 
@@ -205,6 +226,70 @@ func TestOCRImagesKeepsPartialPageFailures(t *testing.T) {
 	}
 	if !strings.Contains(pages[1].Text, "server overloaded") {
 		t.Fatalf("page 2 text = %q, want failure marker", pages[1].Text)
+	}
+}
+
+func TestOCRImagesRejectsTruncatedAndServerErrorResponses(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		response provider.ChatResponse
+		want     string
+	}{
+		{
+			name:     "truncated",
+			response: provider.ChatResponse{Content: "partial repeated OCR", FinishReason: "length"},
+			want:     "truncated",
+		},
+		{
+			name:     "html error page",
+			response: provider.ChatResponse{Content: "<html><body><pre>Internal Server Error</pre></body></html>"},
+			want:     "error page",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pages, err := OCRImages(
+				context.Background(),
+				badOCRVision{response: tt.response},
+				"model",
+				[]ImageInput{{Name: "page-1", Data: []byte("image")}},
+				"prompt",
+				1,
+				nil,
+			)
+			if err == nil {
+				t.Fatal("OCRImages() error = nil, want all-pages failure")
+			}
+			if len(pages) != 1 || !strings.Contains(pages[0].Text, tt.want) {
+				t.Fatalf("pages = %#v, want failure marker containing %q", pages, tt.want)
+			}
+		})
+	}
+}
+
+func TestCleanOCRResponseStripsDetectorTagsAndDeduplicates(t *testing.T) {
+	t.Parallel()
+
+	got, err := cleanOCRResponse(provider.ChatResponse{Content: strings.Join([]string{
+		"<|det|>title [382, 12, 639, 56]<|/det|>ForumIAS",
+		"<|det|>text [438, 291, 884, 513]<|/det|>of words but a number of",
+		"<|det|>text [111, 292, 885, 512]<|/det|>of words but a number of",
+		"<|det|>text [504, 280, 854, 308]<|/det|>short",
+		"<|det|>text [516, 318, 851, 345]<|/det|>short",
+	}, "\n")})
+	if err != nil {
+		t.Fatalf("cleanOCRResponse() error = %v", err)
+	}
+	if strings.Contains(got, "<|det|>") || strings.Contains(got, "[382, 12, 639, 56]") {
+		t.Fatalf("cleaned OCR = %q, still contains detector tags", got)
+	}
+	if strings.Count(got, "of words but a number of") != 1 {
+		t.Fatalf("cleaned OCR = %q, want long duplicate collapsed", got)
+	}
+	if strings.Count(got, "short") != 2 {
+		t.Fatalf("cleaned OCR = %q, want short repeated text preserved", got)
 	}
 }
 

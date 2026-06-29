@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -132,11 +133,75 @@ func ocrImage(ctx context.Context, vision provider.Provider, model string, input
 	if err != nil {
 		return OCRPage{}, err
 	}
+	text, err := cleanOCRResponse(res)
+	if err != nil {
+		return OCRPage{}, err
+	}
 	return OCRPage{
 		Name: input.Name,
 		Path: input.Path,
-		Text: strings.TrimSpace(res.Content),
+		Text: text,
 	}, nil
+}
+
+func cleanOCRResponse(res provider.ChatResponse) (string, error) {
+	if strings.EqualFold(strings.TrimSpace(res.FinishReason), "length") {
+		return "", errors.New("OCR response was truncated by the model token limit")
+	}
+	text := strings.TrimSpace(res.Content)
+	if text == "" {
+		return "", errors.New("OCR response was empty")
+	}
+	if looksLikeServerErrorPage(text) {
+		return "", errors.New("OCR provider returned an error page instead of text")
+	}
+	text = stripDetectionTags(text)
+	text = collapseDuplicateOCRLines(text)
+	if strings.TrimSpace(text) == "" {
+		return "", errors.New("OCR response had no readable text")
+	}
+	return text, nil
+}
+
+func looksLikeServerErrorPage(text string) bool {
+	lower := strings.ToLower(text)
+	return strings.Contains(lower, "<html") ||
+		strings.Contains(lower, "</body>") ||
+		strings.Contains(lower, "<pre>internal server error</pre>") ||
+		strings.Contains(lower, "internal server error")
+}
+
+var detectionTagPattern = regexp.MustCompile(`<\|/?det\|>`)
+var detectionBoxPrefixPattern = regexp.MustCompile(`^(?:[A-Za-z_-]+\s+)?\[\d+,\s*\d+,\s*\d+,\s*\d+\]\s*`)
+
+func stripDetectionTags(text string) string {
+	text = detectionTagPattern.ReplaceAllString(text, "")
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimSpace(detectionBoxPrefixPattern.ReplaceAllString(line, ""))
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func collapseDuplicateOCRLines(text string) string {
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+	seenLong := map[string]bool{}
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		key := strings.ToLower(strings.Join(strings.Fields(line), " "))
+		if len([]rune(key)) >= 20 {
+			if seenLong[key] {
+				continue
+			}
+			seenLong[key] = true
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
 }
 
 type pageError struct {

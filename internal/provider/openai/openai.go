@@ -98,7 +98,6 @@ func (p *OpenAICompatible) UnloadModel(ctx context.Context, model string) error 
 		return nil
 	}
 	body := map[string]any{
-		"model":       model,
 		"instance_id": model,
 	}
 	data, err := json.Marshal(body)
@@ -159,7 +158,8 @@ func (p *OpenAICompatible) chatRaw(ctx context.Context, body map[string]any) (pr
 
 	var payload struct {
 		Choices []struct {
-			Message provider.Message `json:"message"`
+			Message      provider.Message `json:"message"`
+			FinishReason string           `json:"finish_reason"`
 		} `json:"choices"`
 		Usage chatCompletionUsage `json:"usage"`
 	}
@@ -169,7 +169,11 @@ func (p *OpenAICompatible) chatRaw(ctx context.Context, body map[string]any) (pr
 	if len(payload.Choices) == 0 {
 		return provider.ChatResponse{}, errors.New("chat response has no choices")
 	}
-	return provider.ChatResponse{Content: payload.Choices[0].Message.Content, Usage: payload.Usage.providerUsage()}, nil
+	return provider.ChatResponse{
+		Content:      payload.Choices[0].Message.Content,
+		FinishReason: payload.Choices[0].FinishReason,
+		Usage:        payload.Usage.providerUsage(),
+	}, nil
 }
 
 func (p *OpenAICompatible) chatModel(model string) string {

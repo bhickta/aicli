@@ -266,6 +266,54 @@ func TestOpenAIResponsesChatMissingAuthGivesCodexProHint(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleChatPreservesFinishReason(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("path = %s, want /v1/chat/completions", r.URL.Path)
+		}
+		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"partial"},"finish_reason":"length"}]}`))
+	}))
+	defer srv.Close()
+
+	p := NewCompatible(config.ProviderConfig{ID: "test", BaseURL: srv.URL + "/v1", Model: "model"}, srv.Client())
+	res, err := p.Chat(context.Background(), provider.ChatRequest{Messages: []provider.Message{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if res.Content != "partial" || res.FinishReason != "length" {
+		t.Fatalf("response = %#v, want content and finish reason", res)
+	}
+}
+
+func TestOpenAICompatibleUnloadLMStudioUsesInstanceIDOnly(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/models/unload" {
+			t.Fatalf("path = %s, want /api/v1/models/unload", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["instance_id"] != "unlimited-ocr" {
+			t.Fatalf("body = %#v, want instance_id", body)
+		}
+		if _, ok := body["model"]; ok {
+			t.Fatalf("body = %#v, should not include rejected model key", body)
+		}
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	p := NewCompatible(config.ProviderConfig{ID: "lms", BaseURL: srv.URL + "/v1"}, srv.Client())
+	if err := p.UnloadModel(context.Background(), "unlimited-ocr"); err != nil {
+		t.Fatalf("UnloadModel() error = %v", err)
+	}
+}
+
 func TestOpenAICompatibleEmbeddings(t *testing.T) {
 	t.Parallel()
 

@@ -30,6 +30,13 @@ type fakeProvider struct {
 	chatResponses []string
 }
 
+type progressEvent struct {
+	stage     string
+	completed int
+	total     int
+	label     string
+}
+
 func (p *fakeProvider) ID() string {
 	if p.id != "" {
 		return p.id
@@ -178,6 +185,32 @@ func TestRunAnalyzeQuestionSplitFallsBackOnEmptyPageResponse(t *testing.T) {
 	}
 }
 
+func TestRunAnalyzeProgressUsesPhaseUnits(t *testing.T) {
+	t.Parallel()
+
+	pdf := filepath.Join(t.TempDir(), "answers.pdf")
+	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	events := []progressEvent{}
+	_, err := New(config.ToolConfig{PDFToPPM: "pdftoppm"}, &fakeRunner{}, &fakeProvider{}).RunWithProgress(
+		context.Background(),
+		Request{Path: pdf, Model: "model"},
+		func(stage string, completed int, total int, label string) {
+			events = append(events, progressEvent{stage: stage, completed: completed, total: total, label: label})
+		},
+	)
+	if err != nil {
+		t.Fatalf("RunWithProgress() error = %v", err)
+	}
+	if !hasProgressEvent(events, "OCR pages with", 1, 1, "page") {
+		t.Fatalf("progress events = %#v, want OCR phase reported as 1/1 page", events)
+	}
+	if !hasProgressEvent(events, "topper copy review ready", 3, 3, "step") {
+		t.Fatalf("progress events = %#v, want workflow completion reported as 3/3 steps", events)
+	}
+}
+
 func TestRunAnalyzeUsesSeparateStepProviders(t *testing.T) {
 	t.Parallel()
 
@@ -218,6 +251,15 @@ func TestRunAnalyzeUsesSeparateStepProviders(t *testing.T) {
 	if !strings.Contains(reportProvider.chatPrompt, "Answer-Wise Analysis") {
 		t.Fatalf("report provider prompt = %q, want report prompt", reportProvider.chatPrompt)
 	}
+}
+
+func hasProgressEvent(events []progressEvent, prefix string, completed int, total int, label string) bool {
+	for _, event := range events {
+		if strings.HasPrefix(event.stage, prefix) && event.completed == completed && event.total == total && event.label == label {
+			return true
+		}
+	}
+	return false
 }
 
 func TestParseQuestionSplitAcceptsWrappedJSONAndAnswerAlias(t *testing.T) {

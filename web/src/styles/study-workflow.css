@@ -1,0 +1,152 @@
+.study-workflow-panel {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(15rem, 18rem) minmax(22rem, 30rem) minmax(0, 1fr);
+  height: calc(100vh - 14.5rem);
+  min-height: 38rem;
+  min-width: 0;
+}
+
+.study-workflow-rail,
+.study-workflow-controls,
+.study-workflow-result {
+  background: #0d121b;
+  border: 1px solid #253247;
+  border-radius: 7px;
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+  padding: 8px;
+}
+
+.study-workflow-rail {
+  align-content: start;
+  gap: 8px;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.study-workflow-controls {
+  gap: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.study-run-header {
+  align-items: center;
+  border-bottom: 1px solid #243043;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 2px 2px 8px;
+}
+
+.study-run-header div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.study-run-header span {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.study-run-header h3 {
+  font-size: 17px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.study-input-scroll {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 2px;
+}
+
+.study-run-footer {
+  background: #0d121b;
+  border-top: 1px solid #243043;
+  padding: 8px 2px 2px;
+}
+
+.study-workflow-result {
+  align-content: start;
+  gap: 8px;
+  overflow: auto;
+}
+
+.study-workflow-rail .workflow-selector {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+}
+
+.study-workflow-rail .workflow-selector-search {
+  align-self: start;
+  min-height: 38px;
+}
+
+.study-workflow-rail .workflow-selector-options {
+  max-height: none;
+  min-height: 0;
+}
+
+.study-workflow-controls .drop-zone {
+  min-height: 4.25rem;
+  padding: 10px;
+}
+
+.study-workflow-controls .workflow-fields,
+.study-workflow-controls .workflow-run-controls {
+  gap: 8px;
+}
+
+.study-workflow-controls .field-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.study-workflow-controls .field-row > .field {
+  min-width: 0;
+}
+
+.study-workflow-controls .field-row > .field:last-child {
+  grid-column: 1 / -1;
+}
+
+.study-workflow-controls input,
+.study-workflow-controls select,
+.study-workflow-controls textarea,
+.study-workflow-controls output,
+.study-workflow-controls button {
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+}
+
+.study-workflow-controls #workflow-run {
+  min-height: 42px;
+  text-align: center;
+  width: 100%;
+}
+
+@media (max-width: 1180px) {
+  .study-workflow-panel {
+    grid-template-columns: minmax(14rem, 17rem) minmax(0, 1fr);
+    height: auto;
+    min-height: 0;
+  }
+
+  .study-workflow-result {
+    grid-column: 1 / -1;
+    max-height: none;
+  }
+}
+
+@media (max-width: 780px) {
+  .study-workflow-panel {
+    grid-template-columns: 1fr;
+  }
+}

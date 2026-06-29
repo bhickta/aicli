@@ -26,8 +26,9 @@ type ChatRequest struct {
 }
 
 type ChatResponse struct {
-	Content string      `json:"content"`
-	Usage   *TokenUsage `json:"usage,omitempty"`
+	Content      string      `json:"content"`
+	FinishReason string      `json:"finish_reason,omitempty"`
+	Usage        *TokenUsage `json:"usage,omitempty"`
 }
 
 type TokenUsage struct {

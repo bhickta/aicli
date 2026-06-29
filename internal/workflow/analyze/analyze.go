@@ -39,18 +39,19 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 	if req.QuestionWorkers < 0 {
 		req.QuestionWorkers = 0
 	}
-	progressUnits(progress, "rendering PDF pages", 0, 1, "stage")
+	totalSteps := 3
+	if req.QuestionSplit {
+		totalSteps++
+	}
+	completedSteps := 0
+	progressUnits(progress, "rendering PDF pages", completedSteps, totalSteps, "step")
 	images, cleanup, err := document.RenderPDFToImages(ctx, s.tools, s.runner, req.Path, req.DPI, req.RenderWorkers)
 	if err != nil {
 		return Response{}, err
 	}
 	defer cleanup()
-	total := 2 + len(images)
-	if req.QuestionSplit {
-		total += len(images)
-	}
-	completed := 1
-	progressUnits(progress, "rendered PDF pages", completed, total, "stage")
+	completedSteps++
+	progressUnits(progress, "rendered PDF pages", completedSteps, totalSteps, "step")
 
 	reviewID := reviewID()
 	reviewDir := ""
@@ -85,14 +86,14 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		topperCopyOCRPrompt,
 		req.Workers,
 		func(completedPages int, totalPages int) {
-			progressUnits(progress, fmt.Sprintf("OCR pages with %d worker(s)", ocrWorkers), completed+completedPages, total, "stage")
+			progressUnits(progress, fmt.Sprintf("OCR pages with %d worker(s)", ocrWorkers), completedPages, totalPages, "page")
 		},
 	)
 	if err != nil {
 		return Response{}, err
 	}
-	completed += len(images)
-	progressUnits(progress, "OCR pages complete", completed, total, "stage")
+	completedSteps++
+	progressUnits(progress, "OCR pages complete", completedSteps, totalSteps, "step")
 	pages := make([]Page, 0, len(ocrPages))
 	for i, page := range ocrPages {
 		pages = append(pages, Page{
@@ -110,21 +111,21 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 	if req.QuestionSplit {
 		questionWorkers := EffectiveQuestionWorkers(req.QuestionWorkers, len(pages))
 		questions, err = s.splitQuestions(ctx, firstNonBlank(req.QuestionModel, req.Model), pages, req.QuestionWorkers, func(completedPages int, totalPages int) {
-			progressUnits(progress, fmt.Sprintf("question-wise split with %d worker(s)", questionWorkers), completed+completedPages, total, "stage")
+			progressUnits(progress, fmt.Sprintf("question-wise split with %d worker(s)", questionWorkers), completedPages, totalPages, "page")
 		})
 		if err != nil {
 			return Response{}, err
 		}
-		completed += len(pages)
-		progressUnits(progress, "question-wise split complete", completed, total, "stage")
+		completedSteps++
+		progressUnits(progress, "question-wise split complete", completedSteps, totalSteps, "step")
 	}
-	progressUnits(progress, "generating final analysis", completed, total, "stage")
+	progressUnits(progress, "generating final analysis", completedSteps, totalSteps, "step")
 	report, err := s.report(ctx, firstNonBlank(req.ReportModel, req.Model), pages, questions)
 	if err != nil {
 		return Response{}, err
 	}
-	completed++
-	progressUnits(progress, "final analysis complete", completed, total, "stage")
+	completedSteps++
+	progressUnits(progress, "final analysis complete", completedSteps, totalSteps, "step")
 	res := Response{
 		Kind:      "topper_copy_review",
 		ReviewID:  reviewID,
@@ -138,7 +139,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 			return Response{}, err
 		}
 	}
-	progressUnits(progress, "topper copy review ready", total, total, "stage")
+	progressUnits(progress, "topper copy review ready", totalSteps, totalSteps, "step")
 	return res, nil
 }
 

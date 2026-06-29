@@ -41,7 +41,7 @@ function updateStepProviderModel(field: WorkflowFieldType, value: ProviderModelS
 </script>
 
 <template>
-  <div id="workflow-fields" class="grid">
+  <div id="workflow-fields" class="workflow-fields grid">
     <ProviderModelControl
       v-if="hasProviderModel"
       :provider-id="providerModel.provider_id || preferredProviderId || ''"
