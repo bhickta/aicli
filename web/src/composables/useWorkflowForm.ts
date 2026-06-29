@@ -28,7 +28,7 @@ export function useWorkflowForm(activeWorkflow: ComputedRef<WorkflowDefinition |
       if (!field.id) continue;
       if (field.type === "stepProviderModel") {
         values[field.id + "_provider_id"] = stored[field.id + "_provider_id"] || workflow.preferredProviderId || "";
-        values[field.id + "_model"] = stored[field.id + "_model"] || workflow.preferredModel || "";
+        values[field.id + "_model"] = preferredModelValue(stored[field.id + "_model"], workflow.preferredModel);
         continue;
       }
       const storedValue = stored[field.id];
@@ -45,7 +45,7 @@ export function useWorkflowForm(activeWorkflow: ComputedRef<WorkflowDefinition |
       }
     }
     providerModel.provider_id = String(stored.provider_id || workflow.preferredProviderId || "");
-    providerModel.model = String(stored.model || workflow.preferredModel || "");
+    providerModel.model = preferredModelValue(stored.model, workflow.preferredModel);
   }
 
   function updateField(id: string, value: unknown) {
@@ -97,4 +97,20 @@ export function useWorkflowForm(activeWorkflow: ComputedRef<WorkflowDefinition |
 
 function workflowStorageKey(workflowID: string) {
   return `aicli.workflow.${workflowID}.values`;
+}
+
+function preferredModelValue(stored: unknown, preferred = "") {
+  const storedModel = typeof stored === "string" ? stored : "";
+  if (isStaleFlashLiteModel(storedModel, preferred)) return preferred;
+  return storedModel || preferred || "";
+}
+
+function isStaleFlashLiteModel(stored: string, preferred: string) {
+  return Boolean(
+    preferred &&
+      stored &&
+      stored !== preferred &&
+      stored.toLowerCase().includes("flash-lite") &&
+      preferred.toLowerCase().includes("flash-lite"),
+  );
 }
