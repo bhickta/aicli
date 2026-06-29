@@ -46,6 +46,7 @@ func (s *Server) routes() {
 	files := fsapi.New(s.deps.DataDir)
 	s.mux.HandleFunc("GET /api/fs/list", files.ListFiles)
 	s.mux.HandleFunc("GET /api/fs/pick-directory", files.PickDirectory)
+	s.mux.HandleFunc("GET /api/fs/pick-file", files.PickFile)
 	s.mux.HandleFunc("POST /api/fs/upload", files.UploadFiles)
 	if s.deps.DataDir != "" {
 		uploads := http.Dir(filepath.Join(s.deps.DataDir, "uploads"))

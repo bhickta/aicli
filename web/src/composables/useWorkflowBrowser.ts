@@ -18,6 +18,7 @@ export function useWorkflowBrowser(options: WorkflowBrowserOptions) {
       await pickSystemDirectory(field);
       return;
     }
+    if (field.id && await pickSystemFile(field)) return;
     browserField.value = field;
   }
 
@@ -38,6 +39,25 @@ export function useWorkflowBrowser(options: WorkflowBrowserOptions) {
     } catch (error) {
       options.status.value = "Folder picker failed";
       options.result.value = error instanceof Error ? error.message : "Folder picker failed";
+    }
+  }
+
+  async function pickSystemFile(field: WorkflowField) {
+    if (!field.id) return false;
+
+    options.status.value = `Opening system file picker for ${field.label}...`;
+    try {
+      const currentPath = String(options.values[field.id] || appState.browserPath || "");
+      const query = currentPath ? `?path=${encodeURIComponent(currentPath)}` : "";
+      const picked = await api<{ path: string }>(`/api/fs/pick-file${query}`);
+      options.updateField(field.id, picked.path);
+      appState.browserPath = picked.path;
+      options.status.value = `Selected ${field.label}`;
+      return true;
+    } catch (error) {
+      options.status.value = "Using app file browser";
+      options.result.value = error instanceof Error ? error.message : "System file picker unavailable";
+      return false;
     }
   }
 
