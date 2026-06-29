@@ -104,12 +104,46 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
           </div>
 
           <div class="study-review-action-row">
-            <div class="archive-actions">
-              <button type="button" :disabled="archive.running.value" @click="archive.saveReview()">Save Edits</button>
-              <button type="button" class="primary" :disabled="archive.running.value" @click="rerun('questions')">Rerun Questions</button>
-              <button type="button" :disabled="archive.running.value" @click="rerun('analytics')">Rerun Analytics</button>
-              <button type="button" :disabled="archive.running.value" @click="rerun('report')">Rerun Report</button>
-              <button type="button" :disabled="archive.running.value || !archive.canRerunOCR.value" @click="rerun('all')">Rerun All</button>
+            <div class="action-cards-grid">
+              <div class="action-card">
+                <div class="action-info">
+                  <h4>Save Edits</h4>
+                  <p>Save any manual edits made to the text.</p>
+                </div>
+                <button type="button" :disabled="archive.running.value" @click="archive.saveReview()">Save</button>
+              </div>
+
+              <div class="action-card primary-card">
+                <div class="action-info">
+                  <h4>Rerun Questions</h4>
+                  <p>Re-splits the OCR text into questions and extracts analytics.</p>
+                </div>
+                <button type="button" class="primary" :disabled="archive.running.value" @click="rerun('questions')">Run</button>
+              </div>
+
+              <div class="action-card">
+                <div class="action-info">
+                  <h4>Rerun Analytics</h4>
+                  <p>Fast! Only extracts dimensions (Intro/Fact) for existing questions.</p>
+                </div>
+                <button type="button" :disabled="archive.running.value" @click="rerun('analytics')">Run</button>
+              </div>
+
+              <div class="action-card">
+                <div class="action-info">
+                  <h4>Rerun Report</h4>
+                  <p>Generates the final overarching summary from existing questions.</p>
+                </div>
+                <button type="button" :disabled="archive.running.value" @click="rerun('report')">Run</button>
+              </div>
+
+              <div class="action-card">
+                <div class="action-info">
+                  <h4>Rerun All</h4>
+                  <p>Runs the full OCR and extraction pipeline from scratch.</p>
+                </div>
+                <button type="button" :disabled="archive.running.value || !archive.canRerunOCR.value" @click="rerun('all')">Run</button>
+              </div>
             </div>
             
             <div class="archive-delete" v-if="!reviewId">

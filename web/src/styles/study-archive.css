@@ -184,7 +184,84 @@
   color: #fecaca;
 }
 
-/* Embedded Sleek Control Panel */
+.study-review-action-row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
+}
+
+.action-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+.action-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  transition: all 0.2s ease;
+}
+
+.action-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.action-card.primary-card {
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.action-info h4 {
+  margin: 0 0 4px 0;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+.action-info p {
+  margin: 0;
+  font-size: 11px;
+  color: #8b9bb4;
+  line-height: 1.4;
+}
+
+.action-card button {
+  width: 100%;
+  justify-content: center;
+  padding: 8px 16px;
+  font-weight: 500;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.action-card button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.action-card button.primary {
+  background: #3b82f6;
+  color: #ffffff;
+  border-color: transparent;
+}
+
+.action-card button.primary:hover:not(:disabled) {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+/* Embedded Sleek Control Panel overrides */
 .study-review-controls.embedded {
   background: transparent;
   border: none;
@@ -199,40 +276,6 @@
   letter-spacing: 0.5px;
   font-weight: 600;
   margin-bottom: 6px;
-}
-
-.study-review-controls.embedded .archive-actions {
-  width: 100%;
-  display: flex;
-  gap: 12px;
-  justify-content: flex-start;
-  margin-top: 4px;
-}
-
-.study-review-controls.embedded .archive-actions button {
-  padding: 8px 16px;
-  font-weight: 500;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #e2e8f0;
-  transition: all 0.2s ease;
-}
-
-.study-review-controls.embedded .archive-actions button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.study-review-controls.embedded .archive-actions button.primary {
-  background: #3b82f6; /* Accent color */
-  color: #ffffff;
-  border-color: transparent;
-}
-
-.study-review-controls.embedded .archive-actions button.primary:hover:not(:disabled) {
-  background: #2563eb;
-  transform: translateY(-1px);
 }
 
 @media (max-width: 920px) {
