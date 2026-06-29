@@ -24,7 +24,7 @@ func OCRImages(
 	if vision == nil {
 		return nil, errors.New("provider is required")
 	}
-	workers = EffectiveOCRWorkers(workers, len(inputs))
+	workers = EffectiveOCRWorkersForProvider(workers, len(inputs), vision.ID())
 	pages := make([]OCRPage, len(inputs))
 	jobs := make(chan int)
 	errCh := make(chan pageError, len(inputs))
@@ -59,6 +59,18 @@ func OCRImages(
 }
 
 func EffectiveOCRWorkers(workers int, jobs int) int {
+	return effectiveOCRWorkers(workers, jobs)
+}
+
+func EffectiveOCRWorkersForProvider(workers int, jobs int, providerID string) int {
+	workers = effectiveOCRWorkers(workers, jobs)
+	if limit := localOCRWorkerLimit(providerID); limit > 0 && workers > limit {
+		return limit
+	}
+	return workers
+}
+
+func effectiveOCRWorkers(workers int, jobs int) int {
 	if jobs <= 1 {
 		return 1
 	}
@@ -69,6 +81,16 @@ func EffectiveOCRWorkers(workers int, jobs int) int {
 		return jobs
 	}
 	return workers
+}
+
+func localOCRWorkerLimit(providerID string) int {
+	id := strings.ToLower(strings.TrimSpace(providerID))
+	switch id {
+	case "lms", "lmstudio", "lm-studio", "lm_studio", "ollama":
+		return 1
+	default:
+		return 0
+	}
 }
 
 func ocrImageWorker(

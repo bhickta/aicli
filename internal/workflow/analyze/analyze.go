@@ -77,7 +77,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 			MIMEType: "image/jpeg",
 		})
 	}
-	ocrWorkers := document.EffectiveOCRWorkers(req.Workers, len(inputs))
+	ocrWorkers := document.EffectiveOCRWorkersForProvider(req.Workers, len(inputs), s.ocrProvider.ID())
 	ocrPages, err := document.OCRImages(
 		ctx,
 		s.ocrProvider,

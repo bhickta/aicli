@@ -340,3 +340,28 @@ func TestEffectiveOCRWorkersHonorsExplicitWorkers(t *testing.T) {
 		})
 	}
 }
+
+func TestEffectiveOCRWorkersCapsLocalModelServers(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		providerID string
+		workers    int
+		jobs       int
+		want       int
+	}{
+		{name: "lm studio auto", providerID: "lms", workers: 0, jobs: 48, want: 1},
+		{name: "lm studio explicit", providerID: "lms", workers: 48, jobs: 48, want: 1},
+		{name: "ollama explicit", providerID: "ollama", workers: 8, jobs: 48, want: 1},
+		{name: "remote explicit", providerID: "openrouter", workers: 8, jobs: 48, want: 8},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := EffectiveOCRWorkersForProvider(tt.workers, tt.jobs, tt.providerID)
+			if got != tt.want {
+				t.Fatalf("EffectiveOCRWorkersForProvider(%d, %d, %q) = %d, want %d", tt.workers, tt.jobs, tt.providerID, got, tt.want)
+			}
+		})
+	}
+}
