@@ -166,6 +166,14 @@ func (v badOCRVision) Vision(context.Context, provider.VisionRequest) (provider.
 	return v.response, nil
 }
 
+type unsupportedImageVision struct {
+	fakeVision
+}
+
+func (unsupportedImageVision) Vision(context.Context, provider.VisionRequest) (provider.ChatResponse, error) {
+	return provider.ChatResponse{}, errors.New(`chat: 400 Bad Request: {"error":"Model does not support images. Please use a model that does."}`)
+}
+
 func TestRenderPDFToImages(t *testing.T) {
 	t.Parallel()
 
@@ -289,6 +297,28 @@ func TestOCRImagesRetriesFailedPagesSerially(t *testing.T) {
 	}
 	if pages[0].Text != "one recovered" || pages[1].Text != "two recovered" {
 		t.Fatalf("pages = %#v, want recovered OCR text after retry", pages)
+	}
+}
+
+func TestOCRImagesFailsFastForTextOnlyModel(t *testing.T) {
+	t.Parallel()
+
+	_, err := OCRImages(
+		context.Background(),
+		unsupportedImageVision{},
+		"text-model",
+		[]ImageInput{{Name: "page-1", Data: []byte("image")}, {Name: "page-2", Data: []byte("image")}},
+		"prompt",
+		2,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("OCRImages() error = nil, want text-only model error")
+	}
+	for _, want := range []string{"text-model", "does not support images", "unlimited-ocr", "OCR model field"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %q, want contains %q", err.Error(), want)
+		}
 	}
 }
 

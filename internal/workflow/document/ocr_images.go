@@ -3,6 +3,7 @@ package document
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"regexp"
@@ -41,21 +42,36 @@ func OCRImagesWithLogger(
 	if vision == nil {
 		return nil, errors.New("provider is required")
 	}
+	pages := make([]OCRPage, len(inputs))
+	startIndex := 0
+	completed := 0
+	var completedMu sync.Mutex
+	preflightFailures := []pageError{}
+	if len(inputs) > 0 {
+		page, failure, err := validateVisionModel(ctx, vision, model, inputs[0], prompt)
+		if err != nil {
+			return nil, err
+		}
+		pages[0] = page
+		if failure != nil {
+			preflightFailures = append(preflightFailures, *failure)
+		} else {
+			reportPageProgress(progress, &completed, &completedMu, len(inputs))
+		}
+		startIndex = 1
+	}
 	workers = EffectiveOCRWorkersForVisionProvider(workers, len(inputs), vision)
 	workflowStart := time.Now()
 	logOCRInfo(logger, "OCR image batch started", "pages", len(inputs), "workers", workers, "provider", providerID(vision), "model", model)
-	pages := make([]OCRPage, len(inputs))
 	jobs := make(chan int)
 	errCh := make(chan pageError, len(inputs))
-	completed := 0
-	var completedMu sync.Mutex
 
 	var wg sync.WaitGroup
 	for range workers {
 		wg.Add(1)
 		go ocrImageWorker(ctx, vision, model, inputs, prompt, pages, jobs, errCh, logger, progress, &completed, &completedMu, &wg)
 	}
-	for index := range inputs {
+	for index := startIndex; index < len(inputs); index++ {
 		select {
 		case <-ctx.Done():
 			errCh <- pageError{Index: index, Name: inputs[index].Name, Err: ctx.Err()}
@@ -67,7 +83,7 @@ func OCRImagesWithLogger(
 	wg.Wait()
 	close(errCh)
 
-	failures := []pageError{}
+	failures := preflightFailures
 	for err := range errCh {
 		failures = append(failures, err)
 	}
@@ -78,6 +94,18 @@ func OCRImagesWithLogger(
 		return pages, pageErrors(failures)
 	}
 	return pages, nil
+}
+
+func validateVisionModel(ctx context.Context, vision provider.Provider, model string, input ImageInput, prompt string) (OCRPage, *pageError, error) {
+	page, err := ocrImage(ctx, vision, model, input, prompt)
+	if err == nil {
+		return page, nil, nil
+	}
+	if isVisionUnsupportedError(err) {
+		return OCRPage{}, nil, fmt.Errorf("OCR model %q does not support images; select a vision OCR model such as unlimited-ocr in the OCR model field, and use text models only for question split/report: %w", model, err)
+	}
+	failure := pageError{Index: 0, Name: input.Name, Err: err}
+	return failedOCRPage(input, err), &failure, nil
 }
 
 func EffectiveOCRWorkers(workers int, jobs int) int {
@@ -266,6 +294,16 @@ func cleanOCRResponse(res provider.ChatResponse) (string, error) {
 		text = strings.TrimSpace(text + "\n\n[OCR truncated: rerun this page if important]")
 	}
 	return text, nil
+}
+
+func isVisionUnsupportedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "does not support images") ||
+		strings.Contains(text, "vision is not supported") ||
+		strings.Contains(text, "image input is not supported")
 }
 
 func looksLikeServerErrorPage(text string) bool {

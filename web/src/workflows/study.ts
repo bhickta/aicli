@@ -2,7 +2,7 @@ import type { WorkflowDefinition } from "../types";
 import { providerModelField, providerModelPayload } from "./builders";
 
 const topperCopyFields: WorkflowDefinition["fields"] = [
-  { type: "stepProviderModel", id: "ocr", label: "OCR model" },
+  { type: "stepProviderModel", id: "ocr", label: "OCR vision model (e.g. unlimited-ocr)" },
   { type: "stepProviderModel", id: "question", label: "Question split model" },
   { type: "stepProviderModel", id: "report", label: "Report model" },
   { type: "path", id: "path", label: "Topper copy PDF" },
