@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { copyMetadataChips } from "../../lib/studyMetadata";
 import type { StudyCopyRecord } from "../../types";
+import StudyMetadataChips from "./StudyMetadataChips.vue";
 
 defineProps<{
   copies: StudyCopyRecord[];
@@ -56,6 +58,7 @@ function statusClass(copy: StudyCopyRecord) {
       <span class="study-copy-cell">
         <strong>{{ copy.pdf_name || copy.id }}</strong>
         <small>{{ copy.candidate_name || copy.source_path || "No source metadata" }}</small>
+        <StudyMetadataChips :chips="copyMetadataChips(copy).slice(0, 3)" />
       </span>
       <span>{{ copy.page_count || "-" }}</span>
       <span>{{ copy.question_count || "-" }}</span>

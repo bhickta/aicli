@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { computed } from "vue";
+import { questionMetadata, questionMetadataChips } from "../../lib/studyMetadata";
 import type { StudyQuestionRecord } from "../../types";
+import StudyMetadataChips from "./StudyMetadataChips.vue";
 
 const props = defineProps<{
   question: StudyQuestionRecord;
@@ -12,6 +15,18 @@ const emit = defineEmits<{
   copyAnswer: [question: StudyQuestionRecord];
   copyQA: [question: StudyQuestionRecord];
 }>();
+
+const metadata = computed(() => questionMetadata(props.question));
+const chips = computed(() => questionMetadataChips(props.question));
+const dimensionEntries = computed(() => Object.entries(props.dimensions));
+const metadataRows = computed(() => [
+  ["Subject", metadata.value?.subject],
+  ["Topic", metadata.value?.topic],
+  ["Subtopic", metadata.value?.subtopic],
+  ["Syllabus", metadata.value?.syllabus_area],
+  ["Demand", metadata.value?.demand],
+  ["Type", metadata.value?.question_type],
+].filter(([, value]) => value));
 
 function renderMarkdown(md: string): string {
   if (!md) return "";
@@ -68,6 +83,7 @@ function renderMarkdown(md: string): string {
       <div class="study-question-info">
         <h3>{{ question.label || `Q.${question.question_no}` }}</h3>
         <p class="study-question-prompt">{{ question.prompt_text || "Prompt not extracted yet." }}</p>
+        <StudyMetadataChips :chips="chips" />
       </div>
       <div class="study-question-actions">
         <span class="study-pill">Pages {{ question.source_pages.join(", ") || "-" }}</span>
@@ -79,11 +95,19 @@ function renderMarkdown(md: string): string {
         </button>
       </div>
     </div>
+
+    <dl v-if="metadataRows.length" class="study-question-metadata">
+      <div v-for="[label, value] in metadataRows" :key="label">
+        <dt>{{ label }}</dt>
+        <dd>{{ value }}</dd>
+      </div>
+    </dl>
+
     <div v-if="question.answer_text" class="study-question-answer" v-html="renderMarkdown(question.answer_text)"></div>
     <div v-else class="study-question-answer empty">No answer text yet.</div>
 
-    <div v-if="Object.keys(dimensions).length > 0" class="study-question-dimensions">
-      <div v-for="(text, key) in dimensions" :key="key" class="study-question-dimension">
+    <div v-if="dimensionEntries.length > 0" class="study-question-dimensions">
+      <div v-for="[key, text] in dimensionEntries" :key="key" class="study-question-dimension">
         <strong>{{ key }}</strong>
         <span>{{ text }}</span>
       </div>

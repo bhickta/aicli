@@ -33,7 +33,7 @@ const emit = defineEmits<{
       <input
         :value="query"
         type="search"
-        placeholder="Search copies, candidate, paper"
+        placeholder="Search copies, topper, paper, topic"
         @input="emit('update:query', ($event.target as HTMLInputElement).value)"
         @keyup.enter="emit('search')"
       />

@@ -32,7 +32,7 @@ const emit = defineEmits<{
         :source-path="detail?.copy.source_path || ''"
         @synced="emit('synced')"
       />
-      <StudyQuestionsPanel :detail="detail" />
+      <StudyQuestionsPanel :detail="detail" @synced="emit('synced')" />
     </template>
     <StudyWorkflowPanel v-else />
   </section>
