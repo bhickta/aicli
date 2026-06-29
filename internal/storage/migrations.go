@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS study_copies (
 	analysis_status TEXT NOT NULL DEFAULT '',
 	report_status TEXT NOT NULL DEFAULT '',
 	last_error TEXT NOT NULL DEFAULT '',
+	metadata_json TEXT NOT NULL DEFAULT '',
 	created_at TIMESTAMP NOT NULL,
 	updated_at TIMESTAMP NOT NULL
 );
@@ -104,6 +105,7 @@ CREATE TABLE IF NOT EXISTS study_questions (
 	status TEXT NOT NULL DEFAULT '',
 	feedback_json TEXT NOT NULL DEFAULT '',
 	analysis_json TEXT NOT NULL DEFAULT '',
+	metadata_json TEXT NOT NULL DEFAULT '',
 	created_at TIMESTAMP NOT NULL,
 	updated_at TIMESTAMP NOT NULL
 );
@@ -203,4 +205,6 @@ var schemaColumnMigrations = []string{
 	`ALTER TABLE study_batch_items ADD COLUMN started_at TIMESTAMP`,
 	`ALTER TABLE study_batch_items ADD COLUMN finished_at TIMESTAMP`,
 	`ALTER TABLE study_batch_items ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE study_copies ADD COLUMN metadata_json TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE study_questions ADD COLUMN metadata_json TEXT NOT NULL DEFAULT ''`,
 }

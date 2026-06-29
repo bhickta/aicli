@@ -26,6 +26,7 @@ func isIncompleteDirectPDFError(err error) bool {
 }
 
 type oneShotPDFManifest struct {
+	Metadata          CopyMetadata         `json:"metadata"`
 	DetectedQuestions []string             `json:"detected_questions"`
 	Pages             []oneShotPDFPage     `json:"pages"`
 	Questions         []oneShotPDFQuestion `json:"questions"`
@@ -46,6 +47,7 @@ type oneShotPDFQuestion struct {
 	SourcePages    []int              `json:"source_pages"`
 	AnswerMarkdown string             `json:"answer_markdown"`
 	Dimensions     QuestionDimensions `json:"dimensions"`
+	Metadata       QuestionMetadata   `json:"metadata"`
 }
 
 func oneShotPDFPrompt(pdfName string) string {
@@ -71,9 +73,28 @@ Extract page source notes, every question with full answer text, per-question di
 
 Return valid JSON only. No markdown fences, no trailing commas, no prose outside JSON.
 Escape double quotes inside strings as \" and newlines inside strings as \n.
+Metadata must be concise. Do not shorten, summarize, or omit answer_markdown to make room for metadata.
 
 Schema:
 {
+  "metadata": {
+    "suggested_pdf_name": "clean searchable filename, e.g. Topper Name - GS2 - Test Code - 2020.pdf",
+    "topper_name": "visible topper/candidate name if present",
+    "candidate_name": "visible candidate name if distinct",
+    "rank": "visible AIR/rank if present",
+    "exam": "UPSC CSE / State PCS / other if visible",
+    "year": "exam/test year if visible",
+    "paper": "GS1 / GS2 / GS3 / GS4 / Essay / Optional / other if visible",
+    "subject": "broad subject if visible",
+    "test_series": "test series name if visible",
+    "coaching_institute": "visible institute name if present",
+    "test_code": "visible test code if present",
+    "test_date": "visible copy/test date if present",
+    "language": "English / Hindi / mixed / other",
+    "tags": ["short search tags"],
+    "search_hints": ["alternate names, paper aliases, institute aliases"],
+    "notes": "short metadata confidence notes"
+  },
   "detected_questions": ["visible label for answer block 1", "visible label for answer block 2"],
   "pages": [
     {"number": 1, "name": "page-1", "text": "brief source notes for inspection", "unclear_count": 0}
@@ -93,6 +114,20 @@ Schema:
         "fact": "facts, examples, committees, schemes, articles, data",
         "fact_usage": "whether facts support arguments or are dumped",
         "custom": "other scoring patterns"
+      },
+      "metadata": {
+        "subject": "Polity / Economy / History / Geography / Ethics / Essay / Optional / other",
+        "topic": "specific topic",
+        "subtopic": "narrow subtopic if visible or clear from the answer",
+        "syllabus_area": "UPSC syllabus area if identifiable",
+        "paper": "GS1 / GS2 / GS3 / GS4 / Essay / Optional / other",
+        "question_type": "discuss / analyze / evaluate / comment / enumerate / case study / other",
+        "demand": "core demand of the question",
+        "difficulty": "easy / moderate / hard",
+        "marks": 10,
+        "word_limit": 150,
+        "tags": ["short searchable tags"],
+        "search_hints": ["alternate topic names"]
       }
     }
   ],
@@ -100,44 +135,46 @@ Schema:
 }
 
 Rules:
-1. First identify every distinct visible question/answer block in detected_questions. This is mandatory coverage accounting.
-2. Extract every detected question/answer block into questions[]. Do not invent official model answers.
-3. Do not include continuation pages separately in detected_questions. A continued page belongs to the same question.
-4. Keep pages[].text concise; answer_markdown must carry the complete visible answer.
-5. Preserve structure: bullets, headings, arrows, boxes, diagrams as text labels, and evaluator marks.
-6. Mark unreadable words as [unclear].
-7. If a field is uncertain, keep it empty instead of guessing.
+1. First identify copy-level metadata concisely. Use only visible evidence or strong document-level inference; keep uncertain fields empty.
+2. First identify every distinct visible question/answer block in detected_questions. This is mandatory coverage accounting.
+3. Extract every detected question/answer block into questions[]. Do not invent official model answers.
+4. Add concise metadata for every question so it can be searched/filtered by subject, topic, syllabus area, marks, word limit, and demand.
+5. Do not include continuation pages separately in detected_questions. A continued page belongs to the same question.
+6. Keep pages[].text concise; answer_markdown must carry the complete visible answer.
+7. Preserve structure: bullets, headings, arrows, boxes, diagrams as text labels, and evaluator marks.
+8. Mark unreadable words as [unclear].
+9. If a field is uncertain, keep it empty instead of guessing.
 
 PDF name: ` + pdfName
 }
 
-func parseOneShotPDFManifest(content string, _ string) ([]Page, []Question, string, error) {
+func parseOneShotPDFManifest(content string, _ string) (*CopyMetadata, []Page, []Question, string, error) {
 	jsonText, err := extractQuestionSplitJSON(content)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, nil, "", err
 	}
 	var payload oneShotPDFManifest
 	if err := json.Unmarshal([]byte(jsonText), &payload); err != nil {
-		return nil, nil, "", err
+		return nil, nil, nil, "", err
 	}
 
 	pages := normalizeManifestPages(payload.Pages)
 	questions := normalizeManifestQuestions(payload.Questions)
 	detectedQuestions := normalizeDetectedQuestionLabels(payload.DetectedQuestions)
 	if len(questions) == 0 {
-		return nil, nil, "", newIncompleteDirectPDFError("direct PDF response returned no usable question answers")
+		return nil, nil, nil, "", newIncompleteDirectPDFError("direct PDF response returned no usable question answers")
 	}
 	if len(pages) == 0 {
 		pages = pagesFromQuestionSources(questions)
 	}
 	if err := validateManifestQuestionCoverage(detectedQuestions, questions, len(pages)); err != nil {
-		return nil, nil, "", err
+		return nil, nil, nil, "", err
 	}
 	report := strings.TrimSpace(payload.Report)
 	if report == "" {
-		return nil, nil, "", errors.New("direct PDF response returned an empty report")
+		return nil, nil, nil, "", errors.New("direct PDF response returned an empty report")
 	}
-	return pages, questions, report, nil
+	return nonEmptyCopyMetadata(payload.Metadata), pages, questions, report, nil
 }
 
 func normalizeManifestPages(in []oneShotPDFPage) []Page {
@@ -193,11 +230,76 @@ func normalizeManifestQuestions(in []oneShotPDFQuestion) []Question {
 			AnswerMarkdown: answer,
 			Status:         "detected",
 			Dimensions:     nonEmptyDimensions(item.Dimensions),
+			Metadata:       nonEmptyQuestionMetadata(item.Metadata),
 		}
 		questions = append(questions, question)
 	}
 	sortQuestions(questions)
 	return questions
+}
+
+func nonEmptyCopyMetadata(meta CopyMetadata) *CopyMetadata {
+	meta = CopyMetadata{
+		SuggestedPDFName:  strings.TrimSpace(meta.SuggestedPDFName),
+		TopperName:        strings.TrimSpace(meta.TopperName),
+		CandidateName:     strings.TrimSpace(meta.CandidateName),
+		Rank:              strings.TrimSpace(meta.Rank),
+		Exam:              strings.TrimSpace(meta.Exam),
+		Year:              strings.TrimSpace(meta.Year),
+		Paper:             strings.TrimSpace(meta.Paper),
+		Subject:           strings.TrimSpace(meta.Subject),
+		TestSeries:        strings.TrimSpace(meta.TestSeries),
+		CoachingInstitute: strings.TrimSpace(meta.CoachingInstitute),
+		TestCode:          strings.TrimSpace(meta.TestCode),
+		TestDate:          strings.TrimSpace(meta.TestDate),
+		Language:          strings.TrimSpace(meta.Language),
+		Tags:              cleanStringList(meta.Tags),
+		SearchHints:       cleanStringList(meta.SearchHints),
+		Notes:             strings.TrimSpace(meta.Notes),
+	}
+	if meta.SuggestedPDFName+meta.TopperName+meta.CandidateName+meta.Rank+meta.Exam+meta.Year+meta.Paper+meta.Subject+meta.TestSeries+meta.CoachingInstitute+meta.TestCode+meta.TestDate+meta.Language+strings.Join(meta.Tags, "")+strings.Join(meta.SearchHints, "")+meta.Notes == "" {
+		return nil
+	}
+	return &meta
+}
+
+func nonEmptyQuestionMetadata(meta QuestionMetadata) *QuestionMetadata {
+	meta = QuestionMetadata{
+		Subject:      strings.TrimSpace(meta.Subject),
+		Topic:        strings.TrimSpace(meta.Topic),
+		Subtopic:     strings.TrimSpace(meta.Subtopic),
+		SyllabusArea: strings.TrimSpace(meta.SyllabusArea),
+		Paper:        strings.TrimSpace(meta.Paper),
+		QuestionType: strings.TrimSpace(meta.QuestionType),
+		Demand:       strings.TrimSpace(meta.Demand),
+		Difficulty:   strings.TrimSpace(meta.Difficulty),
+		Marks:        nonNegative(meta.Marks),
+		WordLimit:    nonNegative(meta.WordLimit),
+		Tags:         cleanStringList(meta.Tags),
+		SearchHints:  cleanStringList(meta.SearchHints),
+	}
+	if meta.Subject+meta.Topic+meta.Subtopic+meta.SyllabusArea+meta.Paper+meta.QuestionType+meta.Demand+meta.Difficulty+strings.Join(meta.Tags, "")+strings.Join(meta.SearchHints, "") == "" && meta.Marks == 0 && meta.WordLimit == 0 {
+		return nil
+	}
+	return &meta
+}
+
+func cleanStringList(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		key := strings.ToLower(value)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, value)
+	}
+	return out
 }
 
 func normalizeDetectedQuestionLabels(in []string) []string {

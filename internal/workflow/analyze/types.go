@@ -72,6 +72,40 @@ type QuestionDimensions struct {
 	Custom       string `json:"custom"`
 }
 
+type CopyMetadata struct {
+	SuggestedPDFName  string   `json:"suggested_pdf_name,omitempty"`
+	TopperName        string   `json:"topper_name,omitempty"`
+	CandidateName     string   `json:"candidate_name,omitempty"`
+	Rank              string   `json:"rank,omitempty"`
+	Exam              string   `json:"exam,omitempty"`
+	Year              string   `json:"year,omitempty"`
+	Paper             string   `json:"paper,omitempty"`
+	Subject           string   `json:"subject,omitempty"`
+	TestSeries        string   `json:"test_series,omitempty"`
+	CoachingInstitute string   `json:"coaching_institute,omitempty"`
+	TestCode          string   `json:"test_code,omitempty"`
+	TestDate          string   `json:"test_date,omitempty"`
+	Language          string   `json:"language,omitempty"`
+	Tags              []string `json:"tags,omitempty"`
+	SearchHints       []string `json:"search_hints,omitempty"`
+	Notes             string   `json:"notes,omitempty"`
+}
+
+type QuestionMetadata struct {
+	Subject      string   `json:"subject,omitempty"`
+	Topic        string   `json:"topic,omitempty"`
+	Subtopic     string   `json:"subtopic,omitempty"`
+	SyllabusArea string   `json:"syllabus_area,omitempty"`
+	Paper        string   `json:"paper,omitempty"`
+	QuestionType string   `json:"question_type,omitempty"`
+	Demand       string   `json:"demand,omitempty"`
+	Difficulty   string   `json:"difficulty,omitempty"`
+	Marks        int      `json:"marks,omitempty"`
+	WordLimit    int      `json:"word_limit,omitempty"`
+	Tags         []string `json:"tags,omitempty"`
+	SearchHints  []string `json:"search_hints,omitempty"`
+}
+
 type Question struct {
 	ID             string              `json:"id"`
 	Label          string              `json:"label"`
@@ -80,6 +114,7 @@ type Question struct {
 	SourcePages    []int               `json:"source_pages"`
 	Status         string              `json:"status"`
 	Dimensions     *QuestionDimensions `json:"dimensions,omitempty"`
+	Metadata       *QuestionMetadata   `json:"metadata,omitempty"`
 }
 
 type Response struct {
@@ -89,6 +124,7 @@ type Response struct {
 	SourceMode string               `json:"source_mode,omitempty"`
 	APICalls   int                  `json:"api_calls,omitempty"`
 	Usage      *provider.TokenUsage `json:"usage,omitempty"`
+	Metadata   *CopyMetadata        `json:"metadata,omitempty"`
 	Pages      []Page               `json:"pages"`
 	Questions  []Question           `json:"questions"`
 	Report     string               `json:"report"`

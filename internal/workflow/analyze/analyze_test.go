@@ -211,9 +211,10 @@ func TestRunAnalyzeDirectPDFUsesGeminiDocumentOnly(t *testing.T) {
 	provider := &fakeProvider{
 		id: "gemini",
 		documentContent: `{
+			"metadata":{"suggested_pdf_name":"Sample Topper - GS2.pdf","topper_name":"Sample Topper","paper":"GS2","coaching_institute":"ForumIAS","tags":["polity"]},
 			"detected_questions":["Q.1"],
 			"pages":[{"number":1,"name":"page-1","text":"source notes","unclear_count":0}],
-			"questions":[{"id":"q1","label":"Q.1","title":"Polity","source_pages":[1],"answer_markdown":"answer text","dimensions":{"introduction":"clear intro","fact":"Article 21"}}],
+			"questions":[{"id":"q1","label":"Q.1","title":"Polity","source_pages":[1],"answer_markdown":"answer text","dimensions":{"introduction":"clear intro","fact":"Article 21"},"metadata":{"subject":"Polity","topic":"Fundamental Rights","marks":10,"word_limit":150,"tags":["article 21"]}}],
 			"report":"final report"
 		}`,
 	}
@@ -232,6 +233,12 @@ func TestRunAnalyzeDirectPDFUsesGeminiDocumentOnly(t *testing.T) {
 	}
 	if res.Questions[0].Dimensions == nil || res.Questions[0].Dimensions.Introduction != "clear intro" {
 		t.Fatalf("dimensions = %#v, want parsed dimensions", res.Questions[0].Dimensions)
+	}
+	if res.Metadata == nil || res.Metadata.TopperName != "Sample Topper" || res.Metadata.Paper != "GS2" {
+		t.Fatalf("metadata = %#v, want parsed copy metadata", res.Metadata)
+	}
+	if res.Questions[0].Metadata == nil || res.Questions[0].Metadata.Topic != "Fundamental Rights" || res.Questions[0].Metadata.Marks != 10 {
+		t.Fatalf("question metadata = %#v, want parsed question metadata", res.Questions[0].Metadata)
 	}
 	if !strings.Contains(provider.documentPrompt, "Gemini Flash-Lite") || !strings.Contains(provider.documentPrompt, "valid JSON only") {
 		t.Fatalf("document prompt = %q, want Gemini-Lite JSON prompt", provider.documentPrompt)
@@ -483,10 +490,13 @@ func TestParseQuestionSplitRejectsEmptyQuestionBlocks(t *testing.T) {
 func TestParseOneShotPDFManifest(t *testing.T) {
 	t.Parallel()
 
-	content := "```json\n{\"detected_questions\":[\"Q.1\"],\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"source_pages\":[1],\"answer_markdown\":\"test answer\",\"dimensions\":{\"fact\":\"good examples\"}}],\"report\":\"test report\"}\n```"
-	pages, questions, report, err := parseOneShotPDFManifest(content, "copy.pdf")
+	content := "```json\n{\"metadata\":{\"topper_name\":\"A Topper\",\"paper\":\"GS1\"},\"detected_questions\":[\"Q.1\"],\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"source_pages\":[1],\"answer_markdown\":\"test answer\",\"dimensions\":{\"fact\":\"good examples\"},\"metadata\":{\"subject\":\"History\",\"topic\":\"Ancient India\",\"marks\":10}}],\"report\":\"test report\"}\n```"
+	metadata, pages, questions, report, err := parseOneShotPDFManifest(content, "copy.pdf")
 	if err != nil {
 		t.Fatalf("parseOneShotPDFManifest() error = %v", err)
+	}
+	if metadata == nil || metadata.TopperName != "A Topper" || metadata.Paper != "GS1" {
+		t.Fatalf("metadata = %#v, want parsed copy metadata", metadata)
 	}
 	if len(pages) != 1 || pages[0].Text != "ocr text" || pages[0].UnclearCount != 1 {
 		t.Fatalf("pages = %#v", pages)
@@ -496,6 +506,9 @@ func TestParseOneShotPDFManifest(t *testing.T) {
 	}
 	if questions[0].Dimensions == nil || questions[0].Dimensions.Fact != "good examples" {
 		t.Fatalf("dimensions = %#v, want fact dimension", questions[0].Dimensions)
+	}
+	if questions[0].Metadata == nil || questions[0].Metadata.Topic != "Ancient India" || questions[0].Metadata.Marks != 10 {
+		t.Fatalf("question metadata = %#v, want parsed metadata", questions[0].Metadata)
 	}
 	if report != "test report" {
 		t.Fatalf("report = %q", report)
@@ -514,7 +527,7 @@ func TestParseOneShotPDFManifestRejectsIncompletePayload(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, _, _, err := parseOneShotPDFManifest(tt.content, "copy.pdf"); err == nil {
+			if _, _, _, _, err := parseOneShotPDFManifest(tt.content, "copy.pdf"); err == nil {
 				t.Fatalf("parseOneShotPDFManifest() error = nil, want error for %s", tt.name)
 			}
 		})
@@ -534,7 +547,7 @@ func TestParseOneShotPDFManifestRejectsQuestionUnderExtraction(t *testing.T) {
 		"questions":[{"label":"first visible answer block","source_pages":[3],"answer_markdown":"answer one"}],
 		"report":"report"
 	}`
-	_, _, _, err := parseOneShotPDFManifest(content, "copy.pdf")
+	_, _, _, _, err := parseOneShotPDFManifest(content, "copy.pdf")
 	if err == nil || !strings.Contains(err.Error(), "detected 3 question/answer block") {
 		t.Fatalf("parseOneShotPDFManifest() error = %v, want model-declared coverage error", err)
 	}

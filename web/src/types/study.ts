@@ -21,6 +21,7 @@ export interface StudyCopyRecord {
   analysis_status: string;
   report_status: string;
   last_error: string;
+  metadata_json: string;
   created_at: string;
   updated_at: string;
 }
@@ -56,6 +57,7 @@ export interface StudyQuestionRecord {
   status: string;
   feedback_json: string;
   analysis_json: string;
+  metadata_json: string;
   created_at: string;
   updated_at: string;
 }

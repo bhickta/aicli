@@ -18,6 +18,40 @@ export interface QuestionDimensions {
   custom: string;
 }
 
+export interface CopyMetadata {
+  suggested_pdf_name?: string;
+  topper_name?: string;
+  candidate_name?: string;
+  rank?: string;
+  exam?: string;
+  year?: string;
+  paper?: string;
+  subject?: string;
+  test_series?: string;
+  coaching_institute?: string;
+  test_code?: string;
+  test_date?: string;
+  language?: string;
+  tags?: string[];
+  search_hints?: string[];
+  notes?: string;
+}
+
+export interface QuestionMetadata {
+  subject?: string;
+  topic?: string;
+  subtopic?: string;
+  syllabus_area?: string;
+  paper?: string;
+  question_type?: string;
+  demand?: string;
+  difficulty?: string;
+  marks?: number;
+  word_limit?: number;
+  tags?: string[];
+  search_hints?: string[];
+}
+
 export interface TopperCopyQuestion {
   id: string;
   label: string;
@@ -26,6 +60,7 @@ export interface TopperCopyQuestion {
   source_pages: number[];
   status: string;
   dimensions?: QuestionDimensions;
+  metadata?: QuestionMetadata;
 }
 
 export interface TopperCopyReview {
@@ -33,6 +68,7 @@ export interface TopperCopyReview {
   review_id: string;
   pdf_name: string;
   source_mode?: "pdf_direct" | "images" | string;
+  metadata?: CopyMetadata;
   pages: TopperCopyPage[];
   questions: TopperCopyQuestion[];
   report: string;

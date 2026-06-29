@@ -333,7 +333,7 @@ func studyTopperReviewRecord(review analyze.Response, meta studyTopperReviewMeta
 	return storage.TopperReviewRecord{
 		ID:            review.ReviewID,
 		JobID:         meta.JobID,
-		PDFName:       review.PDFName,
+		PDFName:       studyTopperReviewPDFName(review),
 		SourcePath:    meta.SourcePath,
 		ProviderID:    meta.ProviderID,
 		Model:         meta.Model,
@@ -355,9 +355,17 @@ func studyTopperUnclearCount(review analyze.Response) int {
 	return total
 }
 
+func studyTopperReviewPDFName(review analyze.Response) string {
+	return firstString(copySuggestedPDFName(review.Metadata), review.PDFName)
+}
+
 func studyTopperSearchText(review analyze.Response) string {
 	var b strings.Builder
 	b.WriteString(review.PDFName)
+	if review.Metadata != nil {
+		b.WriteString("\n")
+		b.WriteString(jsonString(review.Metadata))
+	}
 	for _, page := range review.Pages {
 		b.WriteString("\n")
 		b.WriteString(page.Text)
@@ -367,6 +375,10 @@ func studyTopperSearchText(review analyze.Response) string {
 		b.WriteString(question.Label)
 		b.WriteString(" ")
 		b.WriteString(question.Title)
+		if question.Metadata != nil {
+			b.WriteString("\n")
+			b.WriteString(jsonString(question.Metadata))
+		}
 		b.WriteString("\n")
 		b.WriteString(question.AnswerMarkdown)
 	}

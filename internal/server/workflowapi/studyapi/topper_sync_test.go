@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +43,12 @@ func TestSaveStudyFromTopperRecordAsCopyPersistsSelectedStudyID(t *testing.T) {
 	if copyRecord.ID != existing.ID || copyRecord.CandidateName != existing.CandidateName {
 		t.Fatalf("copy = %#v, want selected study id and preserved metadata", copyRecord)
 	}
+	if copyRecord.PDFName != "A Topper - GS2.pdf" || copyRecord.Paper != "GS2" || copyRecord.TestCode != "GS2-0112" || copyRecord.CopyDate != "2020-12-01" {
+		t.Fatalf("copy = %#v, want AI copy metadata mapped into searchable fields", copyRecord)
+	}
+	if !strings.Contains(copyRecord.MetadataJSON, "Federalism") || !strings.Contains(copyRecord.MetadataJSON, "ForumIAS") {
+		t.Fatalf("metadata_json = %q, want copy and question metadata", copyRecord.MetadataJSON)
+	}
 	if copyRecord.QuestionCount != 1 || copyRecord.Status != "ready" {
 		t.Fatalf("copy = %#v, want ready review counts", copyRecord)
 	}
@@ -52,6 +59,9 @@ func TestSaveStudyFromTopperRecordAsCopyPersistsSelectedStudyID(t *testing.T) {
 	}
 	if len(questions) != 1 || questions[0].ID != "study-1-q1" || questions[0].CopyID != existing.ID {
 		t.Fatalf("questions = %#v, want selected-copy scoped question", questions)
+	}
+	if questions[0].Marks != 10 || questions[0].WordLimit != 150 || !strings.Contains(questions[0].MetadataJSON, "Federalism") {
+		t.Fatalf("question = %#v, want AI question metadata persisted", questions[0])
 	}
 	if _, err := store.GetStudyCopy(ctx, record.ID); !errors.Is(err, storage.ErrNotFound) {
 		t.Fatalf("GetStudyCopy(topper id) error = %v, want ErrNotFound", err)
@@ -128,6 +138,15 @@ func topperReviewRecordForStudySyncTest(t *testing.T) storage.TopperReviewRecord
 		Kind:     "topper_copy_review",
 		ReviewID: "topper-1",
 		PDFName:  "testing.pdf",
+		Metadata: &analyze.CopyMetadata{
+			SuggestedPDFName:  "A Topper - GS2.pdf",
+			TopperName:        "A Topper",
+			Paper:             "GS2",
+			TestCode:          "GS2-0112",
+			TestDate:          "2020-12-01",
+			CoachingInstitute: "ForumIAS",
+			Tags:              []string{"GS2", "Polity"},
+		},
 		Pages: []analyze.Page{{
 			Number: 1,
 			Name:   "page-1",
@@ -140,6 +159,14 @@ func topperReviewRecordForStudySyncTest(t *testing.T) storage.TopperReviewRecord
 			AnswerMarkdown: "Answer text",
 			SourcePages:    []int{1},
 			Status:         "ready",
+			Metadata: &analyze.QuestionMetadata{
+				Subject:   "Polity",
+				Topic:     "Federalism",
+				Paper:     "GS2",
+				Marks:     10,
+				WordLimit: 150,
+				Tags:      []string{"Centre-state relations"},
+			},
 		}},
 		Report: "Copy report",
 	}

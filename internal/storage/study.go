@@ -18,8 +18,8 @@ func (s *SQLiteStore) SaveStudyCopy(ctx context.Context, record StudyCopyRecord)
 	record.UpdatedAt = now
 	_, err := s.db.ExecContext(ctx, `INSERT INTO study_copies (
 	id, source_path, source_hash, pdf_name, candidate_name, roll_no, email, test_code, paper, copy_date,
-	page_count, question_count, unclear_count, status, render_status, ocr_status, question_status, analysis_status, report_status, last_error, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	page_count, question_count, unclear_count, status, render_status, ocr_status, question_status, analysis_status, report_status, last_error, metadata_json, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
 	source_path = excluded.source_path,
 	source_hash = excluded.source_hash,
@@ -40,18 +40,19 @@ ON CONFLICT(id) DO UPDATE SET
 	analysis_status = excluded.analysis_status,
 	report_status = excluded.report_status,
 	last_error = excluded.last_error,
+	metadata_json = excluded.metadata_json,
 	updated_at = excluded.updated_at`,
 		record.ID, record.SourcePath, record.SourceHash, record.PDFName, record.CandidateName,
 		record.RollNo, record.Email, record.TestCode, record.Paper, record.CopyDate,
 		record.PageCount, record.QuestionCount, record.UnclearCount, record.Status,
 		record.RenderStatus, record.OCRStatus, record.QuestionStatus, record.AnalysisStatus,
-		record.ReportStatus, record.LastError, record.CreatedAt, record.UpdatedAt)
+		record.ReportStatus, record.LastError, record.MetadataJSON, record.CreatedAt, record.UpdatedAt)
 	return err
 }
 
 func (s *SQLiteStore) GetStudyCopy(ctx context.Context, id string) (StudyCopyRecord, error) {
 	var record StudyCopyRecord
-	err := scanStudyCopy(s.db.QueryRowContext(ctx, `SELECT id, source_path, source_hash, pdf_name, candidate_name, roll_no, email, test_code, paper, copy_date, page_count, question_count, unclear_count, status, render_status, ocr_status, question_status, analysis_status, report_status, last_error, created_at, updated_at FROM study_copies WHERE id = ?`, id), &record)
+	err := scanStudyCopy(s.db.QueryRowContext(ctx, `SELECT id, source_path, source_hash, pdf_name, candidate_name, roll_no, email, test_code, paper, copy_date, page_count, question_count, unclear_count, status, render_status, ocr_status, question_status, analysis_status, report_status, last_error, metadata_json, created_at, updated_at FROM study_copies WHERE id = ?`, id), &record)
 	if errors.Is(err, sql.ErrNoRows) {
 		return StudyCopyRecord{}, ErrNotFound
 	}
@@ -66,13 +67,13 @@ func (s *SQLiteStore) ListStudyCopies(ctx context.Context, opts StudyCopyListOpt
 	}
 	query := strings.TrimSpace(strings.ToLower(opts.Query))
 	status := strings.TrimSpace(strings.ToLower(opts.Status))
-	base := `SELECT id, source_path, source_hash, pdf_name, candidate_name, roll_no, email, test_code, paper, copy_date, page_count, question_count, unclear_count, status, render_status, ocr_status, question_status, analysis_status, report_status, last_error, created_at, updated_at FROM study_copies`
+	base := `SELECT id, source_path, source_hash, pdf_name, candidate_name, roll_no, email, test_code, paper, copy_date, page_count, question_count, unclear_count, status, render_status, ocr_status, question_status, analysis_status, report_status, last_error, metadata_json, created_at, updated_at FROM study_copies`
 	where := []string{}
 	args := []any{}
 	if query != "" {
 		like := "%" + query + "%"
-		where = append(where, `(lower(pdf_name) LIKE ? OR lower(candidate_name) LIKE ? OR lower(source_path) LIKE ? OR lower(paper) LIKE ?)`)
-		args = append(args, like, like, like, like)
+		where = append(where, `(lower(pdf_name) LIKE ? OR lower(candidate_name) LIKE ? OR lower(source_path) LIKE ? OR lower(paper) LIKE ? OR lower(test_code) LIKE ? OR lower(metadata_json) LIKE ?)`)
+		args = append(args, like, like, like, like, like, like)
 	}
 	if status != "" && status != "all" {
 		where = append(where, `lower(status) = ?`)
@@ -131,23 +132,24 @@ func (s *SQLiteStore) SaveStudyQuestion(ctx context.Context, question StudyQuest
 	}
 	question.UpdatedAt = now
 	sourcePages, _ := json.Marshal(question.SourcePages)
-	_, err := s.db.ExecContext(ctx, `INSERT INTO study_questions (id, copy_id, question_no, label, prompt_text, prompt_hi, marks, word_limit, answer_text, source_pages_json, status, feedback_json, analysis_json, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO study_questions (id, copy_id, question_no, label, prompt_text, prompt_hi, marks, word_limit, answer_text, source_pages_json, status, feedback_json, analysis_json, metadata_json, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
 	copy_id = excluded.copy_id, question_no = excluded.question_no, label = excluded.label,
 	prompt_text = excluded.prompt_text, prompt_hi = excluded.prompt_hi, marks = excluded.marks,
 	word_limit = excluded.word_limit, answer_text = excluded.answer_text,
 	source_pages_json = excluded.source_pages_json, status = excluded.status,
 	feedback_json = excluded.feedback_json, analysis_json = excluded.analysis_json,
+	metadata_json = excluded.metadata_json,
 	updated_at = excluded.updated_at`,
 		question.ID, question.CopyID, question.QuestionNo, question.Label, question.PromptText,
 		question.PromptHi, question.Marks, question.WordLimit, question.AnswerText, string(sourcePages),
-		question.Status, question.FeedbackJSON, question.AnalysisJSON, question.CreatedAt, question.UpdatedAt)
+		question.Status, question.FeedbackJSON, question.AnalysisJSON, question.MetadataJSON, question.CreatedAt, question.UpdatedAt)
 	return err
 }
 
 func (s *SQLiteStore) ListStudyQuestions(ctx context.Context, copyID string) ([]StudyQuestionRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, copy_id, question_no, label, prompt_text, prompt_hi, marks, word_limit, answer_text, source_pages_json, status, feedback_json, analysis_json, created_at, updated_at FROM study_questions WHERE copy_id = ? ORDER BY question_no, id`, copyID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, copy_id, question_no, label, prompt_text, prompt_hi, marks, word_limit, answer_text, source_pages_json, status, feedback_json, analysis_json, metadata_json, created_at, updated_at FROM study_questions WHERE copy_id = ? ORDER BY question_no, id`, copyID)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +158,7 @@ func (s *SQLiteStore) ListStudyQuestions(ctx context.Context, copyID string) ([]
 	for rows.Next() {
 		var question StudyQuestionRecord
 		var sourcePages string
-		if err := rows.Scan(&question.ID, &question.CopyID, &question.QuestionNo, &question.Label, &question.PromptText, &question.PromptHi, &question.Marks, &question.WordLimit, &question.AnswerText, &sourcePages, &question.Status, &question.FeedbackJSON, &question.AnalysisJSON, &question.CreatedAt, &question.UpdatedAt); err != nil {
+		if err := rows.Scan(&question.ID, &question.CopyID, &question.QuestionNo, &question.Label, &question.PromptText, &question.PromptHi, &question.Marks, &question.WordLimit, &question.AnswerText, &sourcePages, &question.Status, &question.FeedbackJSON, &question.AnalysisJSON, &question.MetadataJSON, &question.CreatedAt, &question.UpdatedAt); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(sourcePages), &question.SourcePages)
@@ -343,7 +345,7 @@ func (s *SQLiteStore) queryStudyCopies(ctx context.Context, query string, args .
 }
 
 func scanStudyCopy(row rowScanner, record *StudyCopyRecord) error {
-	return row.Scan(&record.ID, &record.SourcePath, &record.SourceHash, &record.PDFName, &record.CandidateName, &record.RollNo, &record.Email, &record.TestCode, &record.Paper, &record.CopyDate, &record.PageCount, &record.QuestionCount, &record.UnclearCount, &record.Status, &record.RenderStatus, &record.OCRStatus, &record.QuestionStatus, &record.AnalysisStatus, &record.ReportStatus, &record.LastError, &record.CreatedAt, &record.UpdatedAt)
+	return row.Scan(&record.ID, &record.SourcePath, &record.SourceHash, &record.PDFName, &record.CandidateName, &record.RollNo, &record.Email, &record.TestCode, &record.Paper, &record.CopyDate, &record.PageCount, &record.QuestionCount, &record.UnclearCount, &record.Status, &record.RenderStatus, &record.OCRStatus, &record.QuestionStatus, &record.AnalysisStatus, &record.ReportStatus, &record.LastError, &record.MetadataJSON, &record.CreatedAt, &record.UpdatedAt)
 }
 
 func scanStudyBatch(row rowScanner, batch *StudyBatchRecord) error {
@@ -402,8 +404,8 @@ type contextExecer interface {
 func saveStudyCopyExec(ctx context.Context, exec contextExecer, record StudyCopyRecord) error {
 	_, err := exec.ExecContext(ctx, `INSERT INTO study_copies (
 	id, source_path, source_hash, pdf_name, candidate_name, roll_no, email, test_code, paper, copy_date,
-	page_count, question_count, unclear_count, status, render_status, ocr_status, question_status, analysis_status, report_status, last_error, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	page_count, question_count, unclear_count, status, render_status, ocr_status, question_status, analysis_status, report_status, last_error, metadata_json, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
 	source_path = excluded.source_path,
 	source_hash = excluded.source_hash,
@@ -424,12 +426,13 @@ ON CONFLICT(id) DO UPDATE SET
 	analysis_status = excluded.analysis_status,
 	report_status = excluded.report_status,
 	last_error = excluded.last_error,
+	metadata_json = excluded.metadata_json,
 	updated_at = excluded.updated_at`,
 		record.ID, record.SourcePath, record.SourceHash, record.PDFName, record.CandidateName,
 		record.RollNo, record.Email, record.TestCode, record.Paper, record.CopyDate,
 		record.PageCount, record.QuestionCount, record.UnclearCount, record.Status,
 		record.RenderStatus, record.OCRStatus, record.QuestionStatus, record.AnalysisStatus,
-		record.ReportStatus, record.LastError, record.CreatedAt, record.UpdatedAt)
+		record.ReportStatus, record.LastError, record.MetadataJSON, record.CreatedAt, record.UpdatedAt)
 	return err
 }
 
@@ -449,18 +452,19 @@ ON CONFLICT(copy_id, page_number) DO UPDATE SET
 
 func saveStudyQuestionExec(ctx context.Context, exec contextExecer, question StudyQuestionRecord) error {
 	sourcePages, _ := json.Marshal(question.SourcePages)
-	_, err := exec.ExecContext(ctx, `INSERT INTO study_questions (id, copy_id, question_no, label, prompt_text, prompt_hi, marks, word_limit, answer_text, source_pages_json, status, feedback_json, analysis_json, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := exec.ExecContext(ctx, `INSERT INTO study_questions (id, copy_id, question_no, label, prompt_text, prompt_hi, marks, word_limit, answer_text, source_pages_json, status, feedback_json, analysis_json, metadata_json, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
 	copy_id = excluded.copy_id, question_no = excluded.question_no, label = excluded.label,
 	prompt_text = excluded.prompt_text, prompt_hi = excluded.prompt_hi, marks = excluded.marks,
 	word_limit = excluded.word_limit, answer_text = excluded.answer_text,
 	source_pages_json = excluded.source_pages_json, status = excluded.status,
 	feedback_json = excluded.feedback_json, analysis_json = excluded.analysis_json,
+	metadata_json = excluded.metadata_json,
 	updated_at = excluded.updated_at`,
 		question.ID, question.CopyID, question.QuestionNo, question.Label, question.PromptText,
 		question.PromptHi, question.Marks, question.WordLimit, question.AnswerText, string(sourcePages),
-		question.Status, question.FeedbackJSON, question.AnalysisJSON, question.CreatedAt, question.UpdatedAt)
+		question.Status, question.FeedbackJSON, question.AnalysisJSON, question.MetadataJSON, question.CreatedAt, question.UpdatedAt)
 	return err
 }
 

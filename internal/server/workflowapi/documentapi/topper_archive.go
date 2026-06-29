@@ -461,7 +461,7 @@ func buildTopperReviewRecord(review analyze.Response, meta topperReviewMeta, cre
 	return storage.TopperReviewRecord{
 		ID:            review.ReviewID,
 		JobID:         meta.JobID,
-		PDFName:       review.PDFName,
+		PDFName:       topperReviewPDFName(review),
 		SourcePath:    meta.SourcePath,
 		ProviderID:    meta.ProviderID,
 		Model:         meta.Model,
@@ -483,9 +483,20 @@ func topperUnclearCount(review analyze.Response) int {
 	return total
 }
 
+func topperReviewPDFName(review analyze.Response) string {
+	if review.Metadata != nil && strings.TrimSpace(review.Metadata.SuggestedPDFName) != "" {
+		return strings.TrimSpace(review.Metadata.SuggestedPDFName)
+	}
+	return review.PDFName
+}
+
 func topperSearchText(review analyze.Response) string {
 	var b strings.Builder
 	b.WriteString(review.PDFName)
+	if review.Metadata != nil {
+		b.WriteString("\n")
+		b.WriteString(jsonSearchText(review.Metadata))
+	}
 	for _, page := range review.Pages {
 		b.WriteString("\n")
 		b.WriteString(page.Text)
@@ -495,12 +506,21 @@ func topperSearchText(review analyze.Response) string {
 		b.WriteString(question.Label)
 		b.WriteString(" ")
 		b.WriteString(question.Title)
+		if question.Metadata != nil {
+			b.WriteString("\n")
+			b.WriteString(jsonSearchText(question.Metadata))
+		}
 		b.WriteString("\n")
 		b.WriteString(question.AnswerMarkdown)
 	}
 	b.WriteString("\n")
 	b.WriteString(review.Report)
 	return strings.ToLower(b.String())
+}
+
+func jsonSearchText(value any) string {
+	data, _ := json.Marshal(value)
+	return string(data)
 }
 
 func (h *Handler) backfillTopperReviews(ctx context.Context, store topperReviewStore) error {

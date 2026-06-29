@@ -91,6 +91,7 @@ type StudyCopyRecord struct {
 	AnalysisStatus string    `json:"analysis_status"`
 	ReportStatus   string    `json:"report_status"`
 	LastError      string    `json:"last_error"`
+	MetadataJSON   string    `json:"metadata_json"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
@@ -133,6 +134,7 @@ type StudyQuestionRecord struct {
 	Status       string    `json:"status"`
 	FeedbackJSON string    `json:"feedback_json"`
 	AnalysisJSON string    `json:"analysis_json"`
+	MetadataJSON string    `json:"metadata_json"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }

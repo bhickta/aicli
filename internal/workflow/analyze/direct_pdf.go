@@ -63,7 +63,7 @@ func (s *Service) directPDFReview(ctx context.Context, req Request, reviewID str
 		if err := validateDirectPDFFinishReason(res.FinishReason); err != nil {
 			return Response{}, err
 		}
-		pages, questions, report, err := parseOneShotPDFManifest(res.Content, pdfName)
+		metadata, pages, questions, report, err := parseOneShotPDFManifest(res.Content, pdfName)
 		if err != nil {
 			lastErr = err
 			if isIncompleteDirectPDFError(err) && attempt+1 < len(prompts) {
@@ -80,6 +80,7 @@ func (s *Service) directPDFReview(ctx context.Context, req Request, reviewID str
 			SourceMode: OCRInputModePDFDirect,
 			APICalls:   attempt + 1,
 			Usage:      usage,
+			Metadata:   metadata,
 			Pages:      pages,
 			Questions:  questions,
 			Report:     report,

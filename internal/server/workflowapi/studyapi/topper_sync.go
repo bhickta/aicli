@@ -235,13 +235,13 @@ func saveStudyFromTopperRecordAsCopy(
 		ID:             copyID,
 		SourcePath:     firstString(existing.SourcePath, record.SourcePath),
 		SourceHash:     firstString(existing.SourceHash, record.ID),
-		PDFName:        firstString(existing.PDFName, record.PDFName, review.PDFName),
-		CandidateName:  existing.CandidateName,
+		PDFName:        studyCopyNameFromMetadata(existing, record, review),
+		CandidateName:  firstString(existing.CandidateName, copyCandidateName(review.Metadata)),
 		RollNo:         existing.RollNo,
 		Email:          existing.Email,
-		TestCode:       existing.TestCode,
-		Paper:          existing.Paper,
-		CopyDate:       existing.CopyDate,
+		TestCode:       firstString(existing.TestCode, copyTestCode(review.Metadata)),
+		Paper:          firstString(existing.Paper, copyPaper(review.Metadata)),
+		CopyDate:       firstString(existing.CopyDate, copyDate(review.Metadata)),
 		PageCount:      len(review.Pages),
 		QuestionCount:  len(review.Questions),
 		UnclearCount:   record.UnclearCount,
@@ -251,11 +251,137 @@ func saveStudyFromTopperRecordAsCopy(
 		QuestionStatus: statusFromCount(len(review.Questions)),
 		AnalysisStatus: studyAnalysisStatus(review),
 		ReportStatus:   statusFromText(review.Report),
+		MetadataJSON:   firstString(studyCopyMetadataJSON(review), existing.MetadataJSON),
 		CreatedAt:      createdAt,
 	}
 	pages := studyPagesFromTopper(copyID, record.CreatedAt, review.Pages)
 	questions, analyses := studyQuestionsAndAnalysesFromTopper(copyID, record, review)
 	return store.ReplaceStudyCopyResult(ctx, copyRecord, pages, questions, analyses)
+}
+
+func studyCopyNameFromMetadata(
+	existing storage.StudyCopyRecord,
+	record storage.TopperReviewRecord,
+	review analyze.Response,
+) string {
+	existingName := strings.TrimSpace(existing.PDFName)
+	suggestedName := copySuggestedPDFName(review.Metadata)
+	rawName := firstString(topperRecordPDFName(record), review.PDFName)
+	rawSourceName := pathBase(record.SourcePath)
+	rawExistingName := sameText(existingName, rawName) || sameText(existingName, rawSourceName)
+	if suggestedName != "" && (existingName == "" || rawExistingName) {
+		return suggestedName
+	}
+	return firstString(existingName, suggestedName, rawName)
+}
+
+func copySuggestedPDFName(meta *analyze.CopyMetadata) string {
+	if meta == nil {
+		return ""
+	}
+	return strings.TrimSpace(meta.SuggestedPDFName)
+}
+
+func copyCandidateName(meta *analyze.CopyMetadata) string {
+	if meta == nil {
+		return ""
+	}
+	return firstString(meta.TopperName, meta.CandidateName)
+}
+
+func copyTestCode(meta *analyze.CopyMetadata) string {
+	if meta == nil {
+		return ""
+	}
+	return strings.TrimSpace(meta.TestCode)
+}
+
+func copyPaper(meta *analyze.CopyMetadata) string {
+	if meta == nil {
+		return ""
+	}
+	return firstString(meta.Paper, meta.Subject)
+}
+
+func copyDate(meta *analyze.CopyMetadata) string {
+	if meta == nil {
+		return ""
+	}
+	return strings.TrimSpace(meta.TestDate)
+}
+
+func studyCopyMetadataJSON(review analyze.Response) string {
+	payload := map[string]any{}
+	if review.Metadata != nil {
+		payload["copy"] = review.Metadata
+	}
+	questionMetadata := studyQuestionMetadataSummaries(review.Questions)
+	if len(questionMetadata) > 0 {
+		payload["questions"] = questionMetadata
+	}
+	if len(payload) == 0 {
+		return ""
+	}
+	return jsonString(payload)
+}
+
+type studyQuestionMetadataSummary struct {
+	ID       string                    `json:"id,omitempty"`
+	Label    string                    `json:"label,omitempty"`
+	Title    string                    `json:"title,omitempty"`
+	Metadata *analyze.QuestionMetadata `json:"metadata,omitempty"`
+}
+
+func studyQuestionMetadataSummaries(questions []analyze.Question) []studyQuestionMetadataSummary {
+	out := []studyQuestionMetadataSummary{}
+	for _, question := range questions {
+		if question.Metadata == nil {
+			continue
+		}
+		out = append(out, studyQuestionMetadataSummary{
+			ID:       question.ID,
+			Label:    question.Label,
+			Title:    question.Title,
+			Metadata: question.Metadata,
+		})
+	}
+	return out
+}
+
+func questionMetadataJSON(question analyze.Question) string {
+	if question.Metadata == nil {
+		return ""
+	}
+	return jsonString(question.Metadata)
+}
+
+func questionMarks(question analyze.Question) int {
+	if question.Metadata == nil {
+		return 0
+	}
+	return question.Metadata.Marks
+}
+
+func questionWordLimit(question analyze.Question) int {
+	if question.Metadata == nil {
+		return 0
+	}
+	return question.Metadata.WordLimit
+}
+
+func sameText(a string, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
+func pathBase(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
+	name := filepath.Base(path)
+	if name == "." {
+		return ""
+	}
+	return name
 }
 
 func studyPagesFromTopper(
@@ -292,15 +418,18 @@ func studyQuestionsAndAnalysesFromTopper(
 	for index, question := range review.Questions {
 		qid := scopedStudyQuestionID(copyID, question.ID, index+1)
 		questions = append(questions, storage.StudyQuestionRecord{
-			ID:          qid,
-			CopyID:      copyID,
-			QuestionNo:  inferQuestionNo(question.Label, index+1),
-			Label:       question.Label,
-			PromptText:  question.Title,
-			AnswerText:  question.AnswerMarkdown,
-			SourcePages: question.SourcePages,
-			Status:      firstString(question.Status, "ready"),
-			CreatedAt:   record.CreatedAt,
+			ID:           qid,
+			CopyID:       copyID,
+			QuestionNo:   inferQuestionNo(question.Label, index+1),
+			Label:        question.Label,
+			PromptText:   question.Title,
+			Marks:        questionMarks(question),
+			WordLimit:    questionWordLimit(question),
+			AnswerText:   question.AnswerMarkdown,
+			SourcePages:  question.SourcePages,
+			Status:       firstString(question.Status, "ready"),
+			MetadataJSON: questionMetadataJSON(question),
+			CreatedAt:    record.CreatedAt,
 		})
 		analyses = append(analyses, studyQuestionDimensionAnalyses(copyID, qid, record, question)...)
 	}
