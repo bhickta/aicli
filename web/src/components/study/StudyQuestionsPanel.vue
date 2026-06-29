@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { ref, watch, computed } from "vue";
 import type { StudyCopyDetail, StudyQuestionRecord } from "../../types";
 import StudyAnalyticsPanel from "./StudyAnalyticsPanel.vue";
 import StudyArchiveView from "../../views/StudyArchiveView.vue";
+import { api } from "../../lib/api";
+import { useToasts } from "../../composables/useToasts";
 
 const props = defineProps<{ detail: StudyCopyDetail | null }>();
+const toasts = useToasts();
 
 const rawReviewId = computed(() => {
   const id = props.detail?.copy.id;
@@ -16,6 +19,53 @@ const copiedId = ref<string | null>(null);
 const copiedType = ref<"answer" | "qa" | null>(null);
 const showAnalytics = ref(false);
 const showDebug = ref(false);
+
+const isEditingMetadata = ref(false);
+const metadataForm = ref({
+  pdf_name: "",
+  candidate_name: "",
+  paper: "",
+  test_code: "",
+  roll_no: "",
+});
+
+watch(
+  () => props.detail?.copy,
+  (newCopy) => {
+    if (newCopy) {
+      metadataForm.value = {
+        pdf_name: newCopy.pdf_name || "",
+        candidate_name: newCopy.candidate_name || "",
+        paper: newCopy.paper || "",
+        test_code: newCopy.test_code || "",
+        roll_no: newCopy.roll_no || "",
+      };
+      isEditingMetadata.value = false;
+    }
+  },
+  { immediate: true }
+);
+
+async function saveMetadata() {
+  if (!props.detail?.copy) return;
+  try {
+    const payload = await api<{ copy: any }>(`/api/study/copies/${encodeURIComponent(props.detail.copy.id)}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        pdf_name: metadataForm.value.pdf_name,
+        candidate_name: metadataForm.value.candidate_name,
+        paper: metadataForm.value.paper,
+        test_code: metadataForm.value.test_code,
+        roll_no: metadataForm.value.roll_no,
+      })
+    });
+    Object.assign(props.detail.copy, payload.copy);
+    isEditingMetadata.value = false;
+    toasts.success("Metadata Saved", "Successfully renamed copy details.");
+  } catch (e) {
+    toasts.error("Failed to save", e instanceof Error ? e.message : String(e));
+  }
+}
 
 function copyText(text: string, id: string, type: "answer" | "qa") {
   if (!text) return;
@@ -182,22 +232,36 @@ function getQuestionDimensions(questionId: string) {
         <StudyArchiveView :review-id="rawReviewId" />
       </div>
 
-      <div class="study-meta-grid">
+      <div class="study-meta-grid" style="position: relative;">
+        <div style="position: absolute; right: 0; top: -35px;">
+          <button v-if="!isEditingMetadata" type="button" class="study-btn-action" @click="isEditingMetadata = true">
+             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+             Edit Details
+          </button>
+          <button v-else type="button" class="study-btn-action primary" @click="saveMetadata">
+             Save Details
+          </button>
+        </div>
+
+        <label>
+          PDF / Copy Name
+          <input v-model="metadataForm.pdf_name" :readonly="!isEditingMetadata" :style="isEditingMetadata ? 'border-bottom: 1px solid var(--accent); border-radius: 0; background: rgba(255,255,255,0.05); padding-left: 4px;' : 'border: none; background: transparent; padding-left: 0;'" />
+        </label>
         <label>
           Candidate
-          <input :value="detail.copy.candidate_name" readonly />
+          <input v-model="metadataForm.candidate_name" :readonly="!isEditingMetadata" :style="isEditingMetadata ? 'border-bottom: 1px solid var(--accent); border-radius: 0; background: rgba(255,255,255,0.05); padding-left: 4px;' : 'border: none; background: transparent; padding-left: 0;'" />
         </label>
         <label>
           Paper
-          <input :value="detail.copy.paper" readonly />
+          <input v-model="metadataForm.paper" :readonly="!isEditingMetadata" :style="isEditingMetadata ? 'border-bottom: 1px solid var(--accent); border-radius: 0; background: rgba(255,255,255,0.05); padding-left: 4px;' : 'border: none; background: transparent; padding-left: 0;'" />
         </label>
         <label>
           Test code
-          <input :value="detail.copy.test_code" readonly />
+          <input v-model="metadataForm.test_code" :readonly="!isEditingMetadata" :style="isEditingMetadata ? 'border-bottom: 1px solid var(--accent); border-radius: 0; background: rgba(255,255,255,0.05); padding-left: 4px;' : 'border: none; background: transparent; padding-left: 0;'" />
         </label>
         <label>
           Roll no.
-          <input :value="detail.copy.roll_no" readonly />
+          <input v-model="metadataForm.roll_no" :readonly="!isEditingMetadata" :style="isEditingMetadata ? 'border-bottom: 1px solid var(--accent); border-radius: 0; background: rgba(255,255,255,0.05); padding-left: 4px;' : 'border: none; background: transparent; padding-left: 0;'" />
         </label>
       </div>
 

@@ -184,6 +184,57 @@
   color: #fecaca;
 }
 
+/* Embedded Sleek Control Panel */
+.study-review-controls.embedded {
+  background: transparent;
+  border: none;
+  padding: 16px;
+  gap: 20px;
+}
+
+.study-review-controls.embedded label {
+  color: #8b9bb4;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.study-review-controls.embedded .archive-actions {
+  width: 100%;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-start;
+  margin-top: 4px;
+}
+
+.study-review-controls.embedded .archive-actions button {
+  padding: 8px 16px;
+  font-weight: 500;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.study-review-controls.embedded .archive-actions button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.study-review-controls.embedded .archive-actions button.primary {
+  background: #3b82f6; /* Accent color */
+  color: #ffffff;
+  border-color: transparent;
+}
+
+.study-review-controls.embedded .archive-actions button.primary:hover:not(:disabled) {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
 @media (max-width: 920px) {
   .study-archive-toolbar,
   .study-archive-layout,

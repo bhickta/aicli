@@ -36,6 +36,7 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 		progressUnits(progress, "page OCR updated", completed, total, "stage")
 	}
 
+	var newlySplitQuestions []Question
 	if action == "questions" || action == "all" {
 		pages := answerBearingPages(pagesFromSet(review.Pages, selected))
 		stageStart := time.Now()
@@ -47,16 +48,32 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 			return Response{}, err
 		}
 		s.logInfo("topper copy reprocess question split completed", "review_id", review.ReviewID, "pages", len(pages), "questions", len(questions), "elapsed_ms", elapsedMS(stageStart))
+		
+		newlySplitQuestions = questions
+		review.Questions = replaceQuestionsForPages(review.Questions, questions, selected)
+		completed += len(selected)
+		progressUnits(progress, "question blocks updated", completed, total, "stage")
+	}
 
-		stageStart = time.Now()
-		questions = s.extractDimensions(ctx, firstNonBlank(req.QuestionModel, req.Model), questions, req.QuestionWorkers, func(done int, totalQ int) {
+	if action == "analytics" || action == "questions" || action == "all" {
+		stageStart := time.Now()
+		
+		targetQuestions := newlySplitQuestions
+		if len(targetQuestions) == 0 {
+			targetQuestions = questionsForPages(review.Questions, answerBearingPages(pagesFromSet(review.Pages, selected)))
+		}
+
+		questions := s.extractDimensions(ctx, firstNonBlank(req.QuestionModel, req.Model), targetQuestions, req.QuestionWorkers, func(done int, totalQ int) {
 			// Optional: we can report progress without incrementing the global stage tracker until finished
 		})
 		s.logInfo("topper copy reprocess dimensions extracted", "review_id", review.ReviewID, "questions", len(questions), "elapsed_ms", elapsedMS(stageStart))
 
 		review.Questions = replaceQuestionsForPages(review.Questions, questions, selected)
-		completed += len(selected)
-		progressUnits(progress, "question blocks updated", completed, total, "stage")
+		
+		if action == "analytics" {
+			completed += len(selected)
+			progressUnits(progress, "analytics updated", completed, total, "stage")
+		}
 	}
 
 	if action == "report" || action == "questions" || action == "all" {
@@ -121,6 +138,8 @@ func reprocessTotalUnits(action string, pages int) int {
 		total = pages
 	case "questions":
 		total = pages + 1
+	case "analytics":
+		total = pages
 	case "report":
 		total = 1
 	default:

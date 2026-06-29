@@ -67,11 +67,11 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
       </aside>
 
       <main class="study-review-main" :style="reviewId ? 'padding: 0; background: transparent; border: none;' : ''">
-        <section v-if="archive.selectedReview.value" class="study-review-controls">
+        <section v-if="archive.selectedReview.value" :class="['study-review-controls', reviewId ? 'embedded' : '']">
           <div class="study-review-control-row">
             <div class="study-step-models">
               <div class="field">
-                <label>OCR model</label>
+                <label>OCR Model</label>
                 <ProviderModelControl
                   :provider-id="archive.ocrProviderModel.provider_id"
                   :model="archive.ocrProviderModel.model"
@@ -79,7 +79,7 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
                 />
               </div>
               <div class="field">
-                <label>Question split model</label>
+                <label>Question Split Model</label>
                 <ProviderModelControl
                   :provider-id="archive.questionProviderModel.provider_id"
                   :model="archive.questionProviderModel.model"
@@ -87,7 +87,7 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
                 />
               </div>
               <div class="field">
-                <label>Report model</label>
+                <label>Report Model</label>
                 <ProviderModelControl
                   :provider-id="archive.reportProviderModel.provider_id"
                   :model="archive.reportProviderModel.model"
@@ -95,51 +95,43 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
                 />
               </div>
             </div>
-            <div class="study-worker-controls">
-              <label>
-                OCR
-                <input v-model.number="archive.ocrWorkers.value" type="number" min="0">
-              </label>
-              <label>
-                OCR batch
-                <input v-model.number="archive.ocrBatchSize.value" type="number" min="0" max="10">
-              </label>
-              <label>
-                Questions
-                <input v-model.number="archive.questionWorkers.value" type="number" min="0">
-              </label>
+            
+            <div class="study-worker-controls" v-if="!reviewId">
+              <label>OCR <input v-model.number="archive.ocrWorkers.value" type="number" min="0"></label>
+              <label>OCR batch <input v-model.number="archive.ocrBatchSize.value" type="number" min="0" max="10"></label>
+              <label>Questions <input v-model.number="archive.questionWorkers.value" type="number" min="0"></label>
             </div>
           </div>
+
           <div class="study-review-action-row">
             <div class="archive-actions">
-              <button type="button" :disabled="archive.running.value" @click="archive.saveReview()">Save edits</button>
-              <button type="button" :disabled="archive.running.value" @click="rerun('questions')">Rerun questions</button>
-              <button type="button" :disabled="archive.running.value" @click="rerun('report')">Rerun report</button>
-              <button type="button" :disabled="archive.running.value || !archive.canRerunOCR.value" @click="rerun('all')">Rerun all</button>
+              <button type="button" :disabled="archive.running.value" @click="archive.saveReview()">Save Edits</button>
+              <button type="button" class="primary" :disabled="archive.running.value" @click="rerun('questions')">Rerun Questions</button>
+              <button type="button" :disabled="archive.running.value" @click="rerun('report')">Rerun Report</button>
+              <button type="button" :disabled="archive.running.value || !archive.canRerunOCR.value" @click="rerun('all')">Rerun All</button>
             </div>
-            <div class="archive-delete">
+            
+            <div class="archive-delete" v-if="!reviewId">
               <label class="checkbox">
-                <input v-model="archive.unloadModels.value" type="checkbox">
-                Unload local models after run
+                <input v-model="archive.unloadModels.value" type="checkbox"> Unload models
               </label>
               <label class="checkbox">
-                <input v-model="archive.deletePDF.value" type="checkbox">
-                Delete uploaded PDF too
+                <input v-model="archive.deletePDF.value" type="checkbox"> Delete PDF
               </label>
-              <button type="button" class="danger-button" :disabled="archive.running.value" @click="archive.deleteReview()">Delete copy + assets</button>
+              <button type="button" class="danger-button" :disabled="archive.running.value" @click="archive.deleteReview()">Delete Copy</button>
             </div>
           </div>
         </section>
 
         <TopperCopyReviewResult
-          v-if="archive.selectedReview.value"
+          v-if="!reviewId && archive.selectedReview.value"
           :review="archive.selectedReview.value"
           editable
           :busy="archive.running.value"
           @update:review="archive.updateSelectedReview"
           @rerun-page="(action, pageNumber) => rerun(action, [pageNumber])"
         />
-        <p v-else class="empty-state">Select a review to inspect OCR, questions, and report.</p>
+        <p v-else-if="!reviewId" class="empty-state">Select a review to inspect OCR, questions, and report.</p>
       </main>
     </div>
   </div>
