@@ -22,6 +22,7 @@ export function useStudyArchive() {
   const reportProviderModel = reactive({ provider_id: "", model: "" });
   const questionWorkers = shallowRef(0);
   const ocrWorkers = shallowRef(0);
+  const ocrBatchSize = shallowRef(0);
   const unloadModels = shallowRef(true);
 
   const summary = computed(() => {
@@ -92,6 +93,7 @@ export function useStudyArchive() {
           question_split: true,
           question_workers: questionWorkers.value,
           workers: ocrWorkers.value,
+          ocr_batch_size: ocrBatchSize.value,
           unload_models: unloadModels.value,
         }),
       });
@@ -162,6 +164,7 @@ export function useStudyArchive() {
     reportProviderModel,
     questionWorkers,
     ocrWorkers,
+    ocrBatchSize,
     unloadModels,
     summary,
     canRerunOCR,

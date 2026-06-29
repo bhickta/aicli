@@ -25,7 +25,7 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 
 	if action == "ocr" || action == "all" {
 		stageStart := time.Now()
-		if err := s.reprocessOCRPages(ctx, firstNonBlank(req.OCRModel, req.Model), &review, selected, req.Workers, func(done int, totalPages int) {
+		if err := s.reprocessOCRPages(ctx, firstNonBlank(req.OCRModel, req.Model), &review, selected, req.Workers, req.OCRBatchSize, func(done int, totalPages int) {
 			progressUnits(progress, fmt.Sprintf("rerunning OCR for %d page(s)", totalPages), completed+done, total, "page")
 		}); err != nil {
 			s.logWarn("topper copy reprocess OCR failed", "review_id", review.ReviewID, "selected_pages", len(selected), "elapsed_ms", elapsedMS(stageStart), "error", err)
@@ -72,7 +72,7 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 	return review, nil
 }
 
-func (s *Service) reprocessOCRPages(ctx context.Context, model string, review *Response, selected map[int]bool, workers int, progress func(completed int, total int)) error {
+func (s *Service) reprocessOCRPages(ctx context.Context, model string, review *Response, selected map[int]bool, workers int, batchSize int, progress func(completed int, total int)) error {
 	inputs := []document.ImageInput{}
 	indexes := []int{}
 	for index, page := range review.Pages {
@@ -89,7 +89,12 @@ func (s *Service) reprocessOCRPages(ctx context.Context, model string, review *R
 	if len(inputs) == 0 {
 		return nil
 	}
-	ocrPages, err := document.OCRImagesWithLogger(ctx, s.ocrProvider, model, inputs, topperCopyOCRPrompt, workers, s.logger, progress)
+	ocrPages, err := document.OCRImagesWithOptions(ctx, s.ocrProvider, model, inputs, topperCopyOCRPrompt, document.OCRImagesOptions{
+		Workers:   workers,
+		BatchSize: batchSize,
+		Logger:    s.logger,
+		Progress:  progress,
+	})
 	if err != nil {
 		return err
 	}

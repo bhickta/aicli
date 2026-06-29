@@ -49,12 +49,19 @@ type EmbeddingResponse struct {
 }
 
 type VisionRequest struct {
-	Model       string  `json:"model"`
-	Prompt      string  `json:"prompt"`
-	Image       []byte  `json:"-"`
-	MIMEType    string  `json:"mime_type"`
+	Model       string `json:"model"`
+	Prompt      string `json:"prompt"`
+	Image       []byte `json:"-"`
+	MIMEType    string `json:"mime_type"`
+	Images      []VisionImage
 	Temperature float64 `json:"temperature"`
 	MaxTokens   int     `json:"max_tokens"`
+}
+
+type VisionImage struct {
+	Name     string
+	Image    []byte
+	MIMEType string
 }
 
 type Provider interface {

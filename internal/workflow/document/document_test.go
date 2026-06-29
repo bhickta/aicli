@@ -90,6 +90,52 @@ func (localFakeVision) LocalModelServer() bool {
 	return true
 }
 
+type geminiFakeVision struct {
+	fakeVision
+}
+
+func (geminiFakeVision) ID() string { return "gemini" }
+
+type batchVision struct {
+	mu        sync.Mutex
+	maxImages int
+	calls     int
+}
+
+func (batchVision) ID() string { return "gemini" }
+func (batchVision) Health(context.Context) error {
+	return nil
+}
+func (batchVision) ListModels(context.Context) ([]provider.Model, error) {
+	return []provider.Model{}, nil
+}
+func (batchVision) Chat(context.Context, provider.ChatRequest) (provider.ChatResponse, error) {
+	return provider.ChatResponse{}, nil
+}
+func (batchVision) ChatStream(context.Context, provider.ChatRequest, func(string) error) error {
+	return nil
+}
+func (v *batchVision) Vision(_ context.Context, req provider.VisionRequest) (provider.ChatResponse, error) {
+	v.mu.Lock()
+	v.calls++
+	if len(req.Images) > v.maxImages {
+		v.maxImages = len(req.Images)
+	}
+	v.mu.Unlock()
+	if len(req.Images) == 0 {
+		return provider.ChatResponse{Content: string(req.Image)}, nil
+	}
+	var out strings.Builder
+	for _, image := range req.Images {
+		out.WriteString("<!-- OCR_PAGE ")
+		out.WriteString(image.Name)
+		out.WriteString(" -->\n")
+		out.WriteString(string(image.Image))
+		out.WriteString("\n")
+	}
+	return provider.ChatResponse{Content: out.String()}, nil
+}
+
 type flakyVision struct{}
 
 func (flakyVision) ID() string { return "flaky" }
@@ -253,6 +299,33 @@ func TestOCRImagesKeepsInputOrder(t *testing.T) {
 	}
 	if pages[0].Name != "b" || pages[1].Name != "a" {
 		t.Fatalf("pages = %#v, want input order preserved", pages)
+	}
+}
+
+func TestOCRImagesBatchesGeminiPages(t *testing.T) {
+	t.Parallel()
+
+	vision := &batchVision{}
+	pages, err := OCRImagesWithOptions(
+		context.Background(),
+		vision,
+		"model",
+		[]ImageInput{
+			{Name: "page-1", Data: []byte("one")},
+			{Name: "page-2", Data: []byte("two")},
+			{Name: "page-3", Data: []byte("three")},
+		},
+		"prompt",
+		OCRImagesOptions{Workers: 1, BatchSize: 2},
+	)
+	if err != nil {
+		t.Fatalf("OCRImagesWithOptions() error = %v", err)
+	}
+	if pages[0].Text != "one" || pages[1].Text != "two" || pages[2].Text != "three" {
+		t.Fatalf("pages = %#v, want per-page batch OCR", pages)
+	}
+	if vision.maxImages != 2 {
+		t.Fatalf("max batch images = %d, want 2", vision.maxImages)
 	}
 }
 
@@ -471,6 +544,30 @@ func TestEffectiveOCRWorkersUsesProviderCapability(t *testing.T) {
 			got := EffectiveOCRWorkersForVisionProvider(tt.workers, tt.jobs, tt.vision)
 			if got != tt.want {
 				t.Fatalf("EffectiveOCRWorkersForVisionProvider(%d, %d, %T) = %d, want %d", tt.workers, tt.jobs, tt.vision, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEffectiveOCRBatchSizeForVisionProvider(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		batchSize int
+		vision    provider.Provider
+		want      int
+	}{
+		{name: "gemini auto batches five pages", batchSize: 0, vision: geminiFakeVision{}, want: 5},
+		{name: "local auto stays single page", batchSize: 0, vision: localFakeVision{}, want: 1},
+		{name: "explicit batch size honored", batchSize: 3, vision: geminiFakeVision{}, want: 3},
+		{name: "explicit batch size capped", batchSize: 99, vision: geminiFakeVision{}, want: 10},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := EffectiveOCRBatchSizeForVisionProvider(tt.batchSize, tt.vision)
+			if got != tt.want {
+				t.Fatalf("EffectiveOCRBatchSizeForVisionProvider(%d, %T) = %d, want %d", tt.batchSize, tt.vision, got, tt.want)
 			}
 		})
 	}

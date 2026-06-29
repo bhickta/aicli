@@ -330,6 +330,56 @@ func TestOpenAICompatibleChatPreservesFinishReason(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleVisionSendsMultipleImages(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("path = %s, want /v1/chat/completions", r.URL.Path)
+		}
+		var body struct {
+			Messages []struct {
+				Content []struct {
+					Type string `json:"type"`
+				} `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		imageParts := 0
+		textParts := 0
+		for _, part := range body.Messages[0].Content {
+			if part.Type == "image_url" {
+				imageParts++
+			}
+			if part.Type == "text" {
+				textParts++
+			}
+		}
+		if imageParts != 2 || textParts < 3 {
+			t.Fatalf("content parts = %#v, want prompt + labels + 2 images", body.Messages[0].Content)
+		}
+		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"done"}}]}`))
+	}))
+	defer srv.Close()
+
+	p := NewCompatible(config.ProviderConfig{ID: "gemini", BaseURL: srv.URL + "/v1", Model: "model"}, srv.Client())
+	res, err := p.Vision(context.Background(), provider.VisionRequest{
+		Prompt: "ocr",
+		Images: []provider.VisionImage{
+			{Name: "page-1", Image: []byte("one"), MIMEType: "image/jpeg"},
+			{Name: "page-2", Image: []byte("two"), MIMEType: "image/jpeg"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Vision() error = %v", err)
+	}
+	if res.Content != "done" {
+		t.Fatalf("content = %q, want done", res.Content)
+	}
+}
+
 func TestOpenAICompatibleUnloadLMStudioUsesInstanceIDOnly(t *testing.T) {
 	t.Parallel()
 

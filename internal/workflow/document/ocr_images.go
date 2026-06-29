@@ -2,6 +2,7 @@ package document
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +18,13 @@ import (
 
 const topperCopyOCRMaxTokens = 5000
 
+type OCRImagesOptions struct {
+	Workers   int
+	BatchSize int
+	Logger    *slog.Logger
+	Progress  func(completed int, total int)
+}
+
 func OCRImages(
 	ctx context.Context,
 	vision provider.Provider,
@@ -26,7 +34,7 @@ func OCRImages(
 	workers int,
 	progress func(completed int, total int),
 ) ([]OCRPage, error) {
-	return OCRImagesWithLogger(ctx, vision, model, inputs, prompt, workers, nil, progress)
+	return OCRImagesWithOptions(ctx, vision, model, inputs, prompt, OCRImagesOptions{Workers: workers, Progress: progress})
 }
 
 func OCRImagesWithLogger(
@@ -38,6 +46,17 @@ func OCRImagesWithLogger(
 	workers int,
 	logger *slog.Logger,
 	progress func(completed int, total int),
+) ([]OCRPage, error) {
+	return OCRImagesWithOptions(ctx, vision, model, inputs, prompt, OCRImagesOptions{Workers: workers, Logger: logger, Progress: progress})
+}
+
+func OCRImagesWithOptions(
+	ctx context.Context,
+	vision provider.Provider,
+	model string,
+	inputs []ImageInput,
+	prompt string,
+	opts OCRImagesOptions,
 ) ([]OCRPage, error) {
 	if vision == nil {
 		return nil, errors.New("provider is required")
@@ -56,28 +75,40 @@ func OCRImagesWithLogger(
 		if failure != nil {
 			preflightFailures = append(preflightFailures, *failure)
 		} else {
-			reportPageProgress(progress, &completed, &completedMu, len(inputs))
+			reportPageProgress(opts.Progress, &completed, &completedMu, len(inputs))
 		}
 		startIndex = 1
 	}
-	workers = EffectiveOCRWorkersForVisionProvider(workers, len(inputs), vision)
+	workers := EffectiveOCRWorkersForVisionProvider(opts.Workers, len(inputs), vision)
+	batchSize := EffectiveOCRBatchSizeForVisionProvider(opts.BatchSize, vision)
 	workflowStart := time.Now()
-	logOCRInfo(logger, "OCR image batch started", "pages", len(inputs), "workers", workers, "provider", providerID(vision), "model", model)
-	jobs := make(chan int)
+	logOCRInfo(opts.Logger, "OCR image batch started", "pages", len(inputs), "workers", workers, "batch_size", batchSize, "provider", providerID(vision), "model", model)
+	jobs := make(chan []int)
 	errCh := make(chan pageError, len(inputs))
 
 	var wg sync.WaitGroup
 	for range workers {
 		wg.Add(1)
-		go ocrImageWorker(ctx, vision, model, inputs, prompt, pages, jobs, errCh, logger, progress, &completed, &completedMu, &wg)
+		go ocrImageWorker(ctx, vision, model, inputs, prompt, pages, jobs, errCh, opts.Logger, opts.Progress, &completed, &completedMu, &wg)
 	}
-	for index := startIndex; index < len(inputs); index++ {
+	for index := startIndex; index < len(inputs); {
+		end := index + batchSize
+		if end > len(inputs) {
+			end = len(inputs)
+		}
+		batch := make([]int, 0, end-index)
+		for batchIndex := index; batchIndex < end; batchIndex++ {
+			batch = append(batch, batchIndex)
+		}
 		select {
 		case <-ctx.Done():
-			errCh <- pageError{Index: index, Name: inputs[index].Name, Err: ctx.Err()}
-			pages[index] = failedOCRPage(inputs[index], ctx.Err())
-		case jobs <- index:
+			for _, failedIndex := range batch {
+				errCh <- pageError{Index: failedIndex, Name: inputs[failedIndex].Name, Err: ctx.Err()}
+				pages[failedIndex] = failedOCRPage(inputs[failedIndex], ctx.Err())
+			}
+		case jobs <- batch:
 		}
+		index = end
 	}
 	close(jobs)
 	wg.Wait()
@@ -88,8 +119,8 @@ func OCRImagesWithLogger(
 		failures = append(failures, err)
 	}
 	firstPassFailures := len(failures)
-	failures = retryFailedOCRPages(ctx, vision, model, inputs, prompt, pages, failures, logger)
-	logOCRInfo(logger, "OCR image batch completed", "pages", len(inputs), "workers", workers, "first_pass_failures", firstPassFailures, "remaining_failures", len(failures), "elapsed_ms", time.Since(workflowStart).Milliseconds())
+	failures = retryFailedOCRPages(ctx, vision, model, inputs, prompt, pages, failures, opts.Logger)
+	logOCRInfo(opts.Logger, "OCR image batch completed", "pages", len(inputs), "workers", workers, "batch_size", batchSize, "first_pass_failures", firstPassFailures, "remaining_failures", len(failures), "elapsed_ms", time.Since(workflowStart).Milliseconds())
 	if len(failures) == len(inputs) && len(inputs) > 0 {
 		return pages, pageErrors(failures)
 	}
@@ -132,6 +163,22 @@ func EffectiveOCRWorkersForVisionProvider(workers int, jobs int, vision provider
 	return workers
 }
 
+func EffectiveOCRBatchSizeForVisionProvider(batchSize int, vision provider.Provider) int {
+	if batchSize > 0 {
+		if batchSize > 10 {
+			return 10
+		}
+		return batchSize
+	}
+	if isLocalVisionProvider(vision) {
+		return 1
+	}
+	if isGeminiVisionProvider(vision) {
+		return 5
+	}
+	return 1
+}
+
 func effectiveOCRWorkers(workers int, jobs int) int {
 	if jobs <= 1 {
 		return 1
@@ -165,6 +212,13 @@ func isLocalVisionProvider(vision provider.Provider) bool {
 	return localOCRWorkerLimit(vision.ID()) > 0
 }
 
+func isGeminiVisionProvider(vision provider.Provider) bool {
+	if vision == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(strings.TrimSpace(vision.ID())), "gemini")
+}
+
 func ocrImageWorker(
 	ctx context.Context,
 	vision provider.Provider,
@@ -172,7 +226,7 @@ func ocrImageWorker(
 	inputs []ImageInput,
 	prompt string,
 	pages []OCRPage,
-	jobs <-chan int,
+	jobs <-chan []int,
 	errCh chan<- pageError,
 	logger *slog.Logger,
 	progress func(completed int, total int),
@@ -181,18 +235,23 @@ func ocrImageWorker(
 	wg *sync.WaitGroup,
 ) {
 	defer wg.Done()
-	for index := range jobs {
+	for batch := range jobs {
 		start := time.Now()
-		page, err := ocrImage(ctx, vision, model, inputs[index], prompt)
+		batchPages, err := ocrImageBatch(ctx, vision, model, inputs, batch, prompt)
 		if err != nil {
-			errCh <- pageError{Index: index, Name: inputs[index].Name, Err: err}
-			pages[index] = failedOCRPage(inputs[index], err)
-			logOCRWarn(logger, "OCR page failed", "page", inputs[index].Name, "attempt", "parallel", "elapsed_ms", time.Since(start).Milliseconds(), "error", err)
-		} else {
-			pages[index] = page
-			logOCRInfo(logger, "OCR page completed", "page", inputs[index].Name, "attempt", "parallel", "chars", len(page.Text), "elapsed_ms", time.Since(start).Milliseconds())
+			for _, index := range batch {
+				errCh <- pageError{Index: index, Name: inputs[index].Name, Err: err}
+				pages[index] = failedOCRPage(inputs[index], err)
+				reportPageProgress(progress, completed, completedMu, len(inputs))
+			}
+			logOCRWarn(logger, "OCR page batch failed", "pages", batchNames(inputs, batch), "attempt", "parallel", "elapsed_ms", time.Since(start).Milliseconds(), "error", err)
+			continue
 		}
-		reportPageProgress(progress, completed, completedMu, len(inputs))
+		for _, page := range batchPages {
+			pages[page.Index] = page.OCRPage
+			reportPageProgress(progress, completed, completedMu, len(inputs))
+		}
+		logOCRInfo(logger, "OCR page batch completed", "pages", batchNames(inputs, batch), "attempt", "parallel", "count", len(batchPages), "elapsed_ms", time.Since(start).Milliseconds())
 	}
 }
 
@@ -275,6 +334,143 @@ func ocrImage(ctx context.Context, vision provider.Provider, model string, input
 		Path: input.Path,
 		Text: text,
 	}, nil
+}
+
+type indexedOCRPage struct {
+	Index int
+	OCRPage
+}
+
+func ocrImageBatch(ctx context.Context, vision provider.Provider, model string, inputs []ImageInput, indexes []int, prompt string) ([]indexedOCRPage, error) {
+	if len(indexes) == 0 {
+		return nil, nil
+	}
+	if len(indexes) == 1 {
+		page, err := ocrImage(ctx, vision, model, inputs[indexes[0]], prompt)
+		if err != nil {
+			return nil, err
+		}
+		return []indexedOCRPage{{Index: indexes[0], OCRPage: page}}, nil
+	}
+	images := make([]provider.VisionImage, 0, len(indexes))
+	names := make([]string, 0, len(indexes))
+	for _, index := range indexes {
+		data := inputs[index].Data
+		if data == nil {
+			fileData, err := os.ReadFile(inputs[index].Path)
+			if err != nil {
+				return nil, err
+			}
+			data = fileData
+		}
+		mimeType := inputs[index].MIMEType
+		if mimeType == "" {
+			mimeType = "image/jpeg"
+		}
+		images = append(images, provider.VisionImage{
+			Name:     inputs[index].Name,
+			Image:    data,
+			MIMEType: mimeType,
+		})
+		names = append(names, inputs[index].Name)
+	}
+	res, err := vision.Vision(ctx, provider.VisionRequest{
+		Model:       model,
+		Prompt:      batchOCRPrompt(prompt, names),
+		Images:      images,
+		Temperature: 0,
+		MaxTokens:   topperCopyOCRMaxTokens * len(indexes),
+	})
+	if err != nil {
+		return nil, err
+	}
+	byName, err := cleanBatchOCRResponse(res, names)
+	if err != nil {
+		return nil, err
+	}
+	pages := make([]indexedOCRPage, 0, len(indexes))
+	for _, index := range indexes {
+		text, ok := byName[inputs[index].Name]
+		if !ok || strings.TrimSpace(text) == "" {
+			return nil, fmt.Errorf("batch OCR response missing %s", inputs[index].Name)
+		}
+		pages = append(pages, indexedOCRPage{
+			Index: index,
+			OCRPage: OCRPage{
+				Name: inputs[index].Name,
+				Path: inputs[index].Path,
+				Text: text,
+			},
+		})
+	}
+	return pages, nil
+}
+
+func batchOCRPrompt(prompt string, names []string) string {
+	var b strings.Builder
+	b.WriteString(prompt)
+	b.WriteString("\n\nYou will receive multiple answer-copy page images in order.\n")
+	b.WriteString("Return OCR for every image separately using exactly this marker before each page:\n")
+	b.WriteString("<!-- OCR_PAGE page-name -->\n")
+	b.WriteString("Use these page names only: ")
+	b.WriteString(strings.Join(names, ", "))
+	b.WriteString("\nDo not merge pages. Do not omit any page.")
+	return b.String()
+}
+
+func cleanBatchOCRResponse(res provider.ChatResponse, names []string) (map[string]string, error) {
+	text := strings.TrimSpace(res.Content)
+	if text == "" {
+		return nil, errors.New("OCR response was empty")
+	}
+	if looksLikeServerErrorPage(text) {
+		return nil, errors.New("OCR provider returned an error page instead of text")
+	}
+	blocks := parseBatchOCRBlocks(text)
+	if len(blocks) == 0 {
+		jsonBlocks := map[string]string{}
+		if err := json.Unmarshal([]byte(text), &jsonBlocks); err == nil && len(jsonBlocks) > 0 {
+			blocks = jsonBlocks
+		}
+	}
+	if len(blocks) == 0 {
+		return nil, errors.New("batch OCR response had no page markers")
+	}
+	out := make(map[string]string, len(blocks))
+	for _, name := range names {
+		raw := strings.TrimSpace(blocks[name])
+		if raw == "" {
+			continue
+		}
+		cleaned, err := cleanOCRResponse(provider.ChatResponse{Content: raw, FinishReason: res.FinishReason})
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		out[name] = cleaned
+	}
+	return out, nil
+}
+
+var batchOCRMarkerPattern = regexp.MustCompile(`(?m)^<!--\s*OCR_PAGE\s+([^>]+?)\s*-->\s*$`)
+
+func parseBatchOCRBlocks(text string) map[string]string {
+	matches := batchOCRMarkerPattern.FindAllStringSubmatchIndex(text, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	blocks := map[string]string{}
+	for i, match := range matches {
+		name := strings.TrimSpace(text[match[2]:match[3]])
+		start := match[1]
+		end := len(text)
+		if i+1 < len(matches) {
+			end = matches[i+1][0]
+		}
+		if name != "" {
+			blocks[name] = strings.TrimSpace(text[start:end])
+		}
+	}
+	return blocks
 }
 
 func cleanOCRResponse(res provider.ChatResponse) (string, error) {
@@ -391,6 +587,16 @@ func failedOCRPage(input ImageInput, err error) OCRPage {
 		Path: input.Path,
 		Text: "> OCR failed for this page: " + err.Error(),
 	}
+}
+
+func batchNames(inputs []ImageInput, indexes []int) string {
+	names := make([]string, 0, len(indexes))
+	for _, index := range indexes {
+		if index >= 0 && index < len(inputs) {
+			names = append(names, inputs[index].Name)
+		}
+	}
+	return strings.Join(names, ",")
 }
 
 func logOCRInfo(logger *slog.Logger, message string, args ...any) {

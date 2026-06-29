@@ -28,6 +28,7 @@ type Request struct {
 	DPI             int    `json:"dpi"`
 	RenderWorkers   int    `json:"render_workers"`
 	Workers         int    `json:"workers"`
+	OCRBatchSize    int    `json:"ocr_batch_size"`
 	QuestionSplit   bool   `json:"question_split"`
 	QuestionWorkers int    `json:"question_workers"`
 	UnloadModels    bool   `json:"unload_models"`
@@ -46,6 +47,7 @@ type ReprocessRequest struct {
 	QuestionSplit   bool   `json:"question_split"`
 	QuestionWorkers int    `json:"question_workers"`
 	Workers         int    `json:"workers"`
+	OCRBatchSize    int    `json:"ocr_batch_size"`
 	UnloadModels    bool   `json:"unload_models"`
 }
 

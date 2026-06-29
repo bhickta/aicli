@@ -17,7 +17,11 @@ func (p *Ollama) Vision(ctx context.Context, req provider.VisionRequest) (provid
 	if model == "" {
 		return provider.ChatResponse{}, errors.New("model is required")
 	}
-	if len(req.Image) == 0 {
+	image := req.Image
+	if len(image) == 0 && len(req.Images) > 0 {
+		image = req.Images[0].Image
+	}
+	if len(image) == 0 {
 		return provider.ChatResponse{}, errors.New("image is required")
 	}
 
@@ -27,7 +31,7 @@ func (p *Ollama) Vision(ctx context.Context, req provider.VisionRequest) (provid
 			{
 				"role":    "user",
 				"content": req.Prompt,
-				"images":  []string{base64.StdEncoding.EncodeToString(req.Image)},
+				"images":  []string{base64.StdEncoding.EncodeToString(image)},
 			},
 		},
 		"stream": false,

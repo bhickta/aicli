@@ -90,6 +90,10 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
                 <input v-model.number="archive.ocrWorkers.value" type="number" min="0">
               </label>
               <label>
+                OCR batch
+                <input v-model.number="archive.ocrBatchSize.value" type="number" min="0" max="10">
+              </label>
+              <label>
                 Questions
                 <input v-model.number="archive.questionWorkers.value" type="number" min="0">
               </label>

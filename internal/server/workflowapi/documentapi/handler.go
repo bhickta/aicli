@@ -157,6 +157,7 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 			DPI:             req.DPI,
 			RenderWorkers:   req.RenderWorkers,
 			Workers:         req.Workers,
+			OCRBatchSize:    req.OCRBatchSize,
 			QuestionSplit:   req.QuestionSplit,
 			QuestionWorkers: req.QuestionWorkers,
 			UnloadModels:    req.UnloadModels,

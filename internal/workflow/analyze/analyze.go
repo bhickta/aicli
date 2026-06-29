@@ -46,6 +46,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		"dpi", req.DPI,
 		"render_workers", req.RenderWorkers,
 		"requested_ocr_workers", req.Workers,
+		"requested_ocr_batch_size", req.OCRBatchSize,
 		"question_split", req.QuestionSplit,
 		"requested_question_workers", req.QuestionWorkers,
 		"ocr_provider", providerID(s.ocrProvider),
@@ -106,31 +107,36 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 			})
 		}
 		ocrWorkers := document.EffectiveOCRWorkersForVisionProvider(req.Workers, len(inputs), s.ocrProvider)
+		ocrBatchSize := document.EffectiveOCRBatchSizeForVisionProvider(req.OCRBatchSize, s.ocrProvider)
 		stageStart = time.Now()
 		s.logInfo("topper copy OCR started",
 			"path", req.Path,
 			"pages", len(inputs),
 			"workers", ocrWorkers,
+			"batch_size", ocrBatchSize,
 			"provider", providerID(s.ocrProvider),
 			"model", firstNonBlank(req.OCRModel, req.Model),
 		)
-		ocrPages, err := document.OCRImagesWithLogger(
+		ocrPages, err := document.OCRImagesWithOptions(
 			ctx,
 			s.ocrProvider,
 			firstNonBlank(req.OCRModel, req.Model),
 			inputs,
 			topperCopyOCRPrompt,
-			req.Workers,
-			s.logger,
-			func(completedPages int, totalPages int) {
-				progressUnits(progress, fmt.Sprintf("OCR pages with %d worker(s)", ocrWorkers), completedPages, totalPages, "page")
+			document.OCRImagesOptions{
+				Workers:   req.Workers,
+				BatchSize: req.OCRBatchSize,
+				Logger:    s.logger,
+				Progress: func(completedPages int, totalPages int) {
+					progressUnits(progress, fmt.Sprintf("OCR pages with %d worker(s), batch %d", ocrWorkers, ocrBatchSize), completedPages, totalPages, "page")
+				},
 			},
 		)
 		if err != nil {
-			s.logWarn("topper copy OCR failed", "path", req.Path, "pages", len(inputs), "workers", ocrWorkers, "elapsed_ms", elapsedMS(stageStart), "error", err)
+			s.logWarn("topper copy OCR failed", "path", req.Path, "pages", len(inputs), "workers", ocrWorkers, "batch_size", ocrBatchSize, "elapsed_ms", elapsedMS(stageStart), "error", err)
 			return Response{}, err
 		}
-		s.logInfo("topper copy OCR completed", "path", req.Path, "pages", len(ocrPages), "workers", ocrWorkers, "elapsed_ms", elapsedMS(stageStart))
+		s.logInfo("topper copy OCR completed", "path", req.Path, "pages", len(ocrPages), "workers", ocrWorkers, "batch_size", ocrBatchSize, "elapsed_ms", elapsedMS(stageStart))
 		completedSteps++
 		progressUnits(progress, "OCR pages complete", completedSteps, totalSteps, "step")
 		pages = make([]Page, 0, len(ocrPages))
