@@ -316,8 +316,9 @@ func saveStudyFromTopperRecord(ctx context.Context, store studyStore, record sto
 		}
 	}
 	for index, question := range review.Questions {
+		qid := firstString(question.ID, fmt.Sprintf("%s-q%d", record.ID, index+1))
 		if err := store.SaveStudyQuestion(ctx, storage.StudyQuestionRecord{
-			ID:          firstString(question.ID, fmt.Sprintf("%s-q%d", record.ID, index+1)),
+			ID:          qid,
 			CopyID:      record.ID,
 			QuestionNo:  inferQuestionNo(question.Label, index+1),
 			Label:       question.Label,
@@ -328,6 +329,33 @@ func saveStudyFromTopperRecord(ctx context.Context, store studyStore, record sto
 			CreatedAt:   record.CreatedAt,
 		}); err != nil {
 			return err
+		}
+
+		if question.Dimensions != nil {
+			dims := map[string]string{
+				"introduction": question.Dimensions.Introduction,
+				"outro":        question.Dimensions.Outro,
+				"transition":   question.Dimensions.Transition,
+				"diagram":      question.Dimensions.Diagram,
+			}
+			for key, val := range dims {
+				if strings.TrimSpace(val) == "" {
+					continue
+				}
+				if err := store.SaveStudyAnalysis(ctx, storage.StudyAnalysisRecord{
+					ID:           fmt.Sprintf("%s-dim-%s", qid, key),
+					CopyID:       record.ID,
+					ScopeType:    "question",
+					ScopeID:      qid,
+					DimensionKey: key,
+					ProviderID:   record.ProviderID,
+					Model:        record.Model,
+					ResultJSON:   jsonString(map[string]string{"analysis": val}),
+					CreatedAt:    record.CreatedAt,
+				}); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	if strings.TrimSpace(review.Report) != "" {

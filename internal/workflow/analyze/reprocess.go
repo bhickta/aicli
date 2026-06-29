@@ -47,6 +47,13 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 			return Response{}, err
 		}
 		s.logInfo("topper copy reprocess question split completed", "review_id", review.ReviewID, "pages", len(pages), "questions", len(questions), "elapsed_ms", elapsedMS(stageStart))
+
+		stageStart = time.Now()
+		questions = s.extractDimensions(ctx, firstNonBlank(req.QuestionModel, req.Model), questions, req.QuestionWorkers, func(done int, totalQ int) {
+			// Optional: we can report progress without incrementing the global stage tracker until finished
+		})
+		s.logInfo("topper copy reprocess dimensions extracted", "review_id", review.ReviewID, "questions", len(questions), "elapsed_ms", elapsedMS(stageStart))
+
 		review.Questions = replaceQuestionsForPages(review.Questions, questions, selected)
 		completed += len(selected)
 		progressUnits(progress, "question blocks updated", completed, total, "stage")

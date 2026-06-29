@@ -58,7 +58,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 	)
 	totalSteps := 3
 	if req.QuestionSplit {
-		totalSteps++
+		totalSteps += 2
 	}
 	completedSteps := 0
 	reviewIDValue := firstNonBlank(req.ReviewID, reviewID())
@@ -196,6 +196,15 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		s.logInfo("topper copy question split completed", "path", req.Path, "pages", len(analysisPages), "questions", len(questions), "workers", questionWorkers, "elapsed_ms", elapsedMS(stageStart))
 		completedSteps++
 		progressUnits(progress, "question-wise split complete", completedSteps, totalSteps, "step")
+
+		stageStart = time.Now()
+		s.logInfo("topper copy dimensions extraction started", "path", req.Path, "questions", len(questions), "workers", questionWorkers, "provider", providerID(s.questionProvider), "model", firstNonBlank(req.QuestionModel, req.Model))
+		questions = s.extractDimensions(ctx, firstNonBlank(req.QuestionModel, req.Model), questions, questionWorkers, func(completed int, total int) {
+			progressUnits(progress, fmt.Sprintf("extracting dimensions with %d worker(s)", questionWorkers), completed, total, "question")
+		})
+		s.logInfo("topper copy dimensions extraction completed", "path", req.Path, "questions", len(questions), "workers", questionWorkers, "elapsed_ms", elapsedMS(stageStart))
+		completedSteps++
+		progressUnits(progress, "dimensions extraction complete", completedSteps, totalSteps, "step")
 	}
 	progressUnits(progress, "generating final analysis", completedSteps, totalSteps, "step")
 	stageStart = time.Now()

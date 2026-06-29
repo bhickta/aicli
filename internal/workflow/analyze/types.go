@@ -62,13 +62,21 @@ type Page struct {
 	Verified     bool   `json:"verified"`
 }
 
+type QuestionDimensions struct {
+	Introduction string `json:"introduction"`
+	Outro        string `json:"outro"`
+	Transition   string `json:"transition"`
+	Diagram      string `json:"diagram"`
+}
+
 type Question struct {
-	ID             string `json:"id"`
-	Label          string `json:"label"`
-	Title          string `json:"title,omitempty"`
-	AnswerMarkdown string `json:"answer_markdown"`
-	SourcePages    []int  `json:"source_pages"`
-	Status         string `json:"status"`
+	ID             string              `json:"id"`
+	Label          string              `json:"label"`
+	Title          string              `json:"title,omitempty"`
+	AnswerMarkdown string              `json:"answer_markdown"`
+	SourcePages    []int               `json:"source_pages"`
+	Status         string              `json:"status"`
+	Dimensions     *QuestionDimensions `json:"dimensions,omitempty"`
 }
 
 type Response struct {

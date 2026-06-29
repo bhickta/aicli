@@ -120,6 +120,23 @@ function renderMarkdown(md: string): string {
 
   return resultLines.join("\n").replace(/<p><\/p>/g, "").replace(/(<br\/>\s*){2,}/g, "<br/>");
 }
+
+function getQuestionDimensions(questionId: string) {
+  if (!props.detail?.analyses) return {};
+  const dims: Record<string, string> = {};
+  
+  for (const analysis of props.detail.analyses) {
+    if (analysis.scope_type === "question" && analysis.scope_id === questionId) {
+      try {
+        const payload = JSON.parse(analysis.result_json);
+        dims[analysis.dimension_key] = payload.analysis || analysis.result_json;
+      } catch (e) {
+        dims[analysis.dimension_key] = analysis.result_json;
+      }
+    }
+  }
+  return dims;
+}
 </script>
 
 <template>
@@ -217,6 +234,13 @@ function renderMarkdown(md: string): string {
         </div>
         <div v-if="question.answer_text" class="study-question-answer" v-html="renderMarkdown(question.answer_text)"></div>
         <div v-else class="study-question-answer empty">No answer text yet.</div>
+
+        <div v-if="Object.keys(getQuestionDimensions(question.id)).length > 0" class="study-question-dimensions" style="margin-top: 16px; display: grid; gap: 12px; padding: 16px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+          <div v-for="(text, key) in getQuestionDimensions(question.id)" :key="key" style="font-size: 0.9em; line-height: 1.4;">
+            <strong style="color: var(--accent); display: block; margin-bottom: 4px; text-transform: capitalize;">{{ key }}</strong>
+            <span style="color: var(--text-muted);">{{ text }}</span>
+          </div>
+        </div>
       </article>
       </div>
       <div v-else class="study-empty">

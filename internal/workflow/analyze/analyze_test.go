@@ -263,6 +263,7 @@ func TestRunAnalyzeSplitsQuestionsAndWritesArtifacts(t *testing.T) {
 	runner := &fakeRunner{}
 	fp := &fakeProvider{chatResponses: []string{
 		`{"questions":[{"label":"Q1","title":"Polity","answer_markdown":"answer block","status":"detected"}]}`,
+		`{"introduction":"good","outro":"fine","transition":"ok","diagram":"none"}`,
 		"final report",
 	}}
 	res, err := New(
@@ -277,11 +278,14 @@ func TestRunAnalyzeSplitsQuestionsAndWritesArtifacts(t *testing.T) {
 	if res.Report != "final report" || len(res.Questions) != 1 || res.Questions[0].Label != "Q1" {
 		t.Fatalf("Response = %#v, want split question and final report", res)
 	}
-	if len(fp.chatPrompts) != 2 {
-		t.Fatalf("chat calls = %d, want split + report", len(fp.chatPrompts))
+	if len(fp.chatPrompts) != 3 {
+		t.Fatalf("chat calls = %d, want split + dimensions + report", len(fp.chatPrompts))
 	}
 	if !strings.Contains(fp.chatPrompts[0], "Split this OCR") {
 		t.Fatalf("first chat prompt = %q, want question split", fp.chatPrompts[0])
+	}
+	if !strings.Contains(fp.chatPrompts[1], "Analyze the structural dimensions") {
+		t.Fatalf("second chat prompt = %q, want dimensions", fp.chatPrompts[1])
 	}
 	if res.Pages[0].ImageURL == "" {
 		t.Fatalf("page image url is empty: %#v", res.Pages[0])
@@ -354,6 +358,7 @@ func TestRunAnalyzeUsesSeparateStepProviders(t *testing.T) {
 	ocrProvider := &fakeProvider{id: "ocr", visionContent: "ocr page text"}
 	questionProvider := &fakeProvider{id: "question", chatResponses: []string{
 		`{"questions":[{"label":"Q1","answer_markdown":"question answer","status":"detected"}]}`,
+		`{"introduction":"good"}`,
 	}}
 	reportProvider := &fakeProvider{id: "report", chatResponses: []string{"report text"}}
 	res, err := New(
@@ -378,8 +383,11 @@ func TestRunAnalyzeUsesSeparateStepProviders(t *testing.T) {
 	if ocrProvider.visionPrompt == "" {
 		t.Fatal("ocr provider was not used")
 	}
-	if !strings.Contains(questionProvider.chatPrompt, "Split this OCR") {
-		t.Fatalf("question provider prompt = %q, want question split prompt", questionProvider.chatPrompt)
+	if !strings.Contains(questionProvider.chatPrompts[0], "Split this OCR") {
+		t.Fatalf("question provider prompt = %q, want question split prompt", questionProvider.chatPrompts[0])
+	}
+	if !strings.Contains(questionProvider.chatPrompts[1], "Analyze the structural dimensions") {
+		t.Fatalf("question provider prompt = %q, want dimensions prompt", questionProvider.chatPrompts[1])
 	}
 	if !strings.Contains(reportProvider.chatPrompt, "Answer-Wise Analysis") {
 		t.Fatalf("report provider prompt = %q, want report prompt", reportProvider.chatPrompt)

@@ -8,6 +8,13 @@ export interface TopperCopyPage {
   verified: boolean;
 }
 
+export interface QuestionDimensions {
+  introduction: string;
+  outro: string;
+  transition: string;
+  diagram: string;
+}
+
 export interface TopperCopyQuestion {
   id: string;
   label: string;
@@ -15,6 +22,7 @@ export interface TopperCopyQuestion {
   answer_markdown: string;
   source_pages: number[];
   status: string;
+  dimensions?: QuestionDimensions;
 }
 
 export interface TopperCopyReview {

@@ -71,3 +71,31 @@ Extracted topper copy pages:
 
 ` + pagesMarkdown
 }
+
+func questionDimensionsPrompt(q Question) string {
+	return fmt.Sprintf(`Analyze the structural dimensions of this single UPSC answer.
+
+You must return a valid JSON object matching the exact schema below.
+- Do not wrap the JSON in markdown code fences (like ` + "```" + `json or ` + "```" + `).
+- Do not include any trailing commas.
+- Escape all double quotes in string values as \".
+- Escape all newlines in string values as \n (do not output literal newlines in string values).
+
+Schema:
+{
+  "introduction": "Evaluate the quality of the intro. What category is it (e.g. definition, data, quote)? Why does it work or not work?",
+  "outro": "Evaluate the conclusion/outro. Does it summarize, provide a way forward, or link to a broader theme? Is it effective?",
+  "transition": "Evaluate the transitions between paragraphs and headings. Is the flow logical? Do they use linking sentences?",
+  "diagram": "Evaluate any diagrams, flowcharts, or maps. Do they add value or just consume space? Are they well integrated?"
+}
+
+Rules:
+- Be concise but highly specific to the provided text.
+- If a dimension is completely missing (e.g., no diagram), state "Not present" and briefly note if it was a missed opportunity.
+- Base your analysis strictly on the provided answer text.
+
+Question: %s
+Title: %s
+Answer OCR:
+%s`, q.Label, q.Title, q.AnswerMarkdown)
+}
