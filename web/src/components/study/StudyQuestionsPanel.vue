@@ -10,6 +10,7 @@ import StudyArchiveView from "../../views/StudyArchiveView.vue";
 import StudyCopyMetadataPanel from "./StudyCopyMetadataPanel.vue";
 import StudyQuestionCard from "./StudyQuestionCard.vue";
 import StudyQuestionFilters from "./StudyQuestionFilters.vue";
+import StudyQuestionNavigator from "./StudyQuestionNavigator.vue";
 
 const props = defineProps<{ detail: StudyCopyDetail | null }>();
 const emit = defineEmits<{ synced: [] }>();
@@ -35,6 +36,17 @@ const filters = computed<StudyQuestionFilterState>(() => ({
 }));
 const filterOptions = computed(() => questionFilterOptions(props.detail?.questions || []));
 const visibleQuestions = computed(() => filterStudyQuestions(props.detail?.questions || [], filters.value));
+const activeQuestionId = computed(() => routeValue("question"));
+const activeQuestion = computed(() =>
+  visibleQuestions.value.find((question) => question.id === activeQuestionId.value) || visibleQuestions.value[0] || null,
+);
+const activeQuestionIndex = computed(() => visibleQuestions.value.findIndex((question) => question.id === activeQuestion.value?.id));
+const canGoPrevious = computed(() => activeQuestionIndex.value > 0);
+const canGoNext = computed(() => activeQuestionIndex.value >= 0 && activeQuestionIndex.value < visibleQuestions.value.length - 1);
+const activeQuestionCountLabel = computed(() => {
+  if (!activeQuestion.value || activeQuestionIndex.value < 0) return "No question selected";
+  return `Question ${activeQuestionIndex.value + 1} of ${visibleQuestions.value.length}`;
+});
 
 function updateFilters(update: Partial<StudyQuestionFilterState>) {
   const query: LocationQueryRaw = { ...route.query };
@@ -50,6 +62,7 @@ function updateFilters(update: Partial<StudyQuestionFilterState>) {
     if (value?.trim()) query[routeKey] = value.trim();
     else delete query[routeKey];
   }
+  delete query.question;
   router.replace({ query });
 }
 
@@ -64,6 +77,16 @@ function copyAnswer(question: StudyQuestionRecord) {
 function copyQA(question: StudyQuestionRecord) {
   const label = question.label || `Q.${question.question_no}`;
   copyText(`${label}: ${question.prompt_text || ""}\n\nAnswer:\n${question.answer_text || ""}`, question.id, "qa");
+}
+
+function selectQuestion(id: string) {
+  const query: LocationQueryRaw = { ...route.query, question: id };
+  router.replace({ query });
+}
+
+function moveQuestion(delta: number) {
+  const next = visibleQuestions.value[activeQuestionIndex.value + delta];
+  if (next) selectQuestion(next.id);
 }
 
 function copyText(text: string, id: string, type: "answer" | "qa") {
@@ -144,17 +167,33 @@ function routeValue(key: string): string {
           @update="updateFilters"
           @clear="clearFilters"
         />
-        <div v-if="visibleQuestions.length" class="study-questions-list">
-          <StudyQuestionCard
-            v-for="question in visibleQuestions"
-            :key="question.id"
-            :question="question"
-            :dimensions="getQuestionDimensions(question.id)"
-            :copied-id="copiedId"
-            :copied-type="copiedType"
-            @copy-answer="copyAnswer"
-            @copy-q-a="copyQA"
-          />
+        <div v-if="activeQuestion" class="study-question-reader">
+          <aside class="study-question-reader-rail">
+            <div class="study-question-reader-summary">
+              <strong>{{ activeQuestionCountLabel }}</strong>
+              <span>{{ visibleQuestions.length }} matching questions</span>
+            </div>
+            <StudyQuestionNavigator
+              :questions="visibleQuestions"
+              :active-id="activeQuestion.id"
+              @select="selectQuestion"
+            />
+          </aside>
+          <div class="study-question-reader-main">
+            <div class="study-question-reader-controls">
+              <button type="button" class="study-btn-action secondary" :disabled="!canGoPrevious" @click="moveQuestion(-1)">Previous</button>
+              <span>{{ activeQuestionCountLabel }}</span>
+              <button type="button" class="study-btn-action secondary" :disabled="!canGoNext" @click="moveQuestion(1)">Next</button>
+            </div>
+            <StudyQuestionCard
+              :question="activeQuestion"
+              :dimensions="getQuestionDimensions(activeQuestion.id)"
+              :copied-id="copiedId"
+              :copied-type="copiedType"
+              @copy-answer="copyAnswer"
+              @copy-q-a="copyQA"
+            />
+          </div>
         </div>
         <div v-else class="study-empty"><p>No questions match these filters.</p></div>
       </template>
