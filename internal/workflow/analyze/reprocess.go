@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/bhickta/aicli/internal/workflow/document"
 )
@@ -20,41 +21,52 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 	total := reprocessTotalUnits(action, len(selected))
 	completed := 0
 	progressUnits(progress, "loading saved topper copy review", completed, total, "stage")
+	s.logInfo("topper copy reprocess started", "review_id", review.ReviewID, "action", action, "selected_pages", len(selected), "requested_ocr_workers", req.Workers, "requested_question_workers", req.QuestionWorkers)
 
 	if action == "ocr" || action == "all" {
+		stageStart := time.Now()
 		if err := s.reprocessOCRPages(ctx, firstNonBlank(req.OCRModel, req.Model), &review, selected, req.Workers, func(done int, totalPages int) {
 			progressUnits(progress, fmt.Sprintf("rerunning OCR for %d page(s)", totalPages), completed+done, total, "page")
 		}); err != nil {
+			s.logWarn("topper copy reprocess OCR failed", "review_id", review.ReviewID, "selected_pages", len(selected), "elapsed_ms", elapsedMS(stageStart), "error", err)
 			return Response{}, err
 		}
+		s.logInfo("topper copy reprocess OCR completed", "review_id", review.ReviewID, "selected_pages", len(selected), "elapsed_ms", elapsedMS(stageStart))
 		completed += len(selected)
 		progressUnits(progress, "page OCR updated", completed, total, "stage")
 	}
 
 	if action == "questions" || action == "all" {
 		pages := pagesFromSet(review.Pages, selected)
+		stageStart := time.Now()
 		questions, err := s.splitQuestions(ctx, firstNonBlank(req.QuestionModel, req.Model), pages, req.QuestionWorkers, func(done int, totalPages int) {
 			progressUnits(progress, fmt.Sprintf("splitting %d selected page(s)", totalPages), completed+done, total, "page")
 		})
 		if err != nil {
+			s.logWarn("topper copy reprocess question split failed", "review_id", review.ReviewID, "pages", len(pages), "elapsed_ms", elapsedMS(stageStart), "error", err)
 			return Response{}, err
 		}
+		s.logInfo("topper copy reprocess question split completed", "review_id", review.ReviewID, "pages", len(pages), "questions", len(questions), "elapsed_ms", elapsedMS(stageStart))
 		review.Questions = replaceQuestionsForPages(review.Questions, questions, selected)
 		completed += len(selected)
 		progressUnits(progress, "question blocks updated", completed, total, "stage")
 	}
 
 	if action == "report" || action == "questions" || action == "all" {
+		stageStart := time.Now()
 		report, err := s.report(ctx, firstNonBlank(req.ReportModel, req.Model), review.Pages, review.Questions)
 		if err != nil {
+			s.logWarn("topper copy reprocess report failed", "review_id", review.ReviewID, "pages", len(review.Pages), "questions", len(review.Questions), "elapsed_ms", elapsedMS(stageStart), "error", err)
 			return Response{}, err
 		}
+		s.logInfo("topper copy reprocess report completed", "review_id", review.ReviewID, "pages", len(review.Pages), "questions", len(review.Questions), "report_chars", len(report), "elapsed_ms", elapsedMS(stageStart))
 		review.Report = report
 		completed++
 		progressUnits(progress, "final analysis updated", completed, total, "stage")
 	}
 
 	progressUnits(progress, "topper copy review updated", total, total, "stage")
+	s.logInfo("topper copy reprocess completed", "review_id", review.ReviewID, "action", action)
 	return review, nil
 }
 
@@ -75,7 +87,7 @@ func (s *Service) reprocessOCRPages(ctx context.Context, model string, review *R
 	if len(inputs) == 0 {
 		return nil
 	}
-	ocrPages, err := document.OCRImages(ctx, s.ocrProvider, model, inputs, topperCopyOCRPrompt, workers, progress)
+	ocrPages, err := document.OCRImagesWithLogger(ctx, s.ocrProvider, model, inputs, topperCopyOCRPrompt, workers, s.logger, progress)
 	if err != nil {
 		return err
 	}

@@ -3,10 +3,12 @@ package document
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/systemresources"
@@ -23,10 +25,25 @@ func OCRImages(
 	workers int,
 	progress func(completed int, total int),
 ) ([]OCRPage, error) {
+	return OCRImagesWithLogger(ctx, vision, model, inputs, prompt, workers, nil, progress)
+}
+
+func OCRImagesWithLogger(
+	ctx context.Context,
+	vision provider.Provider,
+	model string,
+	inputs []ImageInput,
+	prompt string,
+	workers int,
+	logger *slog.Logger,
+	progress func(completed int, total int),
+) ([]OCRPage, error) {
 	if vision == nil {
 		return nil, errors.New("provider is required")
 	}
 	workers = EffectiveOCRWorkersForVisionProvider(workers, len(inputs), vision)
+	workflowStart := time.Now()
+	logOCRInfo(logger, "OCR image batch started", "pages", len(inputs), "workers", workers, "provider", providerID(vision), "model", model)
 	pages := make([]OCRPage, len(inputs))
 	jobs := make(chan int)
 	errCh := make(chan pageError, len(inputs))
@@ -36,7 +53,7 @@ func OCRImages(
 	var wg sync.WaitGroup
 	for range workers {
 		wg.Add(1)
-		go ocrImageWorker(ctx, vision, model, inputs, prompt, pages, jobs, errCh, progress, &completed, &completedMu, &wg)
+		go ocrImageWorker(ctx, vision, model, inputs, prompt, pages, jobs, errCh, logger, progress, &completed, &completedMu, &wg)
 	}
 	for index := range inputs {
 		select {
@@ -54,7 +71,9 @@ func OCRImages(
 	for err := range errCh {
 		failures = append(failures, err)
 	}
-	failures = retryFailedOCRPages(ctx, vision, model, inputs, prompt, pages, failures)
+	firstPassFailures := len(failures)
+	failures = retryFailedOCRPages(ctx, vision, model, inputs, prompt, pages, failures, logger)
+	logOCRInfo(logger, "OCR image batch completed", "pages", len(inputs), "workers", workers, "first_pass_failures", firstPassFailures, "remaining_failures", len(failures), "elapsed_ms", time.Since(workflowStart).Milliseconds())
 	if len(failures) == len(inputs) && len(inputs) > 0 {
 		return pages, pageErrors(failures)
 	}
@@ -127,6 +146,7 @@ func ocrImageWorker(
 	pages []OCRPage,
 	jobs <-chan int,
 	errCh chan<- pageError,
+	logger *slog.Logger,
 	progress func(completed int, total int),
 	completed *int,
 	completedMu *sync.Mutex,
@@ -134,12 +154,15 @@ func ocrImageWorker(
 ) {
 	defer wg.Done()
 	for index := range jobs {
+		start := time.Now()
 		page, err := ocrImage(ctx, vision, model, inputs[index], prompt)
 		if err != nil {
 			errCh <- pageError{Index: index, Name: inputs[index].Name, Err: err}
 			pages[index] = failedOCRPage(inputs[index], err)
+			logOCRWarn(logger, "OCR page failed", "page", inputs[index].Name, "attempt", "parallel", "elapsed_ms", time.Since(start).Milliseconds(), "error", err)
 		} else {
 			pages[index] = page
+			logOCRInfo(logger, "OCR page completed", "page", inputs[index].Name, "attempt", "parallel", "chars", len(page.Text), "elapsed_ms", time.Since(start).Milliseconds())
 		}
 		reportPageProgress(progress, completed, completedMu, len(inputs))
 	}
@@ -153,24 +176,30 @@ func retryFailedOCRPages(
 	prompt string,
 	pages []OCRPage,
 	failures []pageError,
+	logger *slog.Logger,
 ) []pageError {
 	if len(failures) == 0 {
 		return nil
 	}
+	logOCRInfo(logger, "OCR retry pass started", "failed_pages", len(failures))
 	remaining := make([]pageError, 0, len(failures))
 	for _, failure := range failures {
 		if failure.Index < 0 || failure.Index >= len(inputs) || ctx.Err() != nil {
 			remaining = append(remaining, failure)
 			continue
 		}
+		start := time.Now()
 		page, err := ocrImage(ctx, vision, model, inputs[failure.Index], prompt)
 		if err != nil {
 			remaining = append(remaining, pageError{Index: failure.Index, Name: failure.Name, Err: err})
 			pages[failure.Index] = failedOCRPage(inputs[failure.Index], err)
+			logOCRWarn(logger, "OCR page retry failed", "page", failure.Name, "attempt", "retry", "elapsed_ms", time.Since(start).Milliseconds(), "error", err)
 			continue
 		}
 		pages[failure.Index] = page
+		logOCRInfo(logger, "OCR page retry completed", "page", failure.Name, "attempt", "retry", "chars", len(page.Text), "elapsed_ms", time.Since(start).Milliseconds())
 	}
+	logOCRInfo(logger, "OCR retry pass completed", "failed_pages", len(failures), "remaining_failures", len(remaining))
 	return remaining
 }
 
@@ -324,4 +353,25 @@ func failedOCRPage(input ImageInput, err error) OCRPage {
 		Path: input.Path,
 		Text: "> OCR failed for this page: " + err.Error(),
 	}
+}
+
+func logOCRInfo(logger *slog.Logger, message string, args ...any) {
+	if logger == nil {
+		return
+	}
+	logger.Info(message, args...)
+}
+
+func logOCRWarn(logger *slog.Logger, message string, args ...any) {
+	if logger == nil {
+		return
+	}
+	logger.Warn(message, args...)
+}
+
+func providerID(vision provider.Provider) string {
+	if vision == nil {
+		return ""
+	}
+	return vision.ID()
 }

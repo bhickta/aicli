@@ -1,6 +1,8 @@
 package analyze
 
 import (
+	"log/slog"
+
 	"github.com/bhickta/aicli/internal/config"
 	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/tool"
@@ -13,6 +15,7 @@ type Service struct {
 	questionProvider provider.Provider
 	reportProvider   provider.Provider
 	artifactDir      string
+	logger           *slog.Logger
 }
 
 type Request struct {
@@ -93,5 +96,11 @@ func WithReportProvider(p provider.Provider) Option {
 		if p != nil {
 			s.reportProvider = p
 		}
+	}
+}
+
+func WithLogger(logger *slog.Logger) Option {
+	return func(s *Service) {
+		s.logger = logger
 	}
 }

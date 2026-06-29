@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bhickta/aicli/internal/provider"
 )
@@ -32,8 +33,10 @@ func (s *Service) splitQuestions(ctx context.Context, model string, pages []Page
 		go func() {
 			defer wg.Done()
 			for page := range jobs {
+				start := time.Now()
 				questions, err := s.splitPageQuestions(ctx, model, page)
 				if err != nil {
+					s.logWarn("topper copy question split page failed", "page", page.Number, "name", page.Name, "elapsed_ms", elapsedMS(start), "error", err)
 					select {
 					case errCh <- err:
 						cancel()
@@ -41,6 +44,7 @@ func (s *Service) splitQuestions(ctx context.Context, model string, pages []Page
 					}
 					return
 				}
+				s.logInfo("topper copy question split page completed", "page", page.Number, "name", page.Name, "questions", len(questions), "elapsed_ms", elapsedMS(start))
 				results <- questions
 				reportQuestionProgress(progress, &completed, &completedMu, len(pages))
 			}

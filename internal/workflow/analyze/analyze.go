@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bhickta/aicli/internal/config"
 	"github.com/bhickta/aicli/internal/provider"
@@ -30,6 +31,7 @@ func (s *Service) Run(ctx context.Context, req Request) (Response, error) {
 }
 
 func (s *Service) RunWithProgress(ctx context.Context, req Request, progress ProgressFunc) (Response, error) {
+	workflowStart := time.Now()
 	if strings.TrimSpace(req.Path) == "" {
 		return Response{}, errors.New("path is required")
 	}
@@ -39,16 +41,33 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 	if req.QuestionWorkers < 0 {
 		req.QuestionWorkers = 0
 	}
+	s.logInfo("topper copy analysis started",
+		"path", req.Path,
+		"dpi", req.DPI,
+		"render_workers", req.RenderWorkers,
+		"requested_ocr_workers", req.Workers,
+		"question_split", req.QuestionSplit,
+		"requested_question_workers", req.QuestionWorkers,
+		"ocr_provider", providerID(s.ocrProvider),
+		"question_provider", providerID(s.questionProvider),
+		"report_provider", providerID(s.reportProvider),
+		"ocr_model", firstNonBlank(req.OCRModel, req.Model),
+		"question_model", firstNonBlank(req.QuestionModel, req.Model),
+		"report_model", firstNonBlank(req.ReportModel, req.Model),
+	)
 	totalSteps := 3
 	if req.QuestionSplit {
 		totalSteps++
 	}
 	completedSteps := 0
 	progressUnits(progress, "rendering PDF pages", completedSteps, totalSteps, "step")
+	stageStart := time.Now()
 	images, cleanup, err := document.RenderPDFToImages(ctx, s.tools, s.runner, req.Path, req.DPI, req.RenderWorkers)
 	if err != nil {
+		s.logWarn("topper copy render failed", "path", req.Path, "elapsed_ms", elapsedMS(stageStart), "error", err)
 		return Response{}, err
 	}
+	s.logInfo("topper copy render completed", "path", req.Path, "pages", len(images), "elapsed_ms", elapsedMS(stageStart))
 	defer cleanup()
 	completedSteps++
 	progressUnits(progress, "rendered PDF pages", completedSteps, totalSteps, "step")
@@ -78,20 +97,31 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		})
 	}
 	ocrWorkers := document.EffectiveOCRWorkersForVisionProvider(req.Workers, len(inputs), s.ocrProvider)
-	ocrPages, err := document.OCRImages(
+	stageStart = time.Now()
+	s.logInfo("topper copy OCR started",
+		"path", req.Path,
+		"pages", len(inputs),
+		"workers", ocrWorkers,
+		"provider", providerID(s.ocrProvider),
+		"model", firstNonBlank(req.OCRModel, req.Model),
+	)
+	ocrPages, err := document.OCRImagesWithLogger(
 		ctx,
 		s.ocrProvider,
 		firstNonBlank(req.OCRModel, req.Model),
 		inputs,
 		topperCopyOCRPrompt,
 		req.Workers,
+		s.logger,
 		func(completedPages int, totalPages int) {
 			progressUnits(progress, fmt.Sprintf("OCR pages with %d worker(s)", ocrWorkers), completedPages, totalPages, "page")
 		},
 	)
 	if err != nil {
+		s.logWarn("topper copy OCR failed", "path", req.Path, "pages", len(inputs), "workers", ocrWorkers, "elapsed_ms", elapsedMS(stageStart), "error", err)
 		return Response{}, err
 	}
+	s.logInfo("topper copy OCR completed", "path", req.Path, "pages", len(ocrPages), "workers", ocrWorkers, "elapsed_ms", elapsedMS(stageStart))
 	completedSteps++
 	progressUnits(progress, "OCR pages complete", completedSteps, totalSteps, "step")
 	pages := make([]Page, 0, len(ocrPages))
@@ -110,20 +140,28 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 	questions := pageFallbackQuestions(pages)
 	if req.QuestionSplit {
 		questionWorkers := EffectiveQuestionWorkers(req.QuestionWorkers, len(pages))
+		stageStart = time.Now()
+		s.logInfo("topper copy question split started", "path", req.Path, "pages", len(pages), "workers", questionWorkers, "provider", providerID(s.questionProvider), "model", firstNonBlank(req.QuestionModel, req.Model))
 		questions, err = s.splitQuestions(ctx, firstNonBlank(req.QuestionModel, req.Model), pages, req.QuestionWorkers, func(completedPages int, totalPages int) {
 			progressUnits(progress, fmt.Sprintf("question-wise split with %d worker(s)", questionWorkers), completedPages, totalPages, "page")
 		})
 		if err != nil {
+			s.logWarn("topper copy question split failed", "path", req.Path, "pages", len(pages), "workers", questionWorkers, "elapsed_ms", elapsedMS(stageStart), "error", err)
 			return Response{}, err
 		}
+		s.logInfo("topper copy question split completed", "path", req.Path, "pages", len(pages), "questions", len(questions), "workers", questionWorkers, "elapsed_ms", elapsedMS(stageStart))
 		completedSteps++
 		progressUnits(progress, "question-wise split complete", completedSteps, totalSteps, "step")
 	}
 	progressUnits(progress, "generating final analysis", completedSteps, totalSteps, "step")
+	stageStart = time.Now()
+	s.logInfo("topper copy report started", "path", req.Path, "pages", len(pages), "questions", len(questions), "provider", providerID(s.reportProvider), "model", firstNonBlank(req.ReportModel, req.Model))
 	report, err := s.report(ctx, firstNonBlank(req.ReportModel, req.Model), pages, questions)
 	if err != nil {
+		s.logWarn("topper copy report failed", "path", req.Path, "pages", len(pages), "questions", len(questions), "elapsed_ms", elapsedMS(stageStart), "error", err)
 		return Response{}, err
 	}
+	s.logInfo("topper copy report completed", "path", req.Path, "pages", len(pages), "questions", len(questions), "report_chars", len(report), "elapsed_ms", elapsedMS(stageStart))
 	completedSteps++
 	progressUnits(progress, "final analysis complete", completedSteps, totalSteps, "step")
 	res := Response{
@@ -140,6 +178,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		}
 	}
 	progressUnits(progress, "topper copy review ready", totalSteps, totalSteps, "step")
+	s.logInfo("topper copy analysis completed", "path", req.Path, "review_id", reviewID, "pages", len(pages), "questions", len(questions), "elapsed_ms", elapsedMS(workflowStart))
 	return res, nil
 }
 

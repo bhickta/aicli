@@ -138,6 +138,7 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 			analyze.WithQuestionProvider(questionProvider),
 			analyze.WithReportProvider(reportProvider),
 			analyze.WithArtifactDir(artifactDir),
+			analyze.WithLogger(h.runtime.Logger()),
 		).RunWithProgress(ctx, req.Request, func(stage string, completed int, total int, label string) {
 			progress(core.Units(stage, completed, total, label))
 		})

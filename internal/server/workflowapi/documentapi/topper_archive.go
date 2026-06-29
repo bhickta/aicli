@@ -222,6 +222,7 @@ func (h *Handler) rerunTopperReview(w http.ResponseWriter, r *http.Request) {
 			ocrProvider,
 			analyze.WithQuestionProvider(questionProvider),
 			analyze.WithReportProvider(reportProvider),
+			analyze.WithLogger(h.runtime.Logger()),
 		).ReprocessReview(ctx, review, req.ReprocessRequest, func(stage string, completed int, total int, label string) {
 			progress(core.Units(stage, completed, total, label))
 		})

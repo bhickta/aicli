@@ -51,6 +51,10 @@ func (r *Runtime) Store() storage.Store {
 	return r.store
 }
 
+func (r *Runtime) Logger() *slog.Logger {
+	return r.logger
+}
+
 func (r *Runtime) ProviderFor(id string) (provider.Provider, bool) {
 	return r.providerFor(id)
 }
