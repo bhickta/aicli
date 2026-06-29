@@ -1,15 +1,26 @@
 <script setup lang="ts">
 import "../styles/study-archive.css";
-import { onMounted } from "vue";
+import { onMounted, watch } from "vue";
 import ProviderModelControl from "../components/ProviderModelControl.vue";
 import TopperCopyReviewResult from "../components/workflows/TopperCopyReviewResult.vue";
 import { useStudyArchive, type TopperRerunAction } from "../composables/useStudyArchive";
 import type { TopperReviewRecord } from "../types";
 
+const props = defineProps<{ reviewId?: string }>();
 const archive = useStudyArchive();
 
 onMounted(() => {
-  void archive.loadReviews();
+  if (props.reviewId) {
+    void archive.openReview({ id: props.reviewId } as TopperReviewRecord);
+  } else {
+    void archive.loadReviews();
+  }
+});
+
+watch(() => props.reviewId, (newId) => {
+  if (newId) {
+    void archive.openReview({ id: newId } as TopperReviewRecord);
+  }
 });
 
 function recordTime(record: TopperReviewRecord) {
@@ -26,8 +37,8 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 </script>
 
 <template>
-  <div class="study-archive">
-    <header class="study-archive-toolbar">
+  <div class="study-archive" :style="reviewId ? 'height: auto; border: none; background: transparent; padding: 0;' : ''">
+    <header v-if="!reviewId" class="study-archive-toolbar">
       <div class="study-archive-heading">
         <h3>Topper Answer Copies</h3>
         <p class="muted">{{ archive.summary.value }}</p>
@@ -38,8 +49,8 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
       </div>
     </header>
 
-    <div class="study-archive-layout">
-      <aside class="study-review-list" aria-label="Saved topper copy reviews">
+    <div class="study-archive-layout" :style="reviewId ? 'grid-template-columns: 1fr;' : ''">
+      <aside v-if="!reviewId" class="study-review-list" aria-label="Saved topper copy reviews">
         <p class="study-archive-status" role="status" aria-live="polite">{{ archive.status.value }}</p>
         <button
           v-for="record in archive.reviews.value"
@@ -55,7 +66,7 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
         <p v-if="!archive.reviews.value.length" class="empty-state">No saved topper reviews yet.</p>
       </aside>
 
-      <main class="study-review-main">
+      <main class="study-review-main" :style="reviewId ? 'padding: 0; background: transparent; border: none;' : ''">
         <section v-if="archive.selectedReview.value" class="study-review-controls">
           <div class="study-review-control-row">
             <div class="study-step-models">

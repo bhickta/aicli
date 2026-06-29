@@ -1,11 +1,21 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import type { StudyCopyDetail, StudyQuestionRecord } from "../../types";
+import StudyAnalyticsPanel from "./StudyAnalyticsPanel.vue";
+import StudyArchiveView from "../../views/StudyArchiveView.vue";
 
-defineProps<{ detail: StudyCopyDetail | null }>();
+const props = defineProps<{ detail: StudyCopyDetail | null }>();
+
+const rawReviewId = computed(() => {
+  const id = props.detail?.copy.id;
+  if (!id) return "";
+  return id.startsWith("copy-") ? id.slice(5) : id;
+});
 
 const copiedId = ref<string | null>(null);
 const copiedType = ref<"answer" | "qa" | null>(null);
+const showAnalytics = ref(false);
+const showDebug = ref(false);
 
 function copyText(text: string, id: string, type: "answer" | "qa") {
   if (!text) return;
@@ -132,6 +142,27 @@ function renderMarkdown(md: string): string {
         <span><strong>{{ detail.questions.length }}</strong> questions</span>
         <span><strong>{{ detail.copy.unclear_count }}</strong> unclear</span>
         <span><strong>{{ detail.analyses.length }}</strong> analyses</span>
+      </div>
+
+      <div style="margin-top: 16px; margin-bottom: 24px; display: flex; gap: 12px;">
+        <button type="button" class="study-btn-action secondary" @click="showAnalytics = !showAnalytics">
+          <svg v-if="showAnalytics" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+          <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          Analytics
+        </button>
+        <button type="button" class="study-btn-action secondary" @click="showDebug = !showDebug">
+          <svg v-if="showDebug" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+          <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          Advanced Actions / Debug
+        </button>
+      </div>
+
+      <div v-if="showAnalytics" style="margin-bottom: 24px; border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 8px; overflow: hidden;">
+        <StudyAnalyticsPanel :detail="detail" />
+      </div>
+
+      <div v-if="showDebug" style="margin-bottom: 24px; border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 8px; overflow: hidden; background: rgba(0,0,0,0.2);">
+        <StudyArchiveView :review-id="rawReviewId" />
       </div>
 
       <div class="study-meta-grid">
