@@ -112,6 +112,39 @@ func (flakyVision) Vision(_ context.Context, req provider.VisionRequest) (provid
 	return provider.ChatResponse{Content: "ok"}, nil
 }
 
+type retryVision struct {
+	mu   sync.Mutex
+	seen map[string]int
+}
+
+func (retryVision) ID() string { return "retry" }
+func (retryVision) Health(context.Context) error {
+	return nil
+}
+func (retryVision) ListModels(context.Context) ([]provider.Model, error) {
+	return []provider.Model{}, nil
+}
+func (retryVision) Chat(context.Context, provider.ChatRequest) (provider.ChatResponse, error) {
+	return provider.ChatResponse{}, nil
+}
+func (retryVision) ChatStream(context.Context, provider.ChatRequest, func(string) error) error {
+	return nil
+}
+func (v *retryVision) Vision(_ context.Context, req provider.VisionRequest) (provider.ChatResponse, error) {
+	key := string(req.Image)
+	v.mu.Lock()
+	if v.seen == nil {
+		v.seen = map[string]int{}
+	}
+	v.seen[key]++
+	count := v.seen[key]
+	v.mu.Unlock()
+	if count == 1 {
+		return provider.ChatResponse{}, errors.New("temporary server overload")
+	}
+	return provider.ChatResponse{Content: key + " recovered"}, nil
+}
+
 type badOCRVision struct {
 	response provider.ChatResponse
 }
@@ -235,6 +268,27 @@ func TestOCRImagesKeepsPartialPageFailures(t *testing.T) {
 	}
 	if !strings.Contains(pages[1].Text, "server overloaded") {
 		t.Fatalf("page 2 text = %q, want failure marker", pages[1].Text)
+	}
+}
+
+func TestOCRImagesRetriesFailedPagesSerially(t *testing.T) {
+	t.Parallel()
+
+	vision := &retryVision{}
+	pages, err := OCRImages(
+		context.Background(),
+		vision,
+		"model",
+		[]ImageInput{{Name: "page-1", Data: []byte("one")}, {Name: "page-2", Data: []byte("two")}},
+		"prompt",
+		2,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("OCRImages() error = %v", err)
+	}
+	if pages[0].Text != "one recovered" || pages[1].Text != "two recovered" {
+		t.Fatalf("pages = %#v, want recovered OCR text after retry", pages)
 	}
 }
 

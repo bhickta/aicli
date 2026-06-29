@@ -41,7 +41,7 @@ func OCRImages(
 	for index := range inputs {
 		select {
 		case <-ctx.Done():
-			errCh <- pageError{Name: inputs[index].Name, Err: ctx.Err()}
+			errCh <- pageError{Index: index, Name: inputs[index].Name, Err: ctx.Err()}
 			pages[index] = failedOCRPage(inputs[index], ctx.Err())
 		case jobs <- index:
 		}
@@ -54,6 +54,7 @@ func OCRImages(
 	for err := range errCh {
 		failures = append(failures, err)
 	}
+	failures = retryFailedOCRPages(ctx, vision, model, inputs, prompt, pages, failures)
 	if len(failures) == len(inputs) && len(inputs) > 0 {
 		return pages, pageErrors(failures)
 	}
@@ -135,13 +136,42 @@ func ocrImageWorker(
 	for index := range jobs {
 		page, err := ocrImage(ctx, vision, model, inputs[index], prompt)
 		if err != nil {
-			errCh <- pageError{Name: inputs[index].Name, Err: err}
+			errCh <- pageError{Index: index, Name: inputs[index].Name, Err: err}
 			pages[index] = failedOCRPage(inputs[index], err)
 		} else {
 			pages[index] = page
 		}
 		reportPageProgress(progress, completed, completedMu, len(inputs))
 	}
+}
+
+func retryFailedOCRPages(
+	ctx context.Context,
+	vision provider.Provider,
+	model string,
+	inputs []ImageInput,
+	prompt string,
+	pages []OCRPage,
+	failures []pageError,
+) []pageError {
+	if len(failures) == 0 {
+		return nil
+	}
+	remaining := make([]pageError, 0, len(failures))
+	for _, failure := range failures {
+		if failure.Index < 0 || failure.Index >= len(inputs) || ctx.Err() != nil {
+			remaining = append(remaining, failure)
+			continue
+		}
+		page, err := ocrImage(ctx, vision, model, inputs[failure.Index], prompt)
+		if err != nil {
+			remaining = append(remaining, pageError{Index: failure.Index, Name: failure.Name, Err: err})
+			pages[failure.Index] = failedOCRPage(inputs[failure.Index], err)
+			continue
+		}
+		pages[failure.Index] = page
+	}
+	return remaining
 }
 
 func reportPageProgress(progress func(completed int, total int), completed *int, completedMu *sync.Mutex, total int) {
@@ -269,8 +299,9 @@ func normalizeOCRMarkdownArtifacts(line string) string {
 }
 
 type pageError struct {
-	Name string
-	Err  error
+	Index int
+	Name  string
+	Err   error
 }
 
 type pageErrors []pageError
