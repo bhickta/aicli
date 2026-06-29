@@ -43,42 +43,50 @@ func (s *Service) directPDFReview(ctx context.Context, req Request, reviewID str
 
 	model := firstNonBlank(req.OCRModel, req.Model)
 	s.logInfo("direct PDF one-shot extraction started", "path", req.Path, "model", model, "bytes", len(data))
-	res, err := processor.Document(ctx, provider.DocumentRequest{
-		Model:       model,
-		Prompt:      oneShotPDFPrompt(filepath.Base(req.Path)),
-		Data:        data,
-		MIMEType:    "application/pdf",
-		Temperature: 0,
-		MaxTokens:   geminiLiteDirectPDFMaxTokens,
-	})
-	if err != nil {
-		return Response{}, err
-	}
-	if err := validateDirectPDFFinishReason(res.FinishReason); err != nil {
-		return Response{}, err
+	pdfName := filepath.Base(req.Path)
+	prompts := []string{oneShotPDFPrompt(pdfName), oneShotPDFRetryPrompt(pdfName)}
+	var usage *provider.TokenUsage
+	var lastErr error
+	for attempt, prompt := range prompts {
+		res, err := processor.Document(ctx, provider.DocumentRequest{
+			Model:       model,
+			Prompt:      prompt,
+			Data:        data,
+			MIMEType:    "application/pdf",
+			Temperature: 0,
+			MaxTokens:   geminiLiteDirectPDFMaxTokens,
+		})
+		usage = addTokenUsage(usage, res.Usage)
+		if err != nil {
+			return Response{}, err
+		}
+		if err := validateDirectPDFFinishReason(res.FinishReason); err != nil {
+			return Response{}, err
+		}
+		pages, questions, report, err := parseOneShotPDFManifest(res.Content, pdfName)
+		if err != nil {
+			lastErr = err
+			if isIncompleteDirectPDFError(err) && attempt+1 < len(prompts) {
+				s.logWarn("direct PDF extraction incomplete; retrying with coverage prompt", "path", req.Path, "attempt", attempt+1, "error", err)
+				continue
+			}
+			return Response{}, err
+		}
+		s.logInfo("direct PDF one-shot extraction completed", "pages", len(pages), "questions", len(questions), "report_chars", len(report), "api_calls", attempt+1)
+		return Response{
+			Kind:       "topper_copy_review",
+			ReviewID:   reviewID,
+			PDFName:    pdfName,
+			SourceMode: OCRInputModePDFDirect,
+			APICalls:   attempt + 1,
+			Usage:      usage,
+			Pages:      pages,
+			Questions:  questions,
+			Report:     report,
+		}, nil
 	}
 
-	pages, questions, report, err := parseOneShotPDFManifest(res.Content, filepath.Base(req.Path))
-	if err != nil {
-		return Response{}, err
-	}
-
-	s.logInfo("direct PDF one-shot extraction completed", "pages", len(pages), "questions", len(questions), "report_chars", len(report))
-
-	if len(questions) == 0 {
-		return Response{}, errors.New("direct PDF one-shot extraction returned no question blocks")
-	}
-
-	return Response{
-		Kind:       "topper_copy_review",
-		ReviewID:   reviewID,
-		PDFName:    filepath.Base(req.Path),
-		SourceMode: OCRInputModePDFDirect,
-		Usage:      res.Usage,
-		Pages:      pages,
-		Questions:  questions,
-		Report:     report,
-	}, nil
+	return Response{}, lastErr
 }
 
 func validateDirectPDFFinishReason(reason string) error {
@@ -91,4 +99,19 @@ func validateDirectPDFFinishReason(reason string) error {
 	default:
 		return fmt.Errorf("direct PDF response stopped with finish reason %q", reason)
 	}
+}
+
+func addTokenUsage(total *provider.TokenUsage, next *provider.TokenUsage) *provider.TokenUsage {
+	if next == nil {
+		return total
+	}
+	if total == nil {
+		total = &provider.TokenUsage{}
+	}
+	total.InputTokens += next.InputTokens
+	total.CachedInputTokens += next.CachedInputTokens
+	total.OutputTokens += next.OutputTokens
+	total.ReasoningOutputTokens += next.ReasoningOutputTokens
+	total.TotalTokens += next.TotalTokens
+	return total
 }

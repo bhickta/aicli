@@ -225,7 +225,7 @@ func (h *Handler) analyzeStudyBatchCopy(
 	if err := saveStudyFromTopperRecordAsCopy(ctx, store, record, copyRecord.ID, copyRecord); err != nil {
 		return studyBatchCopyResult{}, err
 	}
-	out := studyBatchCopyResult{CopyID: copyRecord.ID, Status: "ready", APICalls: 1}
+	out := studyBatchCopyResult{CopyID: copyRecord.ID, Status: "ready", APICalls: firstInt(result.APICalls, 1)}
 	if result.Usage != nil {
 		out.InputTokens = result.Usage.InputTokens
 		out.OutputTokens = result.Usage.OutputTokens

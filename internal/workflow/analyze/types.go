@@ -87,6 +87,7 @@ type Response struct {
 	ReviewID   string               `json:"review_id"`
 	PDFName    string               `json:"pdf_name"`
 	SourceMode string               `json:"source_mode,omitempty"`
+	APICalls   int                  `json:"api_calls,omitempty"`
 	Usage      *provider.TokenUsage `json:"usage,omitempty"`
 	Pages      []Page               `json:"pages"`
 	Questions  []Question           `json:"questions"`

@@ -23,18 +23,19 @@ func (r *fakeRunner) CombinedOutput(_ context.Context, _ string, args ...string)
 }
 
 type fakeProvider struct {
-	id              string
-	visionContent   string
-	visionPrompt    string
-	visionCalls     int
-	documentContent string
-	documentPrompt  string
-	documentCalls   int
-	documentReason  string
-	chatPrompt      string
-	chatPrompts     []string
-	chatResponses   []string
-	chatErr         error
+	id                string
+	visionContent     string
+	visionPrompt      string
+	visionCalls       int
+	documentContent   string
+	documentResponses []string
+	documentPrompt    string
+	documentCalls     int
+	documentReason    string
+	chatPrompt        string
+	chatPrompts       []string
+	chatResponses     []string
+	chatErr           error
 }
 
 type progressEvent struct {
@@ -85,6 +86,11 @@ func (p *fakeProvider) Vision(_ context.Context, req provider.VisionRequest) (pr
 func (p *fakeProvider) Document(_ context.Context, req provider.DocumentRequest) (provider.DocumentResponse, error) {
 	p.documentPrompt = req.Prompt
 	p.documentCalls++
+	if len(p.documentResponses) > 0 {
+		content := p.documentResponses[0]
+		p.documentResponses = p.documentResponses[1:]
+		return provider.DocumentResponse{Content: content, FinishReason: p.documentReason}, nil
+	}
 	return provider.DocumentResponse{Content: p.documentContent, FinishReason: p.documentReason}, nil
 }
 
@@ -511,6 +517,72 @@ func TestParseOneShotPDFManifestRejectsIncompletePayload(t *testing.T) {
 				t.Fatalf("parseOneShotPDFManifest() error = nil, want error for %s", tt.name)
 			}
 		})
+	}
+}
+
+func TestParseOneShotPDFManifestRejectsQuestionUnderExtraction(t *testing.T) {
+	t.Parallel()
+
+	content := `{
+		"pages":[
+			{"number":3,"text":"Answer to Q.1 starts here."},
+			{"number":5,"text":"Answer to Q.2 starts here."},
+			{"number":7,"text":"Answer to Q.3 starts here."}
+		],
+		"questions":[{"label":"Q.1","source_pages":[3],"answer_markdown":"answer one"}],
+		"report":"report"
+	}`
+	_, _, _, err := parseOneShotPDFManifest(content, "copy.pdf")
+	if err == nil || !strings.Contains(err.Error(), "extracted 1 question") {
+		t.Fatalf("parseOneShotPDFManifest() error = %v, want incomplete coverage error", err)
+	}
+}
+
+func TestRunAnalyzeRetriesDirectPDFWhenQuestionCoverageIsIncomplete(t *testing.T) {
+	t.Parallel()
+
+	pdf := filepath.Join(t.TempDir(), "answers.pdf")
+	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	incomplete := `{
+		"pages":[
+			{"number":3,"text":"Answer to Q.1 starts here."},
+			{"number":5,"text":"Answer to Q.2 starts here."},
+			{"number":7,"text":"Answer to Q.3 starts here."}
+		],
+		"questions":[{"label":"Q.1","source_pages":[3],"answer_markdown":"answer one"}],
+		"report":"report"
+	}`
+	complete := `{
+		"pages":[
+			{"number":3,"text":"Answer to Q.1 starts here."},
+			{"number":5,"text":"Answer to Q.2 starts here."},
+			{"number":7,"text":"Answer to Q.3 starts here."}
+		],
+		"questions":[
+			{"label":"Q.1","source_pages":[3],"answer_markdown":"answer one"},
+			{"label":"Q.2","source_pages":[5],"answer_markdown":"answer two"},
+			{"label":"Q.3","source_pages":[7],"answer_markdown":"answer three"}
+		],
+		"report":"report"
+	}`
+	provider := &fakeProvider{id: "gemini", documentResponses: []string{incomplete, complete}}
+	res, err := New(config.ToolConfig{PDFToPPM: "pdftoppm"}, &fakeRunner{}, provider).Run(
+		context.Background(),
+		Request{Path: pdf, OCRModel: "gemini-flash-lite-latest", OCRInputMode: OCRInputModePDFDirect},
+	)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if provider.documentCalls != 2 || res.APICalls != 2 {
+		t.Fatalf("documentCalls=%d apiCalls=%d, want retry accounting", provider.documentCalls, res.APICalls)
+	}
+	if len(res.Questions) != 3 {
+		t.Fatalf("questions = %#v, want three covered questions", res.Questions)
+	}
+	if !strings.Contains(provider.documentPrompt, "coverage") {
+		t.Fatalf("retry prompt = %q, want coverage-focused prompt", provider.documentPrompt)
 	}
 }
 
