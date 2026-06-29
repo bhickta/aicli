@@ -29,11 +29,19 @@ func Step(stage string, currentStep int, totalSteps int) ProgressUpdate {
 }
 
 func (r *Runtime) StartWorkflow(w http.ResponseWriter, req *http.Request, job storage.Job, run func(context.Context, ProgressFunc) (any, error)) {
+	r.StartWorkflowWithResponse(w, req, job, nil, run)
+}
+
+func (r *Runtime) StartWorkflowWithResponse(w http.ResponseWriter, req *http.Request, job storage.Job, response map[string]any, run func(context.Context, ProgressFunc) (any, error)) {
 	if err := r.store.CreateJob(req.Context(), job); err != nil {
 		WriteError(w, http.StatusInternalServerError, err)
 		return
 	}
-	WriteJSON(w, http.StatusAccepted, map[string]any{"job": job})
+	if response == nil {
+		response = map[string]any{}
+	}
+	response["job"] = job
+	WriteJSON(w, http.StatusAccepted, response)
 
 	go func() {
 		storeCtx := context.Background()

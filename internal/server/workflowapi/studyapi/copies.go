@@ -35,6 +35,7 @@ type studyStore interface {
 }
 
 type studyTopperStore interface {
+	SaveTopperReview(context.Context, storage.TopperReviewRecord) error
 	ListTopperReviews(context.Context, storage.TopperReviewListOptions) ([]storage.TopperReviewRecord, error)
 	GetTopperReview(context.Context, string) (storage.TopperReviewRecord, error)
 }
@@ -272,30 +273,65 @@ func (h *Handler) startStudyBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req, ok := core.DecodeJSON[struct {
-		CopyIDs []string `json:"copy_ids"`
-		Stage   string   `json:"stage"`
+		CopyIDs     []string `json:"copy_ids"`
+		Stage       string   `json:"stage"`
+		ProviderID  string   `json:"provider_id"`
+		Model       string   `json:"model"`
+		Parallelism int      `json:"parallelism"`
+		ForceOCR    bool     `json:"force_ocr"`
 	}](w, r)
 	if !ok {
 		return
 	}
+	if len(req.CopyIDs) == 0 {
+		core.WriteError(w, http.StatusBadRequest, fmt.Errorf("select at least one copy"))
+		return
+	}
+	options := normalizedStudyBatchRunOptions(studyBatchRunOptions{
+		ProviderID:  req.ProviderID,
+		Model:       req.Model,
+		Parallelism: req.Parallelism,
+		ForceOCR:    req.ForceOCR,
+	})
+	if _, ok := h.runtime.ProviderFor(options.ProviderID); !ok {
+		core.WriteError(w, http.StatusNotFound, core.ErrProviderNotFound)
+		return
+	}
+	if !h.studyBatchProviderSupportsDirectPDF(options.ProviderID) {
+		core.WriteError(w, http.StatusBadRequest, fmt.Errorf("provider %q does not support direct PDF input", options.ProviderID))
+		return
+	}
+	copyIDs := dedupeStrings(req.CopyIDs)
 	stage := normalizedStudyStage(req.Stage)
 	batch := storage.StudyBatchRecord{
 		ID:     "study-batch-" + time.Now().UTC().Format("20060102150405.000000000"),
-		Status: "queued",
+		Status: "running",
 		Stage:  stage,
-		Total:  len(req.CopyIDs),
+		Total:  len(copyIDs),
+	}
+	copies := make([]storage.StudyCopyRecord, 0, len(req.CopyIDs))
+	for _, copyID := range copyIDs {
+		copyRecord, err := store.GetStudyCopy(r.Context(), copyID)
+		if err != nil {
+			core.WriteError(w, http.StatusNotFound, fmt.Errorf("study copy %q: %w", copyID, err))
+			return
+		}
+		copies = append(copies, copyRecord)
 	}
 	if err := store.SaveStudyBatch(r.Context(), batch); err != nil {
 		core.WriteError(w, http.StatusInternalServerError, err)
 		return
 	}
-	for _, copyID := range req.CopyIDs {
-		_ = store.SaveStudyBatchItem(r.Context(), storage.StudyBatchItemRecord{
+	for _, copyID := range copyIDs {
+		if err := store.SaveStudyBatchItem(r.Context(), storage.StudyBatchItemRecord{
 			BatchID: batch.ID, CopyID: copyID, Stage: stage, Status: "queued",
-		})
+		}); err != nil {
+			core.WriteError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	items, _ := store.ListStudyBatchItems(r.Context(), batch.ID)
-	core.WriteJSON(w, http.StatusAccepted, map[string]any{"batch": batch, "items": items})
+	h.startStudyBatchJob(w, r, store, batch, items, copies, options)
 }
 
 func (h *Handler) studyStore(w http.ResponseWriter) (studyStore, bool) {

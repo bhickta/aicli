@@ -1,3 +1,5 @@
+import type { Job } from "./core";
+
 export interface StudyCopyRecord {
   id: string;
   source_path: string;
@@ -85,6 +87,22 @@ export interface StudyBatchRecord {
   total: number;
   completed: number;
   failed: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudyBatchResponse {
+  batch: StudyBatchRecord;
+  items?: StudyBatchItemRecord[];
+  job?: Job;
+}
+
+export interface StudyBatchItemRecord {
+  batch_id: string;
+  copy_id: string;
+  stage: string;
+  status: string;
+  error: string;
   created_at: string;
   updated_at: string;
 }

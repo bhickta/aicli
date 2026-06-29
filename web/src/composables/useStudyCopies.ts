@@ -1,6 +1,6 @@
 import { computed, shallowRef } from "vue";
-import { api } from "../lib/api";
-import type { StudyBatchRecord, StudyCopyDetail, StudyCopyRecord } from "../types";
+import { api, pollJob } from "../lib/api";
+import type { StudyBatchResponse, StudyCopyDetail, StudyCopyRecord } from "../types";
 import { useToasts } from "./useToasts";
 
 export function useStudyCopies() {
@@ -13,6 +13,7 @@ export function useStudyCopies() {
   const selectedIds = shallowRef<string[]>([]);
   const importPath = shallowRef("");
   const importFolder = shallowRef("");
+  const batchParallelism = shallowRef(2);
 
   const summary = computed(() => {
     const pageCount = copies.value.reduce((total, copy) => total + copy.page_count, 0);
@@ -63,11 +64,19 @@ export function useStudyCopies() {
 
   async function startBatch(stage: string) {
     if (!selectedIds.value.length) return;
-    const payload = await api<{ batch: StudyBatchRecord }>("/api/study/batches", {
+    const payload = await api<StudyBatchResponse>("/api/study/batches", {
       method: "POST",
-      body: JSON.stringify({ copy_ids: selectedIds.value, stage }),
+      body: JSON.stringify({ copy_ids: selectedIds.value, stage, parallelism: batchParallelism.value }),
     });
-    toasts.info("Batch queued", `${payload.batch.total} copy(s), ${payload.batch.stage}`);
+    toasts.info("Batch started", `${payload.batch.total} copy(s), ${batchParallelism.value} parallel`);
+    if (payload.job?.id) {
+      status.value = "Batch running...";
+      const job = await pollJob(payload.job.id, (job) => {
+        status.value = `${job.stage} (${job.completed_units || 0}/${job.total_units || payload.batch.total})`;
+      });
+      status.value = job.status === "completed" ? "Batch completed" : `Batch ${job.status}`;
+      await loadCopies();
+    }
   }
 
   function toggleCopy(id: string) {
@@ -85,6 +94,7 @@ export function useStudyCopies() {
     selectedIds,
     importPath,
     importFolder,
+    batchParallelism,
     summary,
     loadCopies,
     openCopy,

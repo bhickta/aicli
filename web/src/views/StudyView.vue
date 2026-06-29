@@ -16,6 +16,7 @@ const {
   copies,
   selected,
   selectedIds,
+  batchParallelism,
   summary,
   loadCopies,
   openCopy: loadCopy,
@@ -72,7 +73,11 @@ async function refreshActiveCopy() {
           <button type="button" @click="clearSelection">New Import / Run</button>
         </div>
         <div class="study-batchbar">
-          <button type="button" :disabled="!selectedIds.length" @click="startBatch('all')">Queue selected</button>
+          <label class="study-parallel-control">
+            <span>Parallel</span>
+            <input v-model.number="batchParallelism" type="number" min="1" max="5" />
+          </label>
+          <button type="button" :disabled="!selectedIds.length" @click="startBatch('all')">Run selected</button>
           <button type="button" :disabled="!selectedIds.length" @click="startBatch('ocr')">OCR</button>
         </div>
         <StudyCopyTable

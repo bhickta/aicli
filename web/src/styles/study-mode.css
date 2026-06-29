@@ -97,6 +97,24 @@
   flex: 1;
 }
 
+.study-parallel-control {
+  align-items: center;
+  color: #8b949e;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.study-parallel-control input {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #fff;
+  padding: 10px 8px;
+  width: 56px;
+}
+
 .study-batchbar button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
