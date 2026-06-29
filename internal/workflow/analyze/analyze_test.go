@@ -151,6 +151,33 @@ func TestRunAnalyzeSplitsQuestionsAndWritesArtifacts(t *testing.T) {
 	}
 }
 
+func TestRunAnalyzeQuestionSplitFallsBackOnEmptyPageResponse(t *testing.T) {
+	t.Parallel()
+
+	pdf := filepath.Join(t.TempDir(), "answers.pdf")
+	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fp := &fakeProvider{chatResponses: []string{"", "final report"}}
+	res, err := New(config.ToolConfig{PDFToPPM: "pdftoppm"}, &fakeRunner{}, fp).Run(
+		context.Background(),
+		Request{Path: pdf, Model: "model", QuestionSplit: true},
+	)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if res.Report != "final report" {
+		t.Fatalf("report = %q, want final report", res.Report)
+	}
+	if len(res.Questions) != 1 {
+		t.Fatalf("questions = %#v, want page fallback question", res.Questions)
+	}
+	question := res.Questions[0]
+	if question.Label != "Page 1" || question.Status != "needs review" || question.AnswerMarkdown != "page text" {
+		t.Fatalf("question = %#v, want fallback page block", question)
+	}
+}
+
 func TestRunAnalyzeUsesSeparateStepProviders(t *testing.T) {
 	t.Parallel()
 

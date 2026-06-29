@@ -125,7 +125,7 @@ func (s *Service) splitPageQuestions(ctx context.Context, model string, page Pag
 	}
 	questions, err := parseQuestionSplit(res.Content, page.Number)
 	if err != nil {
-		return nil, fmt.Errorf("question-wise split failed for page %d: %w", page.Number, err)
+		return pageFallbackQuestions([]Page{page}), nil
 	}
 	return questions, nil
 }
