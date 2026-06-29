@@ -4,9 +4,11 @@ import { stringify } from "../lib/format";
 import { describeJobProgress } from "../lib/jobProgress";
 import type { Job, ProgressMode, WorkflowDefinition } from "../types";
 import { useTaskSound } from "./useTaskSound";
+import { useToasts } from "./useToasts";
 
 export function useWorkflowRunner() {
   const taskSound = useTaskSound();
+  const toasts = useToasts();
   const status = shallowRef("Ready");
   const result = shallowRef("");
   const parsedResult = shallowRef<unknown>(null);
@@ -45,11 +47,13 @@ export function useWorkflowRunner() {
       progress.value = 100;
       progressMode.value = "determinate";
       progressVisible.value = true;
+      toasts.success("Workflow completed", workflow.label);
       void taskSound.play("success");
     } catch (error) {
       status.value = "Failed";
       progressVisible.value = false;
       result.value = error instanceof Error ? error.message : "Workflow failed";
+      toasts.error("Workflow failed", result.value);
       void taskSound.play("error");
     } finally {
       running.value = false;
@@ -87,6 +91,7 @@ export function useWorkflowRunner() {
       progress.value = 100;
       progressMode.value = "determinate";
       progressVisible.value = true;
+      toasts.success("Workflow completed", job.type || "Job");
       void taskSound.play("success");
     }
     if (job.status === "failed") {
@@ -94,6 +99,7 @@ export function useWorkflowRunner() {
       parsedResult.value = null;
       status.value = "Failed";
       progressVisible.value = presentation.visible;
+      toasts.error("Workflow failed", result.value);
       void taskSound.play("error");
     }
     if (job.status === "cancelled") {
@@ -101,6 +107,7 @@ export function useWorkflowRunner() {
       parsedResult.value = null;
       status.value = "Cancelled";
       progressVisible.value = presentation.visible;
+      toasts.info("Workflow cancelled", result.value);
       void taskSound.play("cancelled");
     }
   }

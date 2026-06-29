@@ -1,10 +1,14 @@
 import { computed, reactive, shallowRef } from "vue";
 import { api, pollJob, parseJobOutput } from "../lib/api";
 import type { Job, TopperCopyReview, TopperReviewRecord } from "../types";
+import { useConfirm } from "./useConfirm";
+import { useToasts } from "./useToasts";
 
 export type TopperRerunAction = "ocr" | "questions" | "report" | "all";
 
 export function useStudyArchive() {
+  const toasts = useToasts();
+  const { confirm } = useConfirm();
   const status = shallowRef("Loading saved reviews...");
   const query = shallowRef("");
   const reviews = shallowRef<TopperReviewRecord[]>([]);
@@ -63,6 +67,7 @@ export function useStudyArchive() {
     });
     selectedReview.value = payload.review;
     status.value = "Saved";
+    toasts.success("Review saved", selectedRecord.value.pdf_name || selectedRecord.value.id);
     await loadReviews();
   }
 
@@ -102,6 +107,10 @@ export function useStudyArchive() {
       await loadReviews();
       if (selectedRecord.value) await openReview(selectedRecord.value);
       status.value = "Rerun complete";
+      toasts.success("Rerun complete", action);
+    } catch (error) {
+      status.value = error instanceof Error ? error.message : `${action} failed`;
+      toasts.error("Rerun failed", status.value);
     } finally {
       running.value = false;
     }
@@ -110,16 +119,29 @@ export function useStudyArchive() {
   async function deleteReview() {
     if (!selectedRecord.value) return;
     const record = selectedRecord.value;
-    status.value = `Deleting ${record.pdf_name || record.id}...`;
-    await api(`/api/topper-reviews/${encodeURIComponent(record.id)}`, {
-      method: "DELETE",
-      body: JSON.stringify({ delete_pdf: deletePDF.value }),
+    const ok = await confirm({
+      title: "Delete review?",
+      message: `Delete ${record.pdf_name || record.id} review assets${deletePDF.value ? " and uploaded PDF" : ""}?`,
+      confirmLabel: "Delete",
+      danger: true,
     });
-    selectedRecord.value = null;
-    selectedReview.value = null;
-    deletePDF.value = false;
-    await loadReviews();
-    status.value = "Deleted";
+    if (!ok) return;
+    status.value = `Deleting ${record.pdf_name || record.id}...`;
+    try {
+      await api(`/api/topper-reviews/${encodeURIComponent(record.id)}`, {
+        method: "DELETE",
+        body: JSON.stringify({ delete_pdf: deletePDF.value }),
+      });
+      selectedRecord.value = null;
+      selectedReview.value = null;
+      deletePDF.value = false;
+      await loadReviews();
+      status.value = "Deleted";
+      toasts.info("Review deleted", record.pdf_name || record.id);
+    } catch (error) {
+      status.value = error instanceof Error ? error.message : "Delete failed";
+      toasts.error("Delete failed", status.value);
+    }
   }
 
   function updateSelectedReview(review: TopperCopyReview) {

@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, shallowRef } from "vue";
+import { computed, onMounted, onUnmounted, shallowRef, watch } from "vue";
+import { useRoute } from "vue-router";
+import PageHeader from "../components/layout/PageHeader.vue";
+import PageTabs from "../components/layout/PageTabs.vue";
+import { useConfirm } from "../composables/useConfirm";
+import { useToasts } from "../composables/useToasts";
 import { api } from "../lib/api";
 import { describeJobProgress, progressBarWidth } from "../lib/jobProgress";
 import type { Job } from "../types";
@@ -17,7 +22,10 @@ const filterOptions: Array<{ id: JobFilter; label: string }> = [
 
 const status = shallowRef("Loading jobs...");
 const jobs = shallowRef<Job[]>([]);
-const activeFilter = shallowRef<JobFilter>("recent");
+const route = useRoute();
+const toasts = useToasts();
+const { confirm } = useConfirm();
+const activeFilter = computed<JobFilter>(() => normalizeJobFilter(String(route.params.filter || "recent")));
 let refreshTimer: number | undefined;
 
 const jobRows = computed(() =>
@@ -49,6 +57,11 @@ const loadedSummary = computed(() => {
     `${counts.failed || 0} failed`,
   ].join(" | ");
 });
+const filterTabs = computed(() => filterOptions.map((option) => ({
+  label: option.label,
+  to: { name: "jobs", params: { filter: option.id } },
+  active: activeFilter.value === option.id,
+})));
 
 onMounted(() => {
   void loadJobs();
@@ -59,10 +72,9 @@ onUnmounted(() => {
   if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
 });
 
-async function setFilter(nextFilter: JobFilter) {
-  activeFilter.value = nextFilter;
-  await loadJobs();
-}
+watch(activeFilter, () => {
+  void loadJobs({ silent: false });
+});
 
 async function loadJobs(options: { silent?: boolean } = {}) {
   if (!options.silent) status.value = "Loading jobs...";
@@ -80,24 +92,42 @@ async function loadJobs(options: { silent?: boolean } = {}) {
 }
 
 async function clearFinishedJobs() {
+  const ok = await confirm({
+    title: "Clear finished jobs?",
+    message: "Completed, failed, and cancelled job records will be removed from the list.",
+    confirmLabel: "Clear finished",
+    danger: true,
+  });
+  if (!ok) return;
   status.value = "Clearing finished jobs...";
   try {
     const payload = await api<{ deleted: number }>("/api/jobs?scope=finished", { method: "DELETE" });
     status.value = `Cleared ${payload.deleted} job(s)`;
+    toasts.success("Finished jobs cleared", `${payload.deleted} job(s) removed.`);
     await loadJobs({ silent: true });
   } catch (error) {
     status.value = error instanceof Error ? error.message : "Clear failed";
+    toasts.error("Clear failed", status.value);
   }
 }
 
 async function cancelJob(job: Job) {
+  const ok = await confirm({
+    title: "Cancel job?",
+    message: `Cancel ${job.type || job.id}? Running work may stop before producing output.`,
+    confirmLabel: job.type === "whatsapp-scheduled-message" ? "Cancel schedule" : "Cancel job",
+    danger: true,
+  });
+  if (!ok) return;
   status.value = `Cancelling ${job.id}...`;
   try {
     const cancelled = await api<Job>(`/api/jobs/${encodeURIComponent(job.id)}/cancel`, { method: "POST" });
     jobs.value = jobs.value.map((item) => item.id === cancelled.id ? cancelled : item);
     status.value = "Cancelled";
+    toasts.info("Job cancelled", cancelled.type || cancelled.id);
   } catch (error) {
     status.value = error instanceof Error ? error.message : "Cancel failed";
+    toasts.error("Cancel failed", status.value);
   }
 }
 
@@ -114,34 +144,22 @@ function shortText(value: string, limit = 320) {
   if (text.length <= limit) return text;
   return `${text.slice(0, limit)}...`;
 }
+
+function normalizeJobFilter(value: string): JobFilter {
+  return filterOptions.some((option) => option.id === value) ? value as JobFilter : "recent";
+}
 </script>
 
 <template>
   <div class="panel jobs-view">
-    <header class="jobs-header">
-      <div>
-        <h2>Jobs</h2>
-        <p class="muted">{{ loadedSummary }}</p>
-      </div>
-      <div class="jobs-actions">
+    <PageHeader title="Jobs" :description="loadedSummary">
+      <template #actions>
         <button type="button" @click="loadJobs()">Refresh</button>
         <button type="button" @click="clearFinishedJobs">Clear finished</button>
-      </div>
-    </header>
+      </template>
+    </PageHeader>
 
-    <div class="job-filter-tabs" role="tablist" aria-label="Job filters">
-      <button
-        v-for="option in filterOptions"
-        :key="option.id"
-        type="button"
-        role="tab"
-        :aria-selected="activeFilter === option.id"
-        :class="{ active: activeFilter === option.id }"
-        @click="setFilter(option.id)"
-      >
-        {{ option.label }}
-      </button>
-    </div>
+    <PageTabs :tabs="filterTabs" label="Job filters" />
 
     <p class="status-line" role="status" aria-live="polite">{{ status }}</p>
 

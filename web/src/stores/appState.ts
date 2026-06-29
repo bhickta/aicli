@@ -1,14 +1,12 @@
 import { computed, reactive, watch } from "vue";
 import { readStoredRecord, readStoredString, readStoredValue, writeStoredJSON, writeStoredString } from "../lib/persistence";
-import type { Model, Settings, SystemResources, ViewName, WhatsAppContact } from "../types";
+import type { Model, Settings, SystemResources, WhatsAppContact } from "../types";
 import { workflowCategories, workflowDefinitions } from "../workflows/definitions";
 
-const storedView = readStoredString("aicli.view", "chat") as ViewName;
 const storedWorkflowCategory = normalizedWorkflowCategory(readStoredString("aicli.workflow.category", "Codex"));
 const storedWorkflowID = readStoredString("aicli.workflow.id", "recall");
 
 export const appState = reactive({
-  view: storedView,
   health: "checking",
   settings: null as Settings | null,
   systemResources: null as SystemResources | null,
@@ -41,10 +39,6 @@ export const activeWorkflow = computed(() => {
 });
 
 export function selectWorkflowCategory(category: string) {
-  if (category === "Zettel") {
-    appState.view = "zettel";
-    return;
-  }
   appState.workflow.category = category;
   appState.workflow.workflowId = activeWorkflowDefinitions.value[0]?.id || "";
 }
@@ -53,7 +47,6 @@ function normalizedWorkflowCategory(category: string) {
   return workflowCategories.includes(category) ? category : workflowCategories[0] || "Codex";
 }
 
-watch(() => appState.view, (view) => writeStoredString("aicli.view", view));
 watch(() => appState.browserPath, (path) => writeStoredString("aicli.browserPath", path));
 watch(() => appState.workflow.category, (category) => writeStoredString("aicli.workflow.category", category));
 watch(() => appState.workflow.workflowId, (workflowId) => writeStoredString("aicli.workflow.id", workflowId));

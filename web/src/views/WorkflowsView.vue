@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import DropZone from "../components/workflows/DropZone.vue";
 import FileBrowser from "../components/workflows/FileBrowser.vue";
 import WorkflowCategoryTabs from "../components/workflows/WorkflowCategoryTabs.vue";
@@ -33,9 +35,29 @@ const {
 const { handleDrop } = useWorkflowDrop({ activeWorkflow, updateField, chooseWorkflow, status, result, sourcePreview });
 const { browserField, browse, handleBrowserSelect, closeBrowser } = useWorkflowBrowser({ values, updateField, status, result });
 const resourceHint = useWorkflowResourceHint();
+const route = useRoute();
+const router = useRouter();
+
+const routeCategory = computed(() => normalizeRouteCategory(String(route.params.category || "")));
+
+watch(routeCategory, (category) => {
+  if (appState.workflow.category !== category) {
+    appState.workflow.category = category;
+    appState.workflow.workflowId = activeWorkflowDefinitions.value[0]?.id || "";
+  }
+}, { immediate: true });
 
 function chooseWorkflow(id: string) {
   appState.workflow.workflowId = id;
+}
+
+function chooseCategory(category: string) {
+  if (category === "Zettel") {
+    void router.push({ name: "zettel", params: { mode: "inbox" } });
+    return;
+  }
+  selectWorkflowCategory(category);
+  void router.push({ name: "workflows", params: { category: category.toLowerCase() } });
 }
 
 async function runWorkflow() {
@@ -44,6 +66,12 @@ async function runWorkflow() {
 
 function cancelButtonLabel() {
   return activeWorkflow.value?.id === "whatsapp-schedule" ? "Cancel schedule" : "Cancel workflow";
+}
+
+function normalizeRouteCategory(category: string) {
+  const normalized = workflowCategories.find((item) => item.toLowerCase() === category.toLowerCase());
+  if (normalized && normalized !== "Zettel") return normalized;
+  return appState.workflow.category === "Zettel" ? "Codex" : appState.workflow.category;
 }
 </script>
 
@@ -57,7 +85,7 @@ function cancelButtonLabel() {
       <WorkflowCategoryTabs
         :categories="workflowCategories"
         :active-category="appState.workflow.category"
-        @select="selectWorkflowCategory"
+        @select="chooseCategory"
       />
       <WorkflowSelector
         :workflows="activeWorkflowDefinitions"

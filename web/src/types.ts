@@ -1,5 +1,3 @@
-export type ViewName = "chat" | "workflows" | "study-archive" | "zettel" | "jobs" | "providers" | "tools" | "settings";
-
 export interface ProviderConfig {
   id: string;
   type: string;

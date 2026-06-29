@@ -51,7 +51,7 @@
   text-transform: uppercase;
 }
 
-#primary-tabs button {
+#primary-tabs .nav-link {
   width: 100%;
   border-radius: 6px;
   border: 1px solid #343b46;
@@ -61,15 +61,16 @@
   gap: 2px;
   min-height: 58px;
   padding: 9px 10px;
+  text-decoration: none;
 }
 
-#primary-tabs button.active-tab {
+#primary-tabs .nav-link.router-link-active {
   border-color: #6ea8fe;
   background: #2d405e;
   box-shadow: 0 0 0 1px #6ea8fe inset;
 }
 
-#primary-tabs button:not(.active-tab) {
+#primary-tabs .nav-link:not(.router-link-active) {
   opacity: 0.86;
 }
 
@@ -83,7 +84,7 @@
   line-height: 1.25;
 }
 
-#primary-tabs button.active-tab .nav-description {
+#primary-tabs .nav-link.router-link-active .nav-description {
   color: #d2e2f7;
 }
 

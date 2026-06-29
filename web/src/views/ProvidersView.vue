@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, shallowRef, watch } from "vue";
+import PageHeader from "../components/layout/PageHeader.vue";
+import { useToasts } from "../composables/useToasts";
 import { api } from "../lib/api";
 import { stringify } from "../lib/format";
 import { appState, defaultProviderId, providers } from "../stores/appState";
@@ -9,6 +11,7 @@ const selectedProvider = shallowRef(defaultProviderId.value);
 const status = shallowRef("Loading providers...");
 const models = shallowRef<Model[]>([]);
 const busy = shallowRef(false);
+const toasts = useToasts();
 
 const providerConfig = computed(() => stringify(appState.settings?.providers || []));
 const modelResponse = computed(() => stringify(models.value));
@@ -34,9 +37,11 @@ async function loadModels() {
     models.value = payload.models || [];
     appState.models[selectedProvider.value] = models.value;
     status.value = "Models loaded";
+    toasts.success("Models loaded", selectedProvider.value);
   } catch (error) {
     models.value = [];
     status.value = "Failed to load models";
+    toasts.error("Model load failed", selectedProvider.value);
   } finally {
     busy.value = false;
   }
@@ -45,7 +50,7 @@ async function loadModels() {
 
 <template>
   <div class="panel grid">
-    <h2>Providers</h2>
+    <PageHeader title="Providers" description="Inspect configured providers and available models." />
     <div class="field">
       <label for="provider-list">Provider</label>
       <select id="provider-list" v-model="selectedProvider">

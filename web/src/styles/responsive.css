@@ -38,7 +38,7 @@
     display: contents;
   }
 
-  #primary-tabs button {
+  #primary-tabs .nav-link {
     width: auto;
     white-space: nowrap;
     flex: 0 0 auto;

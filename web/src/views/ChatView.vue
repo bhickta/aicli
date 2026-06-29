@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { shallowReactive, shallowRef, watch } from "vue";
+import PageHeader from "../components/layout/PageHeader.vue";
 import ProviderModelControl from "../components/ProviderModelControl.vue";
+import { useToasts } from "../composables/useToasts";
 import { api } from "../lib/api";
 import { readStoredString, writeStoredString } from "../lib/persistence";
 import type { TokenUsage } from "../types";
@@ -14,6 +16,7 @@ const status = shallowRef("Ready");
 const answer = shallowRef("");
 const usage = shallowRef<TokenUsage | null>(null);
 const busy = shallowRef(false);
+const toasts = useToasts();
 
 watch(providerModel, () => {
   writeStoredString("aicli.chat.providerId", providerModel.provider_id);
@@ -38,9 +41,11 @@ async function sendChat() {
     answer.value = result.content;
     usage.value = result.usage || null;
     status.value = "Done";
+    toasts.success("Chat complete", providerModel.model || providerModel.provider_id);
   } catch (error) {
     answer.value = error instanceof Error ? error.message : "Chat failed";
     status.value = "Failed";
+    toasts.error("Chat failed", answer.value);
   } finally {
     busy.value = false;
   }
@@ -49,7 +54,7 @@ async function sendChat() {
 
 <template>
   <div class="panel grid">
-    <h2>Chat</h2>
+    <PageHeader title="Chat" description="Send a one-off prompt to a configured provider." />
     <ProviderModelControl
       :provider-id="providerModel.provider_id"
       :model="providerModel.model"

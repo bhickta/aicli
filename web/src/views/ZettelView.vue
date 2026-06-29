@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import ZettelWorkflowTabs from "../components/zettel/common/ZettelWorkflowTabs.vue";
+import { computed, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import PageHeader from "../components/layout/PageHeader.vue";
+import PageTabs from "../components/layout/PageTabs.vue";
 import ZettelInboxPanel from "../components/zettel/inbox/ZettelInboxPanel.vue";
 import ZettelMetadataPanel from "../components/zettel/metadata/ZettelMetadataPanel.vue";
 import ZettelSettingsPanel from "../components/zettel/settings/ZettelSettingsPanel.vue";
@@ -43,17 +46,31 @@ const {
   runMetadata,
   exportTrainingData,
 } = useZettelWorkflow();
+const route = useRoute();
+const router = useRouter();
+const tabs = computed(() => [
+  { label: "Inbox", to: { name: "zettel", params: { mode: "inbox" } }, active: mode.value === "inbox" },
+  { label: "Metadata", to: { name: "zettel", params: { mode: "metadata" } }, active: mode.value === "metadata" },
+  { label: "Training", to: { name: "zettel", params: { mode: "training" } }, active: mode.value === "training" },
+  { label: "Settings", to: { name: "zettel", params: { mode: "settings" } }, active: mode.value === "settings" },
+]);
+
+watch(() => route.params.mode, (nextMode) => {
+  if (nextMode === "metadata" || nextMode === "training" || nextMode === "settings" || nextMode === "inbox") {
+    mode.value = nextMode;
+    return;
+  }
+  void router.replace({ name: "zettel", params: { mode: mode.value || "inbox" } });
+}, { immediate: true });
 </script>
 
 <template>
   <div class="panel grid zettel-panel">
-    <div class="zettel-title-row">
-      <div>
-        <h2>Zettelkasten</h2>
-        <p class="muted">Simple inbox flow: embed, find semantic matches, then ask AI for final merged notes.</p>
-      </div>
-      <ZettelWorkflowTabs v-model="mode" />
-    </div>
+    <PageHeader title="Zettelkasten" description="Embed, find semantic matches, and merge notes into the vault.">
+      <template #actions>
+        <PageTabs :tabs="tabs" label="Zettelkasten workflow" />
+      </template>
+    </PageHeader>
 
     <ZettelVaultPanel :vault-path="config.vaultPath" :busy="busy" @pick="pickVault" />
 
@@ -138,21 +155,4 @@ const {
   max-width: 1280px;
 }
 
-.zettel-title-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.zettel-title-row p {
-  margin: 6px 0 0;
-}
-
-@media (max-width: 760px) {
-  .zettel-title-row {
-    align-items: stretch;
-    flex-direction: column;
-  }
-}
 </style>
