@@ -15,9 +15,20 @@ import { readStoredString, writeStoredString } from "../../lib/persistence";
 import "../../styles/study-workflow.css";
 import { studyWorkflowDefinitions } from "../../workflows/study";
 
-const selectedWorkflowId = shallowRef(readStoredString("aicli.study.workflow.id", "analyze"));
+const props = withDefaults(defineProps<{
+  compact?: boolean;
+  lockedWorkflowId?: string;
+  sourcePath?: string;
+}>(), {
+  compact: false,
+  lockedWorkflowId: "",
+  sourcePath: "",
+});
+
+const selectedWorkflowId = shallowRef(props.lockedWorkflowId || readStoredString("aicli.study.workflow.id", "analyze"));
 const activeWorkflow = computed(() => {
-  return studyWorkflowDefinitions.find((workflow) => workflow.id === selectedWorkflowId.value) || studyWorkflowDefinitions[0];
+  const id = props.lockedWorkflowId || selectedWorkflowId.value;
+  return studyWorkflowDefinitions.find((workflow) => workflow.id === id) || studyWorkflowDefinitions[0];
 });
 
 const { values, providerModel, nonProviderFields, hasProviderModel, updateField, collectValues } = useWorkflowForm(activeWorkflow);
@@ -45,10 +56,20 @@ const { handleDrop } = useWorkflowDrop({
   autoSelectWorkflow: autoSelectStudyWorkflow,
 });
 const { browserField, browse, handleBrowserSelect, closeBrowser } = useWorkflowBrowser({ values, updateField, status, result });
+const showResult = computed(() => !props.compact || progressVisible.value || Boolean(result.value || parsedResult.value));
 
-watch(selectedWorkflowId, (workflowId) => writeStoredString("aicli.study.workflow.id", workflowId));
+watch(selectedWorkflowId, (workflowId) => {
+  if (!props.lockedWorkflowId) writeStoredString("aicli.study.workflow.id", workflowId);
+});
+watch(() => props.lockedWorkflowId, (workflowId) => {
+  if (workflowId) selectedWorkflowId.value = workflowId;
+});
+watch([activeWorkflow, () => props.sourcePath], ([workflow, sourcePath]) => {
+  if (workflow?.id === "analyze" && sourcePath && values.path !== sourcePath) updateField("path", sourcePath);
+}, { immediate: true });
 
 function chooseWorkflow(id: string) {
+  if (props.lockedWorkflowId) return;
   selectedWorkflowId.value = id;
 }
 
@@ -64,8 +85,8 @@ async function runWorkflow() {
 </script>
 
 <template>
-  <section class="study-workflow-panel">
-    <aside class="study-workflow-rail" aria-label="Study workflows">
+  <section class="study-workflow-panel" :class="{ compact, 'with-result': showResult }">
+    <aside v-if="!compact && !lockedWorkflowId" class="study-workflow-rail" aria-label="Study workflows">
       <WorkflowSelector
         :workflows="studyWorkflowDefinitions"
         :selected-id="activeWorkflow?.id || ''"
@@ -83,7 +104,7 @@ async function runWorkflow() {
         <span>{{ nonProviderFields.length }} input{{ nonProviderFields.length === 1 ? "" : "s" }}</span>
       </header>
       <div class="study-input-scroll">
-        <DropZone @upload="handleDrop" />
+        <DropZone v-if="!compact" @upload="handleDrop" />
         <WorkflowFields
           :fields="nonProviderFields"
           :values="values"
@@ -107,7 +128,7 @@ async function runWorkflow() {
       </footer>
     </section>
 
-    <section class="study-workflow-result" aria-label="Workflow output">
+    <section v-if="showResult" class="study-workflow-result" aria-label="Workflow output">
       <WorkflowResult
         :status="status"
         :progress="progress"

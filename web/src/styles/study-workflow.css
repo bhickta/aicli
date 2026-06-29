@@ -7,6 +7,17 @@
   min-width: 0;
 }
 
+.study-workflow-panel.compact {
+  grid-template-columns: minmax(0, 1fr);
+  height: auto;
+  margin-bottom: 24px;
+  min-height: 0;
+}
+
+.study-workflow-panel.compact.with-result {
+  grid-template-columns: minmax(22rem, 30rem) minmax(0, 1fr);
+}
+
 .study-workflow-rail,
 .study-workflow-controls,
 .study-workflow-result {
@@ -147,6 +158,10 @@
 
 @media (max-width: 780px) {
   .study-workflow-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .study-workflow-panel.compact.with-result {
     grid-template-columns: 1fr;
   }
 }

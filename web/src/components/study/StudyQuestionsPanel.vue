@@ -5,6 +5,7 @@ import StudyAnalyticsPanel from "./StudyAnalyticsPanel.vue";
 import StudyArchiveView from "../../views/StudyArchiveView.vue";
 import StudyQuestionCard from "./StudyQuestionCard.vue";
 import { api } from "../../lib/api";
+import { uploadURLFromPath } from "../../lib/fileLinks";
 import { useToasts } from "../../composables/useToasts";
 
 const props = defineProps<{ detail: StudyCopyDetail | null }>();
@@ -15,6 +16,7 @@ const rawReviewId = computed(() => {
   if (!id) return "";
   return id.startsWith("copy-") ? id.slice(5) : id;
 });
+const sourcePDFURL = computed(() => uploadURLFromPath(props.detail?.copy.source_path || ""));
 
 const copiedId = ref<string | null>(null);
 const copiedType = ref<"answer" | "qa" | null>(null);
@@ -123,7 +125,10 @@ function getQuestionDimensions(questionId: string) {
           <h2>{{ detail.copy.pdf_name || detail.copy.id }}</h2>
           <p>{{ detail.copy.source_path || "Question-wise answer text and source page mapping." }}</p>
         </div>
-        <span class="study-pill">{{ detail.copy.status || "pending" }}</span>
+        <div class="study-question-actions">
+          <a v-if="sourcePDFURL" class="study-btn-action secondary" :href="sourcePDFURL" target="_blank" rel="noopener">Open PDF</a>
+          <span class="study-pill">{{ detail.copy.status || "pending" }}</span>
+        </div>
       </header>
       
       <div class="study-kpis">

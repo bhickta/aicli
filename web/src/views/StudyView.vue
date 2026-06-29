@@ -79,7 +79,14 @@ function clearSelection() {
       </aside>
 
       <section class="study-main">
-        <StudyQuestionsPanel v-if="activeCopyId" :detail="selected" />
+        <template v-if="activeCopyId">
+          <StudyWorkflowPanel
+            compact
+            locked-workflow-id="analyze"
+            :source-path="selected?.copy.source_path || ''"
+          />
+          <StudyQuestionsPanel :detail="selected" />
+        </template>
         <StudyWorkflowPanel v-else />
       </section>
     </main>

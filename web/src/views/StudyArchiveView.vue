@@ -85,6 +85,15 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
             <div class="action-cards-grid">
               <div class="action-card">
                 <div class="action-info">
+                  <h4>Open PDF</h4>
+                  <p>Open the original uploaded copy in a new tab.</p>
+                </div>
+                <a v-if="archive.sourcePDFURL.value" class="archive-action-link" :href="archive.sourcePDFURL.value" target="_blank" rel="noopener">Open</a>
+                <button v-else type="button" disabled>Unavailable</button>
+              </div>
+
+              <div class="action-card">
+                <div class="action-info">
                   <h4>Save Edits</h4>
                   <p>Save any manual edits made to the text.</p>
                 </div>

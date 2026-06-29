@@ -1,5 +1,6 @@
 import { computed, reactive, shallowRef } from "vue";
 import { api, pollJob, parseJobOutput } from "../lib/api";
+import { uploadURLFromPath } from "../lib/fileLinks";
 import type { Job, TopperCopyReview, TopperReviewRecord } from "../types";
 import { useConfirm } from "./useConfirm";
 import { useToasts } from "./useToasts";
@@ -29,6 +30,7 @@ export function useStudyArchive() {
   });
   const isPDFDirectReview = computed(() => selectedReview.value?.source_mode === "pdf_direct");
   const canRerunAll = computed(() => isPDFDirectReview.value || canRerunOCR.value);
+  const sourcePDFURL = computed(() => uploadURLFromPath(selectedRecord.value?.source_path || ""));
 
   async function loadReviews() {
     status.value = "Loading saved reviews...";
@@ -161,6 +163,7 @@ export function useStudyArchive() {
     canRerunOCR,
     isPDFDirectReview,
     canRerunAll,
+    sourcePDFURL,
     loadReviews,
     openReview,
     saveReview,
