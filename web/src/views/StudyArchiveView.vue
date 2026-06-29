@@ -95,12 +95,6 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
                 />
               </div>
             </div>
-            
-            <div class="study-worker-controls" v-if="!reviewId">
-              <label>OCR <input v-model.number="archive.ocrWorkers.value" type="number" min="0"></label>
-              <label>OCR batch <input v-model.number="archive.ocrBatchSize.value" type="number" min="0" max="10"></label>
-              <label>Questions <input v-model.number="archive.questionWorkers.value" type="number" min="0"></label>
-            </div>
           </div>
 
           <div class="study-review-action-row">
@@ -115,18 +109,10 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
 
               <div class="action-card primary-card">
                 <div class="action-info">
-                  <h4>Rerun Questions</h4>
-                  <p>Re-splits the OCR text into questions and extracts analytics.</p>
-                </div>
-                <button type="button" class="primary" :disabled="archive.running.value" @click="rerun('questions')">Run</button>
-              </div>
-
-              <div class="action-card">
-                <div class="action-info">
                   <h4>Rerun Analytics</h4>
                   <p>Fast! Only extracts dimensions (Intro/Fact) for existing questions.</p>
                 </div>
-                <button type="button" :disabled="archive.running.value" @click="rerun('analytics')">Run</button>
+                <button type="button" class="primary" :disabled="archive.running.value" @click="rerun('analytics')">Run</button>
               </div>
 
               <div class="action-card">

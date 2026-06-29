@@ -428,19 +428,22 @@ func TestParseQuestionSplitRejectsEmptyQuestionBlocks(t *testing.T) {
 	}
 }
 
-func TestParseDirectPDFManifest(t *testing.T) {
+func TestParseOneShotPDFManifest(t *testing.T) {
 	t.Parallel()
 
-	content := "```json\n{\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"source_pages\":[1]}]}\n```"
-	pages, questions, err := parseDirectPDFManifest(content, "copy.pdf")
+	content := "```json\n{\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"source_pages\":[1],\"answer_markdown\":\"test answer\"}],\"report\":\"test report\"}\n```"
+	pages, questions, report, err := parseOneShotPDFManifest(content, "copy.pdf")
 	if err != nil {
-		t.Fatalf("parseDirectPDFManifest() error = %v", err)
+		t.Fatalf("parseOneShotPDFManifest() error = %v", err)
 	}
 	if len(pages) != 1 || pages[0].Text != "ocr text" || pages[0].UnclearCount != 1 {
 		t.Fatalf("pages = %#v", pages)
 	}
-	if len(questions) != 1 || questions[0].Label != "Q.1" || questions[0].Title != "History" || questions[0].SourcePages[0] != 1 {
+	if len(questions) != 1 || questions[0].Label != "Q.1" || questions[0].Title != "History" || questions[0].SourcePages[0] != 1 || questions[0].AnswerMarkdown != "test answer" {
 		t.Fatalf("questions = %#v", questions)
+	}
+	if report != "test report" {
+		t.Fatalf("report = %q", report)
 	}
 }
 
