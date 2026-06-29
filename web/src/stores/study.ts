@@ -107,12 +107,13 @@ export const useStudyStore = defineStore("study", {
 
     async startBatch(stage = "all") {
       if (!this.selectedIds.length) return;
+      const action = stage === "metadata" ? "metadata generation" : "copy analysis";
       await this.startRun("/api/study/batches", {
         copy_ids: this.selectedIds,
         stage,
         parallelism: this.batchParallelism,
         force_ocr: this.forceRerun,
-      }, `Starting ${this.selectedIds.length} copy analysis...`);
+      }, `Starting ${this.selectedIds.length} ${action}...`);
     },
 
     async runCopy(copyId: string) {
@@ -142,11 +143,12 @@ export const useStudyStore = defineStore("study", {
       this.batchItems = payload.items || [];
       this.applyBatchItems(this.batchItems);
       if (!payload.job?.id) return;
-      this.runStatus = "Analysis running...";
+      this.runStatus = payload.batch.stage === "metadata" ? "Metadata generation running..." : "Analysis running...";
       await Promise.all([this.pollBatch(payload.batch.id), pollJob(payload.job.id, (job) => this.updateJobStatus(job))]);
       await this.pollBatch(payload.batch.id);
       const failedItem = this.batchItems.find((item) => item.error);
-      this.runStatus = failedItem?.error || (this.activeBatch?.status === "completed" ? "Analysis completed" : `Analysis ${this.activeBatch?.status}`);
+      const doneLabel = payload.batch.stage === "metadata" ? "Metadata generation" : "Analysis";
+      this.runStatus = failedItem?.error || (this.activeBatch?.status === "completed" ? `${doneLabel} completed` : `${doneLabel} ${this.activeBatch?.status}`);
       await this.refreshSettledSelection(this.batchItems);
     },
 
@@ -175,7 +177,7 @@ export const useStudyStore = defineStore("study", {
       this.activeBatch = detail.batch;
       this.batchItems = detail.items || [];
       const failedItem = this.batchItems.find((item) => item.error);
-      this.runStatus = failedItem?.error || batchStatusMessage(detail.batch.status);
+      this.runStatus = failedItem?.error || batchStatusMessage(detail.batch.status, detail.batch.stage);
       this.applyBatchItems(this.batchItems);
       if (detail.batch.status === "running") void this.pollBatch(detail.batch.id);
     },
@@ -221,8 +223,9 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-function batchStatusMessage(status: string) {
-  if (status === "completed") return "Last analysis completed";
-  if (status === "running") return "Analysis running...";
-  return `Analysis ${status}`;
+function batchStatusMessage(status: string, stage = "all") {
+  const label = stage === "metadata" ? "Metadata generation" : "Analysis";
+  if (status === "completed") return `Last ${label.toLowerCase()} completed`;
+  if (status === "running") return `${label} running...`;
+  return `${label} ${status}`;
 }

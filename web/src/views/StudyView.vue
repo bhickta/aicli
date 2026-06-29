@@ -78,6 +78,7 @@ async function refreshActiveCopy() {
         @search="study.loadCopies"
         @clear="clearSelection"
         @run-selected="study.startBatch('all')"
+        @generate-metadata="study.startBatch('metadata')"
         @open="openCopy"
         @toggle="study.toggleCopy"
       />

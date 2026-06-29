@@ -448,16 +448,16 @@ func (h *Handler) prepareStudyBatch(
 	requestedStage string,
 	options studyBatchRunOptions,
 ) (storage.StudyBatchRecord, []storage.StudyCopyRecord, bool) {
+	stage := normalizedStudyStage(requestedStage)
 	if _, ok := h.runtime.ProviderFor(options.ProviderID); !ok {
 		core.WriteError(w, http.StatusNotFound, core.ErrProviderNotFound)
 		return storage.StudyBatchRecord{}, nil, false
 	}
-	if !h.studyBatchProviderSupportsDirectPDF(options.ProviderID) {
+	if stage != "metadata" && !h.studyBatchProviderSupportsDirectPDF(options.ProviderID) {
 		core.WriteError(w, http.StatusBadRequest, fmt.Errorf("provider %q does not support direct PDF input", options.ProviderID))
 		return storage.StudyBatchRecord{}, nil, false
 	}
 	copyIDs := dedupeStrings(requestedCopyIDs)
-	stage := normalizedStudyStage(requestedStage)
 	now := time.Now().UTC()
 	batch := storage.StudyBatchRecord{
 		ID:          "study-batch-" + now.Format("20060102150405.000000000"),
@@ -625,7 +625,7 @@ func inferQuestionNo(label string, fallback int) int {
 func normalizedStudyStage(stage string) string {
 	stage = strings.ToLower(strings.TrimSpace(stage))
 	switch stage {
-	case "render", "ocr", "questions", "analysis", "report", "all":
+	case "render", "ocr", "questions", "analysis", "report", "metadata", "all":
 		return stage
 	default:
 		return "all"

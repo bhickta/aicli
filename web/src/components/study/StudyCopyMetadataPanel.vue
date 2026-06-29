@@ -27,6 +27,7 @@ const rows = computed(() => [
   ["Series", metadata.value?.test_series],
   ["Language", metadata.value?.language],
 ]);
+const visibleRows = computed(() => rows.value.filter(([, value]) => value));
 
 watch(
   () => props.copy,
@@ -102,13 +103,11 @@ function copyForm(copy: StudyCopyRecord) {
       </label>
     </div>
 
-    <dl v-if="rows.some(([, value]) => value)" class="study-copy-metadata-facts">
-      <template v-for="[label, value] in rows" :key="label">
-        <div v-if="value">
-          <dt>{{ label }}</dt>
-          <dd>{{ value }}</dd>
-        </div>
-      </template>
+    <dl v-if="visibleRows.length" class="study-copy-metadata-facts">
+      <div v-for="[label, value] in visibleRows" :key="label">
+        <dt>{{ label }}</dt>
+        <dd>{{ value }}</dd>
+      </div>
     </dl>
   </section>
 </template>

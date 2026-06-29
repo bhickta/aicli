@@ -10,6 +10,7 @@ const emit = defineEmits<{
   "update:parallelism": [value: number];
   "update:forceRerun": [value: boolean];
   runSelected: [];
+  generateMetadata: [];
   clear: [];
 }>();
 </script>
@@ -20,6 +21,9 @@ const emit = defineEmits<{
       <button type="button" :disabled="running" @click="emit('clear')">New Import / Run</button>
       <button type="button" :disabled="running || !selectedCount" @click="emit('runSelected')">
         {{ running ? "Running..." : "Run selected" }}
+      </button>
+      <button type="button" :disabled="running || !selectedCount" @click="emit('generateMetadata')">
+        Metadata only
       </button>
     </div>
     <div class="study-batch-row">

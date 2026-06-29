@@ -22,6 +22,7 @@ const emit = defineEmits<{
   search: [];
   clear: [];
   runSelected: [];
+  generateMetadata: [];
   open: [id: string];
   toggle: [id: string];
 }>();
@@ -48,6 +49,7 @@ const emit = defineEmits<{
       @update:parallelism="emit('update:parallelism', $event)"
       @update:force-rerun="emit('update:forceRerun', $event)"
       @run-selected="emit('runSelected')"
+      @generate-metadata="emit('generateMetadata')"
       @clear="emit('clear')"
     />
     <StudyCopyTable

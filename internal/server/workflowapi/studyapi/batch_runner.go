@@ -90,7 +90,7 @@ func (h *Handler) runStudyBatch(
 	if workers < 1 {
 		workers = 1
 	}
-	progress(core.Units(fmt.Sprintf("analyzing topper PDFs with %d worker(s)", workers), 0, len(copies), "copy"))
+	progress(core.Units(fmt.Sprintf("%s with %d worker(s)", studyBatchProgressLabel(batch.Stage), workers), 0, len(copies), "copy"))
 
 	jobs := make(chan storage.StudyCopyRecord)
 	results := make(chan studyBatchCopyResult, len(copies))
@@ -142,7 +142,7 @@ func (h *Handler) runStudyBatchCopy(
 	}); err != nil {
 		return studyBatchCopyResult{CopyID: copyRecord.ID, Status: "failed", Error: err.Error()}
 	}
-	result, err := h.analyzeStudyBatchCopy(ctx, store, jobID, copyRecord, vision, options)
+	result, err := h.analyzeStudyBatchCopy(ctx, store, jobID, batch.Stage, copyRecord, vision, options)
 	finishedAt := time.Now().UTC()
 	if err != nil {
 		_ = saveStudyBatchItem(ctx, store, storage.StudyBatchItemRecord{
@@ -182,10 +182,14 @@ func (h *Handler) analyzeStudyBatchCopy(
 	ctx context.Context,
 	store studyStore,
 	jobID string,
+	stage string,
 	copyRecord storage.StudyCopyRecord,
 	vision provider.Provider,
 	options studyBatchRunOptions,
 ) (studyBatchCopyResult, error) {
+	if stage == "metadata" {
+		return h.generateStudyBatchMetadata(ctx, store, copyRecord, vision, options)
+	}
 	if strings.TrimSpace(copyRecord.SourcePath) == "" {
 		return studyBatchCopyResult{}, fmt.Errorf("copy %s has no source PDF path", copyRecord.ID)
 	}
@@ -293,7 +297,7 @@ func (h *Handler) collectStudyBatchResults(
 		} else {
 			batch.Completed++
 		}
-		progress(core.Units("analyzing topper PDFs", batch.Completed+batch.Failed, batch.Total, "copy"))
+		progress(core.Units(studyBatchProgressLabel(batch.Stage), batch.Completed+batch.Failed, batch.Total, "copy"))
 		if batch.Completed+batch.Failed >= batch.Total {
 			batch.Status = "completed"
 			if batch.Failed > 0 {
@@ -445,6 +449,13 @@ func normalizedStudyBatchRunOptions(options studyBatchRunOptions) studyBatchRunO
 		options.Parallelism = maxStudyBatchParallelism
 	}
 	return options
+}
+
+func studyBatchProgressLabel(stage string) string {
+	if stage == "metadata" {
+		return "generating metadata"
+	}
+	return "analyzing topper PDFs"
 }
 
 func (h *Handler) studyBatchProviderSupportsDirectPDF(providerID string) bool {
