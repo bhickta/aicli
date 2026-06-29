@@ -29,6 +29,8 @@ export function useStudyCopies() {
     importFolder: list.importFolder,
     batchParallelism: runner.batchParallelism,
     forceRerun: runner.forceRerun,
+    running: runner.running,
+    runStatus: runner.runStatus,
     activeBatch: runner.activeBatch,
     batchItems: runner.batchItems,
     summary: list.summary,

@@ -59,6 +59,7 @@ async function refreshActiveCopy() {
         :copies="study.copies.value"
         :active-id="activeCopyId"
         :selected-ids="study.selectedIds.value"
+        :running="study.running.value"
         @search="study.loadCopies"
         @clear="clearSelection"
         @run-selected="study.startBatch('all')"
@@ -70,12 +71,14 @@ async function refreshActiveCopy() {
         <StudyRunStatusPanel
           :batch="study.activeBatch.value"
           :items="study.batchItems.value"
-          :status="study.status.value"
+          :status="study.runStatus.value"
+          :running="study.running.value"
         />
         <StudyCopyWorkspace
           :active-copy-id="activeCopyId"
           :detail="study.selected.value"
           :force-rerun="study.forceRerun.value"
+          :running="study.running.value"
           @run-copy="study.runCopy"
           @synced="refreshActiveCopy"
         />

@@ -3,6 +3,7 @@ defineProps<{
   selectedCount: number;
   parallelism: number;
   forceRerun: boolean;
+  running: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -16,14 +17,17 @@ const emit = defineEmits<{
 <template>
   <section class="study-batch-controls" aria-label="Batch analysis controls">
     <div class="study-batch-row">
-      <button type="button" @click="emit('clear')">New Import / Run</button>
-      <button type="button" :disabled="!selectedCount" @click="emit('runSelected')">Run selected</button>
+      <button type="button" :disabled="running" @click="emit('clear')">New Import / Run</button>
+      <button type="button" :disabled="running || !selectedCount" @click="emit('runSelected')">
+        {{ running ? "Running..." : "Run selected" }}
+      </button>
     </div>
     <div class="study-batch-row">
       <label class="study-parallel-control">
         <span>Parallel</span>
         <input
           :value="parallelism"
+          :disabled="running"
           type="number"
           min="1"
           max="5"
@@ -34,6 +38,7 @@ const emit = defineEmits<{
         <input
           type="checkbox"
           :checked="forceRerun"
+          :disabled="running"
           @change="emit('update:forceRerun', ($event.target as HTMLInputElement).checked)"
         />
         <span>Rerun saved analysis</span>

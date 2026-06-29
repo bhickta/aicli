@@ -12,6 +12,7 @@ defineProps<{
   selectedIds: string[];
   parallelism: number;
   forceRerun: boolean;
+  running: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -43,6 +44,7 @@ const emit = defineEmits<{
       :selected-count="selectedIds.length"
       :parallelism="parallelism"
       :force-rerun="forceRerun"
+      :running="running"
       @update:parallelism="emit('update:parallelism', $event)"
       @update:force-rerun="emit('update:forceRerun', $event)"
       @run-selected="emit('runSelected')"

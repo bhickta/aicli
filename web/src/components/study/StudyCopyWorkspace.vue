@@ -7,6 +7,7 @@ defineProps<{
   activeCopyId: string;
   detail: StudyCopyDetail | null;
   forceRerun: boolean;
+  running: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -19,8 +20,8 @@ const emit = defineEmits<{
   <section class="study-copy-workspace">
     <template v-if="activeCopyId">
       <div class="study-copy-actions">
-        <button type="button" @click="emit('runCopy', activeCopyId)">
-          {{ forceRerun ? "Rerun analysis" : "Analyze PDF" }}
+        <button type="button" :disabled="running" @click="emit('runCopy', activeCopyId)">
+          {{ running ? "Analysis running..." : forceRerun ? "Rerun analysis" : "Analyze PDF" }}
         </button>
       </div>
       <StudyWorkflowPanel
