@@ -34,7 +34,7 @@ type Request struct {
 	QuestionWorkers int    `json:"question_workers"`
 	UnloadModels    bool   `json:"unload_models"`
 	ForceOCR        bool   `json:"force_ocr"`
-	ReviewID        string `json:"-"`
+	ReviewID        string `json:"review_id"`
 	OCRPages        []Page `json:"-"`
 }
 

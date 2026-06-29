@@ -47,6 +47,12 @@ function clearSelection() {
   router.push({ name: "study" });
   selected.value = null;
 }
+
+async function refreshActiveCopy() {
+  if (!activeCopyId.value) return;
+  await loadCopy(activeCopyId.value);
+  await loadCopies();
+}
 </script>
 
 <template>
@@ -83,7 +89,10 @@ function clearSelection() {
           <StudyWorkflowPanel
             compact
             locked-workflow-id="analyze"
+            :review-id="activeCopyId"
+            :sync-copy-id="activeCopyId"
             :source-path="selected?.copy.source_path || ''"
+            @synced="refreshActiveCopy"
           />
           <StudyQuestionsPanel :detail="selected" />
         </template>

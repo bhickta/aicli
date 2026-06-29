@@ -11,6 +11,7 @@ import { useWorkflowBrowser } from "../../composables/useWorkflowBrowser";
 import { useWorkflowDrop } from "../../composables/useWorkflowDrop";
 import { useWorkflowForm } from "../../composables/useWorkflowForm";
 import { useWorkflowRunner } from "../../composables/useWorkflowRunner";
+import { api } from "../../lib/api";
 import { readStoredString, writeStoredString } from "../../lib/persistence";
 import "../../styles/study-workflow.css";
 import { studyWorkflowDefinitions } from "../../workflows/study";
@@ -18,12 +19,17 @@ import { studyWorkflowDefinitions } from "../../workflows/study";
 const props = withDefaults(defineProps<{
   compact?: boolean;
   lockedWorkflowId?: string;
+  reviewId?: string;
+  syncCopyId?: string;
   sourcePath?: string;
 }>(), {
   compact: false,
   lockedWorkflowId: "",
+  reviewId: "",
+  syncCopyId: "",
   sourcePath: "",
 });
+const emit = defineEmits<{ synced: [] }>();
 
 const selectedWorkflowId = shallowRef(props.lockedWorkflowId || readStoredString("aicli.study.workflow.id", "analyze"));
 const activeWorkflow = computed(() => {
@@ -80,7 +86,27 @@ function autoSelectStudyWorkflow(fileName: string) {
 }
 
 async function runWorkflow() {
-  await runActiveWorkflow(activeWorkflow.value, collectValues());
+  const inputValues = collectValues();
+  if (props.reviewId) inputValues.review_id = props.reviewId;
+  await runActiveWorkflow(activeWorkflow.value, inputValues);
+  await syncStudyCopyAfterRun();
+}
+
+async function syncStudyCopyAfterRun() {
+  if (!props.syncCopyId || !isTopperCopyReview(parsedResult.value)) return;
+  status.value = "Saving study copy...";
+  try {
+    await api(`/api/study/copies/${encodeURIComponent(props.syncCopyId)}/sync`, { method: "POST" });
+    status.value = "Saved to study copy";
+    emit("synced");
+  } catch (error) {
+    status.value = "Save failed";
+    result.value = error instanceof Error ? error.message : "Study copy sync failed";
+  }
+}
+
+function isTopperCopyReview(value: unknown) {
+  return Boolean(value && typeof value === "object" && (value as { kind?: unknown }).kind === "topper_copy_review");
 }
 </script>
 

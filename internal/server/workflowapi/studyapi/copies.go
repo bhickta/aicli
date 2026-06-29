@@ -17,7 +17,6 @@ import (
 
 	"github.com/bhickta/aicli/internal/server/workflowapi/core"
 	"github.com/bhickta/aicli/internal/storage"
-	"github.com/bhickta/aicli/internal/workflow/analyze"
 )
 
 type studyStore interface {
@@ -90,6 +89,16 @@ func (h *Handler) getStudyCopy(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusInternalServerError, err)
 		return
 	}
+	if synced, err := h.syncStudyCopyFromMatchingTopper(r.Context(), store, copyRecord, false); err != nil {
+		core.WriteError(w, http.StatusInternalServerError, err)
+		return
+	} else if synced {
+		copyRecord, err = store.GetStudyCopy(r.Context(), id)
+		if err != nil {
+			core.WriteError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
 	pages, err := store.ListStudyPages(r.Context(), id)
 	if err != nil {
 		core.WriteError(w, http.StatusInternalServerError, err)
@@ -121,12 +130,37 @@ func (h *Handler) syncStudyCopy(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusInternalServerError, fmt.Errorf("no topper store"))
 		return
 	}
+	existing, existingErr := store.GetStudyCopy(r.Context(), id)
+	if existingErr != nil && !errors.Is(existingErr, storage.ErrNotFound) {
+		core.WriteError(w, http.StatusInternalServerError, existingErr)
+		return
+	}
 	record, err := topperStore.GetTopperReview(r.Context(), id)
+	if errors.Is(err, storage.ErrNotFound) && existingErr == nil {
+		synced, syncErr := h.syncStudyCopyFromMatchingTopper(r.Context(), store, existing, true)
+		if syncErr != nil {
+			core.WriteError(w, http.StatusInternalServerError, syncErr)
+			return
+		}
+		if !synced {
+			core.WriteError(w, http.StatusNotFound, err)
+			return
+		}
+		h.getStudyCopy(w, r)
+		return
+	}
+	if errors.Is(err, storage.ErrNotFound) {
+		core.WriteError(w, http.StatusNotFound, err)
+		return
+	}
 	if err != nil {
 		core.WriteError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if err := saveStudyFromTopperRecord(r.Context(), store, record); err != nil {
+	if existingErr != nil {
+		existing = storage.StudyCopyRecord{}
+	}
+	if err := saveStudyFromTopperRecordAsCopy(r.Context(), store, record, id, existing); err != nil {
 		core.WriteError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -282,8 +316,15 @@ func (h *Handler) backfillStudyCopies(ctx context.Context, store studyStore) err
 	if err != nil {
 		return err
 	}
-	for _, record := range records {
-		if err := saveStudyFromTopperRecord(ctx, store, record); err != nil {
+	for _, summary := range records {
+		record, err := topperStore.GetTopperReview(ctx, summary.ID)
+		if errors.Is(err, storage.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if err := h.backfillStudyFromTopperRecord(ctx, store, record); err != nil {
 			return err
 		}
 	}
@@ -309,105 +350,7 @@ func (h *Handler) backfillStudyCopyID(ctx context.Context, store studyStore, id 
 }
 
 func saveStudyFromTopperRecord(ctx context.Context, store studyStore, record storage.TopperReviewRecord) error {
-	var review analyze.Response
-	if err := json.Unmarshal([]byte(record.ReviewJSON), &review); err != nil {
-		return nil
-	}
-	copyRecord := storage.StudyCopyRecord{
-		ID:             record.ID,
-		SourcePath:     record.SourcePath,
-		PDFName:        firstString(record.PDFName, review.PDFName),
-		PageCount:      len(review.Pages),
-		QuestionCount:  len(review.Questions),
-		UnclearCount:   record.UnclearCount,
-		Status:         record.Status,
-		RenderStatus:   "ready",
-		OCRStatus:      statusFromCount(len(review.Pages)),
-		QuestionStatus: statusFromCount(len(review.Questions)),
-		AnalysisStatus: "pending",
-		ReportStatus:   statusFromText(review.Report),
-		CreatedAt:      record.CreatedAt,
-	}
-	if err := store.SaveStudyCopy(ctx, copyRecord); err != nil {
-		return err
-	}
-	for _, page := range review.Pages {
-		if err := store.SaveStudyPage(ctx, storage.StudyPageRecord{
-			CopyID:       record.ID,
-			PageNumber:   page.Number,
-			Name:         page.Name,
-			ImagePath:    page.Path,
-			ImageURL:     page.ImageURL,
-			OCRText:      page.Text,
-			RawOCR:       page.Text,
-			Status:       "ready",
-			UnclearCount: page.UnclearCount,
-			Verified:     page.Verified,
-			CreatedAt:    record.CreatedAt,
-		}); err != nil {
-			return err
-		}
-	}
-	for index, question := range review.Questions {
-		qid := firstString(question.ID, fmt.Sprintf("%s-q%d", record.ID, index+1))
-		if err := store.SaveStudyQuestion(ctx, storage.StudyQuestionRecord{
-			ID:          qid,
-			CopyID:      record.ID,
-			QuestionNo:  inferQuestionNo(question.Label, index+1),
-			Label:       question.Label,
-			PromptText:  question.Title,
-			AnswerText:  question.AnswerMarkdown,
-			SourcePages: question.SourcePages,
-			Status:      firstString(question.Status, "ready"),
-			CreatedAt:   record.CreatedAt,
-		}); err != nil {
-			return err
-		}
-
-		if question.Dimensions != nil {
-			dims := map[string]string{
-				"introduction": question.Dimensions.Introduction,
-				"outro":        question.Dimensions.Outro,
-				"transition":   question.Dimensions.Transition,
-				"diagram":      question.Dimensions.Diagram,
-				"fact":         question.Dimensions.Fact,
-				"fact_usage":   question.Dimensions.FactUsage,
-				"custom":       question.Dimensions.Custom,
-			}
-			for key, val := range dims {
-				if strings.TrimSpace(val) == "" {
-					continue
-				}
-				if err := store.SaveStudyAnalysis(ctx, storage.StudyAnalysisRecord{
-					ID:           fmt.Sprintf("%s-dim-%s", qid, key),
-					CopyID:       record.ID,
-					ScopeType:    "question",
-					ScopeID:      qid,
-					DimensionKey: key,
-					ProviderID:   record.ProviderID,
-					Model:        record.Model,
-					ResultJSON:   jsonString(map[string]string{"analysis": val}),
-					CreatedAt:    record.CreatedAt,
-				}); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	if strings.TrimSpace(review.Report) != "" {
-		return store.SaveStudyAnalysis(ctx, storage.StudyAnalysisRecord{
-			ID:           record.ID + "-report",
-			CopyID:       record.ID,
-			ScopeType:    "copy",
-			ScopeID:      record.ID,
-			DimensionKey: "report",
-			ProviderID:   record.ProviderID,
-			Model:        record.Model,
-			ResultJSON:   jsonString(map[string]string{"report": review.Report}),
-			CreatedAt:    record.CreatedAt,
-		})
-	}
-	return nil
+	return saveStudyFromTopperRecordAsCopy(ctx, store, record, record.ID, storage.StudyCopyRecord{})
 }
 
 func collectStudyPDFs(paths []string, folderPath string, recursive bool) ([]string, error) {

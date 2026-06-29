@@ -2,6 +2,7 @@ package documentapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -112,7 +113,13 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 	questionModel := strings.TrimSpace(req.QuestionModel)
 	reportModel := strings.TrimSpace(req.ReportModel)
 	directPDFRequested := shouldUseDirectPDFMode(ocrProviderID, req.OCRInputMode)
-	cachedReview, cachedOutput, cachedFound, err := h.findReusableTopperReview(r.Context(), req.Path, directPDFRequested)
+	preferredReviewID := strings.TrimSpace(req.ReviewID)
+	cachedReview, cachedOutput, cachedFound, err := h.findReusableTopperReview(
+		r.Context(),
+		req.Path,
+		directPDFRequested,
+		preferredReviewID,
+	)
 	if err != nil {
 		core.WriteError(w, http.StatusInternalServerError, err)
 		return
@@ -122,8 +129,23 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 	useDirectPDF := directPDFRequested && !useCachedDirectPDF
 	if useCachedDirectPDF {
 		job := core.NewJob("analyze", req.Path)
-		h.runtime.StartWorkflow(w, r, job, func(_ context.Context, progress core.ProgressFunc) (any, error) {
+		h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 			progress(core.Units("using saved Gemini-Lite PDF review", 1, 1, "step"))
+			if preferredReviewID != "" && cachedOutput.ReviewID != preferredReviewID {
+				cachedOutput.ReviewID = preferredReviewID
+				if store, ok := h.runtime.Store().(topperReviewStore); ok {
+					err := h.saveTopperReviewRecord(ctx, store, cachedOutput, topperReviewMeta{
+						JobID:      job.ID,
+						SourcePath: req.Path,
+						ProviderID: firstProviderID(ocrProviderID, cachedReview.ProviderID),
+						Model:      firstModel(ocrModel, cachedReview.Model),
+						Status:     cachedReview.Status,
+					}, cachedReview.CreatedAt)
+					if err != nil {
+						return nil, err
+					}
+				}
+			}
 			return cachedOutput, nil
 		})
 		return
@@ -178,10 +200,11 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 			QuestionWorkers: req.QuestionWorkers,
 			UnloadModels:    req.UnloadModels,
 			ForceOCR:        req.ForceOCR,
+			ReviewID:        preferredReviewID,
 		}
 		createdAt := time.Time{}
 		if useCachedOCR {
-			request.ReviewID = cachedOutput.ReviewID
+			request.ReviewID = firstProviderID(preferredReviewID, cachedOutput.ReviewID)
 			request.OCRPages = cachedOutput.Pages
 			createdAt = cachedReview.CreatedAt
 		}
@@ -247,7 +270,7 @@ func firstModel(values ...string) string {
 	return ""
 }
 
-func (h *Handler) findReusableTopperReview(ctx context.Context, sourcePath string, directPDF bool) (storage.TopperReviewRecord, analyze.Response, bool, error) {
+func (h *Handler) findReusableTopperReview(ctx context.Context, sourcePath string, directPDF bool, preferredID string) (storage.TopperReviewRecord, analyze.Response, bool, error) {
 	store, ok := h.runtime.Store().(topperReviewStore)
 	if !ok {
 		return storage.TopperReviewRecord{}, analyze.Response{}, false, nil
@@ -255,31 +278,57 @@ func (h *Handler) findReusableTopperReview(ctx context.Context, sourcePath strin
 	if err := h.backfillTopperReviews(ctx, store); err != nil {
 		return storage.TopperReviewRecord{}, analyze.Response{}, false, err
 	}
+	preferredID = strings.TrimSpace(preferredID)
+	if preferredID != "" {
+		record, err := store.GetTopperReview(ctx, preferredID)
+		if err != nil && !errors.Is(err, storage.ErrNotFound) {
+			return storage.TopperReviewRecord{}, analyze.Response{}, false, err
+		}
+		if err == nil {
+			review, err := decodeTopperReview(record)
+			if err != nil {
+				return storage.TopperReviewRecord{}, analyze.Response{}, false, err
+			}
+			if topperReviewMatchesMode(review, record, directPDF) {
+				return record, review, true, nil
+			}
+		}
+	}
 	filename := strings.ToLower(filepath.Base(sourcePath))
 	records, err := store.ListTopperReviews(ctx, storage.TopperReviewListOptions{Query: filename, Limit: 200})
 	if err != nil {
 		return storage.TopperReviewRecord{}, analyze.Response{}, false, err
 	}
 	sourcePathLower := strings.ToLower(strings.TrimSpace(sourcePath))
-	for _, record := range records {
-		if sourcePathLower != "" && strings.ToLower(strings.TrimSpace(record.SourcePath)) != sourcePathLower && strings.ToLower(record.PDFName) != filename {
+	for _, summary := range records {
+		recordSource := strings.ToLower(strings.TrimSpace(summary.SourcePath))
+		recordPDFName := strings.ToLower(summary.PDFName)
+		if sourcePathLower != "" && recordSource != sourcePathLower && recordPDFName != filename {
 			continue
+		}
+		record, err := store.GetTopperReview(ctx, summary.ID)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				continue
+			}
+			return storage.TopperReviewRecord{}, analyze.Response{}, false, err
 		}
 		review, err := decodeTopperReview(record)
 		if err != nil {
 			continue
 		}
-		if directPDF {
-			if review.SourceMode == analyze.OCRInputModePDFDirect && strings.EqualFold(record.Status, "ready") {
-				return record, review, true, nil
-			}
-			continue
-		}
-		if reviewHasOCRPages(review) {
+		if topperReviewMatchesMode(review, record, directPDF) {
 			return record, review, true, nil
 		}
 	}
 	return storage.TopperReviewRecord{}, analyze.Response{}, false, nil
+}
+
+func topperReviewMatchesMode(review analyze.Response, record storage.TopperReviewRecord, directPDF bool) bool {
+	if directPDF {
+		return review.SourceMode == analyze.OCRInputModePDFDirect && strings.EqualFold(record.Status, "ready")
+	}
+	return reviewHasOCRPages(review)
 }
 
 func reviewHasOCRPages(review analyze.Response) bool {

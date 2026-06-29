@@ -9,6 +9,7 @@ const topperCopyFields: WorkflowDefinition["fields"] = [
 
 function topperCopyPayload(values: Record<string, unknown>) {
   return {
+    review_id: values.review_id,
     provider_id: values.ocr_provider_id,
     model: values.ocr_model,
     ocr_provider_id: values.ocr_provider_id,
