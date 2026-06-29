@@ -41,9 +41,6 @@ func (h *Handler) runOCR(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if h.rejectAlreadyProcessedPDF(w, r, req.Path) {
-		return
-	}
 	p, ok := h.runtime.ProviderOrError(w, req.ProviderID)
 	if !ok {
 		return
@@ -104,9 +101,6 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 		analyze.Request
 	}](w, r)
 	if !ok {
-		return
-	}
-	if h.rejectAlreadyProcessedPDF(w, r, req.Path) {
 		return
 	}
 	ocrProviderID := firstProviderID(req.OCRProviderID, req.ProviderID)
