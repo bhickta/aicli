@@ -64,6 +64,25 @@ type VisionImage struct {
 	MIMEType string
 }
 
+type DocumentRequest struct {
+	Model       string  `json:"model"`
+	Prompt      string  `json:"prompt"`
+	Data        []byte  `json:"-"`
+	MIMEType    string  `json:"mime_type"`
+	Temperature float64 `json:"temperature"`
+	MaxTokens   int     `json:"max_tokens"`
+}
+
+type DocumentResponse struct {
+	Content      string      `json:"content"`
+	FinishReason string      `json:"finish_reason,omitempty"`
+	Usage        *TokenUsage `json:"usage,omitempty"`
+}
+
+type DocumentProcessor interface {
+	Document(ctx context.Context, req DocumentRequest) (DocumentResponse, error)
+}
+
 type Provider interface {
 	ID() string
 	Health(ctx context.Context) error

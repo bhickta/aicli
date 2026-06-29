@@ -420,6 +420,25 @@ func TestParseQuestionSplitRejectsEmptyQuestionBlocks(t *testing.T) {
 	}
 }
 
+func TestParseDirectPDFReview(t *testing.T) {
+	t.Parallel()
+
+	content := "```json\n{\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"answer_markdown\":\"answer text\",\"source_pages\":[1],\"status\":\"detected\"}],\"report\":\"final report\"}\n```"
+	review, err := parseDirectPDFReview(content, "review-1", "copy.pdf")
+	if err != nil {
+		t.Fatalf("parseDirectPDFReview() error = %v", err)
+	}
+	if review.Kind != "topper_copy_review" || review.ReviewID != "review-1" || review.PDFName != "copy.pdf" {
+		t.Fatalf("review metadata = %#v", review)
+	}
+	if len(review.Pages) != 1 || review.Pages[0].Text != "ocr text" || review.Pages[0].UnclearCount != 1 {
+		t.Fatalf("pages = %#v", review.Pages)
+	}
+	if len(review.Questions) != 1 || review.Questions[0].AnswerMarkdown != "answer text" || review.Report != "final report" {
+		t.Fatalf("review = %#v, want question and report", review)
+	}
+}
+
 func TestRunAnalyzeHonorsExplicitDPI(t *testing.T) {
 	t.Parallel()
 

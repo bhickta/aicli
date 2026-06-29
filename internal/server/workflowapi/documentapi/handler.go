@@ -117,7 +117,8 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	useCachedOCR := cachedFound && !req.ForceOCR
-	if err := requireAnalyzeStageSelections(!useCachedOCR, req.QuestionSplit, ocrProviderID, ocrModel, questionProviderID, questionModel, reportProviderID, reportModel); err != nil {
+	useDirectPDF := !useCachedOCR && shouldUseDirectPDFMode(ocrProviderID, req.OCRInputMode)
+	if err := requireAnalyzeStageSelections(!useCachedOCR, req.QuestionSplit && !useDirectPDF, ocrProviderID, ocrModel, questionProviderID, questionModel, reportProviderID, reportModel, !useDirectPDF); err != nil {
 		core.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -128,13 +129,17 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	questionProvider, ok := h.runtime.ProviderOrError(w, questionProviderID)
-	if !ok {
-		return
-	}
-	reportProvider, ok := h.runtime.ProviderOrError(w, reportProviderID)
-	if !ok {
-		return
+	questionProvider := ocrProvider
+	reportProvider := ocrProvider
+	if !useDirectPDF {
+		questionProvider, ok = h.runtime.ProviderOrError(w, questionProviderID)
+		if !ok {
+			return
+		}
+		reportProvider, ok = h.runtime.ProviderOrError(w, reportProviderID)
+		if !ok {
+			return
+		}
 	}
 	job := core.NewJob("analyze", req.Path)
 	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
@@ -158,6 +163,7 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 			RenderWorkers:   req.RenderWorkers,
 			Workers:         req.Workers,
 			OCRBatchSize:    req.OCRBatchSize,
+			OCRInputMode:    req.OCRInputMode,
 			QuestionSplit:   req.QuestionSplit,
 			QuestionWorkers: req.QuestionWorkers,
 			UnloadModels:    req.UnloadModels,
@@ -274,7 +280,15 @@ func reviewHasOCRPages(review analyze.Response) bool {
 	return false
 }
 
-func requireAnalyzeStageSelections(requireOCR bool, questionSplit bool, ocrProviderID string, ocrModel string, questionProviderID string, questionModel string, reportProviderID string, reportModel string) error {
+func shouldUseDirectPDFMode(providerID string, mode string) bool {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "pdf_direct" {
+		return true
+	}
+	return (mode == "" || mode == "auto") && strings.Contains(strings.ToLower(strings.TrimSpace(providerID)), "gemini")
+}
+
+func requireAnalyzeStageSelections(requireOCR bool, questionSplit bool, ocrProviderID string, ocrModel string, questionProviderID string, questionModel string, reportProviderID string, reportModel string, requireReport bool) error {
 	if requireOCR {
 		if ocrProviderID == "" {
 			return fmt.Errorf("OCR provider is required")
@@ -291,11 +305,13 @@ func requireAnalyzeStageSelections(requireOCR bool, questionSplit bool, ocrProvi
 			return fmt.Errorf("question split model is required")
 		}
 	}
-	if reportProviderID == "" {
-		return fmt.Errorf("report provider is required")
-	}
-	if reportModel == "" {
-		return fmt.Errorf("report model is required")
+	if requireReport {
+		if reportProviderID == "" {
+			return fmt.Errorf("report provider is required")
+		}
+		if reportModel == "" {
+			return fmt.Errorf("report model is required")
+		}
 	}
 	return nil
 }

@@ -71,6 +71,17 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		s.logInfo("topper copy OCR reused", "path", req.Path, "review_id", reviewIDValue, "pages", len(pages))
 		completedSteps++
 		progressUnits(progress, "saved OCR pages loaded", completedSteps, totalSteps, "step")
+	} else if s.shouldUseDirectPDF(req) {
+		progressUnits(progress, "analyzing full PDF directly", completedSteps, totalSteps, "step")
+		stageStart = time.Now()
+		res, err := s.directPDFReview(ctx, req, reviewIDValue)
+		if err != nil {
+			s.logWarn("topper copy direct PDF analysis failed", "path", req.Path, "elapsed_ms", elapsedMS(stageStart), "error", err)
+			return Response{}, err
+		}
+		progressUnits(progress, "topper copy review ready", totalSteps, totalSteps, "step")
+		s.logInfo("topper copy direct PDF analysis completed", "path", req.Path, "review_id", reviewIDValue, "questions", len(res.Questions), "elapsed_ms", elapsedMS(workflowStart))
+		return res, nil
 	} else {
 		progressUnits(progress, "rendering PDF pages", completedSteps, totalSteps, "step")
 		stageStart := time.Now()

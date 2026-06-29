@@ -380,6 +380,50 @@ func TestOpenAICompatibleVisionSendsMultipleImages(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleDocumentUsesGeminiGenerateContent(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1beta/models/gemini-2.5-flash:generateContent" {
+			t.Fatalf("path = %s, want Gemini generateContent path", r.URL.Path)
+		}
+		if got := r.Header.Get("x-goog-api-key"); got != "key" {
+			t.Fatalf("x-goog-api-key = %q, want key", got)
+		}
+		var body struct {
+			Contents []struct {
+				Parts []map[string]any `json:"parts"`
+			} `json:"contents"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if len(body.Contents) != 1 || len(body.Contents[0].Parts) != 2 {
+			t.Fatalf("body = %#v, want prompt and PDF parts", body)
+		}
+		w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}`))
+	}))
+	defer srv.Close()
+
+	p := NewCompatible(config.ProviderConfig{
+		ID:      "gemini",
+		BaseURL: srv.URL + "/v1beta/openai",
+		APIKey:  "key",
+	}, srv.Client())
+	res, err := p.Document(context.Background(), provider.DocumentRequest{
+		Model:    "gemini-2.5-flash",
+		Prompt:   "analyze",
+		Data:     []byte("%PDF"),
+		MIMEType: "application/pdf",
+	})
+	if err != nil {
+		t.Fatalf("Document() error = %v", err)
+	}
+	if res.Content != "done" || res.FinishReason != "STOP" {
+		t.Fatalf("response = %#v, want content and finish reason", res)
+	}
+}
+
 func TestOpenAICompatibleUnloadLMStudioUsesInstanceIDOnly(t *testing.T) {
 	t.Parallel()
 

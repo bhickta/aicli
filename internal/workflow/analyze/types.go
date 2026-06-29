@@ -29,6 +29,7 @@ type Request struct {
 	RenderWorkers   int    `json:"render_workers"`
 	Workers         int    `json:"workers"`
 	OCRBatchSize    int    `json:"ocr_batch_size"`
+	OCRInputMode    string `json:"ocr_input_mode"`
 	QuestionSplit   bool   `json:"question_split"`
 	QuestionWorkers int    `json:"question_workers"`
 	UnloadModels    bool   `json:"unload_models"`
