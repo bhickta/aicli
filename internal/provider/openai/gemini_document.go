@@ -97,7 +97,8 @@ func (p *OpenAICompatible) Document(ctx context.Context, req provider.DocumentRe
 
 func (p *OpenAICompatible) usesGeminiGenerateContent() bool {
 	baseURL := strings.ToLower(strings.TrimSpace(p.cfg.BaseURL))
-	return strings.Contains(baseURL, "generativelanguage.googleapis.com")
+	return strings.EqualFold(strings.TrimSpace(p.cfg.ID), "gemini") ||
+		strings.Contains(baseURL, "generativelanguage.googleapis.com")
 }
 
 func (p *OpenAICompatible) geminiGenerateContentURL(model string) string {
