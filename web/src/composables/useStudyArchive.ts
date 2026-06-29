@@ -45,18 +45,24 @@ export function useStudyArchive() {
 
   async function openReview(record: TopperReviewRecord) {
     status.value = `Opening ${record.pdf_name || record.id}...`;
-    const payload = await api<{ record: TopperReviewRecord; review: TopperCopyReview }>(`/api/topper-reviews/${encodeURIComponent(record.id)}`);
-    selectedRecord.value = payload.record;
-    selectedReview.value = payload.review;
-    providerModel.provider_id = payload.record.provider_id;
-    providerModel.model = payload.record.model;
-    ocrProviderModel.provider_id = payload.record.provider_id;
-    ocrProviderModel.model = payload.record.model;
-    questionProviderModel.provider_id = payload.record.provider_id;
-    questionProviderModel.model = payload.record.model;
-    reportProviderModel.provider_id = payload.record.provider_id;
-    reportProviderModel.model = payload.record.model;
-    status.value = "Review loaded";
+    try {
+      const payload = await api<{ record: TopperReviewRecord; review: TopperCopyReview }>(`/api/topper-reviews/${encodeURIComponent(record.id)}`);
+      selectedRecord.value = payload.record;
+      selectedReview.value = payload.review;
+      providerModel.provider_id = payload.record.provider_id;
+      providerModel.model = payload.record.model;
+      ocrProviderModel.provider_id = payload.record.provider_id;
+      ocrProviderModel.model = payload.record.model;
+      questionProviderModel.provider_id = payload.record.provider_id;
+      questionProviderModel.model = payload.record.model;
+      reportProviderModel.provider_id = payload.record.provider_id;
+      reportProviderModel.model = payload.record.model;
+      status.value = "Review loaded";
+    } catch (err: any) {
+      status.value = err.message || "Failed to load review";
+      selectedRecord.value = null;
+      selectedReview.value = null;
+    }
   }
 
   async function saveReview() {
