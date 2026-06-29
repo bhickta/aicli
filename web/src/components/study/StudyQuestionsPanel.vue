@@ -31,6 +31,85 @@ function copyQA(q: StudyQuestionRecord) {
   const textToCopy = `${label}: ${prompt}\n\nAnswer:\n${answer}`;
   copyText(textToCopy, q.id, "qa");
 }
+
+function renderMarkdown(md: string): string {
+  if (!md) return "";
+  
+  // Escape HTML to prevent XSS
+  let html = md
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // Bold (**text** or __text__)
+  html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/__(.*?)__/g, "<strong>$1</strong>");
+
+  // Italic (*text* or _text_)
+  html = html.replace(/\*(.*?)\*/g, "<em>$1</em>");
+  html = html.replace(/_(.*?)_/g, "<em>$1</em>");
+
+  // Split into lines to parse block elements
+  const lines = html.split("\n");
+  const resultLines: string[] = [];
+  let inList = false;
+
+  for (let line of lines) {
+    const trimmed = line.trim();
+
+    // Headers
+    if (trimmed.startsWith("### ")) {
+      if (inList) { resultLines.push("</ul>"); inList = false; }
+      resultLines.push(`<h3>${trimmed.slice(4)}</h3>`);
+      continue;
+    }
+    if (trimmed.startsWith("## ")) {
+      if (inList) { resultLines.push("</ul>"); inList = false; }
+      resultLines.push(`<h2>${trimmed.slice(3)}</h2>`);
+      continue;
+    }
+    if (trimmed.startsWith("# ")) {
+      if (inList) { resultLines.push("</ul>"); inList = false; }
+      resultLines.push(`<h1>${trimmed.slice(2)}</h1>`);
+      continue;
+    }
+
+    // Bullet lists
+    const listMatch = line.match(/^(\s*)([-*+])\s+(.*)$/);
+    if (listMatch) {
+      if (!inList) {
+        resultLines.push("<ul>");
+        inList = true;
+      }
+      resultLines.push(`<li>${listMatch[3]}</li>`);
+      continue;
+    }
+
+    // If we were in a list and this line is not a list item, close the list
+    if (inList && trimmed === "") {
+      resultLines.push("</ul>");
+      inList = false;
+      continue;
+    }
+
+    // Regular paragraphs
+    if (trimmed === "") {
+      resultLines.push("<br/>");
+    } else {
+      if (inList) {
+        resultLines.push(line);
+      } else {
+        resultLines.push(`<p>${line}</p>`);
+      }
+    }
+  }
+
+  if (inList) {
+    resultLines.push("</ul>");
+  }
+
+  return resultLines.join("\n").replace(/<p><\/p>/g, "").replace(/(<br\/>\s*){2,}/g, "<br/>");
+}
 </script>
 
 <template>
@@ -41,38 +120,44 @@ function copyQA(q: StudyQuestionRecord) {
         <p>Question-wise answer text and source page mapping.</p>
       </div>
     </header>
-    <article v-for="question in questions" :key="question.id" class="study-question">
-      <div class="study-question-header">
-        <div class="study-question-info">
-          <h3>{{ question.label || `Q.${question.question_no}` }}</h3>
-          <p class="study-question-prompt">{{ question.prompt_text || "Prompt not extracted yet." }}</p>
+    <div class="study-questions-list" v-if="questions.length">
+      <article v-for="question in questions" :key="question.id" class="study-question">
+        <div class="study-question-header">
+          <div class="study-question-info">
+            <h3>{{ question.label || `Q.${question.question_no}` }}</h3>
+            <p class="study-question-prompt">{{ question.prompt_text || "Prompt not extracted yet." }}</p>
+          </div>
+          <div class="study-question-actions">
+            <span class="study-pill">Pages {{ question.source_pages.join(", ") || "-" }}</span>
+            <button
+              type="button"
+              class="study-btn-action"
+              :disabled="!question.answer_text"
+              @click="copyText(question.answer_text, question.id, 'answer')"
+            >
+              <svg v-if="copiedId === question.id && copiedType === 'answer'" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              {{ copiedId === question.id && copiedType === 'answer' ? 'Copied!' : 'Copy Answer' }}
+            </button>
+            <button
+              type="button"
+              class="study-btn-action secondary"
+              :disabled="!question.answer_text"
+              @click="copyQA(question)"
+            >
+              <svg v-if="copiedId === question.id && copiedType === 'qa'" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              {{ copiedId === question.id && copiedType === 'qa' ? 'Copied!' : 'Copy Q&A' }}
+            </button>
+          </div>
         </div>
-        <div class="study-question-actions">
-          <span class="study-pill">Pages {{ question.source_pages.join(", ") || "-" }}</span>
-          <button
-            type="button"
-            class="study-btn-action"
-            :disabled="!question.answer_text"
-            @click="copyText(question.answer_text, question.id, 'answer')"
-          >
-            <svg v-if="copiedId === question.id && copiedType === 'answer'" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-            {{ copiedId === question.id && copiedType === 'answer' ? 'Copied!' : 'Copy Answer' }}
-          </button>
-          <button
-            type="button"
-            class="study-btn-action secondary"
-            :disabled="!question.answer_text"
-            @click="copyQA(question)"
-          >
-            <svg v-if="copiedId === question.id && copiedType === 'qa'" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-            {{ copiedId === question.id && copiedType === 'qa' ? 'Copied!' : 'Copy Q&A' }}
-          </button>
-        </div>
-      </div>
-      <pre>{{ question.answer_text || "No answer text yet." }}</pre>
-    </article>
-    <div v-if="!questions.length" class="study-empty">No question split saved yet.</div>
+        <div v-if="question.answer_text" class="study-question-answer" v-html="renderMarkdown(question.answer_text)"></div>
+        <div v-else class="study-question-answer empty">No answer text yet.</div>
+      </article>
+    </div>
+    <div v-else class="study-empty">
+      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+      <p>Select a topper copy from the sidebar to view its questions and answers.</p>
+    </div>
   </section>
 </template>
