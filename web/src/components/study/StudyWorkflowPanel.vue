@@ -108,13 +108,44 @@ async function syncStudyCopyAfterRun() {
     status.value = "Saved to study copy";
     emit("synced");
   } catch (error) {
+    const fallback = await recoverSavedStudyCopy(error);
+    if (fallback === true) {
+      status.value = "Saved to study copy";
+      emit("synced");
+      return;
+    }
     status.value = "Save failed";
-    result.value = error instanceof Error ? error.message : "Study copy sync failed";
+    result.value = fallback || (error instanceof Error ? error.message : "Study copy sync failed");
   }
 }
 
 function isTopperCopyReview(value: unknown) {
   return Boolean(value && typeof value === "object" && (value as { kind?: unknown }).kind === "topper_copy_review");
+}
+
+async function recoverSavedStudyCopy(error: unknown): Promise<true | string> {
+  if (!props.syncCopyId || !isMissingRouteError(error)) return "";
+  try {
+    const detail = await api<{ copy?: { question_count?: number }; questions?: unknown[] }>(
+      `/api/study/copies/${encodeURIComponent(props.syncCopyId)}`,
+    );
+    const expected = parsedQuestionCount(parsedResult.value);
+    const saved = detail.questions?.length || detail.copy?.question_count || 0;
+    if (expected > 0 && saved >= expected) return true;
+    return "Study save route is missing on the running server. Restart aicli, then reopen this copy.";
+  } catch {
+    return "Study save route is missing on the running server. Restart aicli, then reopen this copy.";
+  }
+}
+
+function isMissingRouteError(error: unknown) {
+  return error instanceof Error && /not found|404/i.test(error.message);
+}
+
+function parsedQuestionCount(value: unknown) {
+  if (!value || typeof value !== "object") return 0;
+  const questions = (value as { questions?: unknown }).questions;
+  return Array.isArray(questions) ? questions.length : 0;
 }
 </script>
 
