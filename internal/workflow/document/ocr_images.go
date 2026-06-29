@@ -63,16 +63,20 @@ func EffectiveOCRWorkers(workers int, jobs int) int {
 }
 
 func EffectiveOCRWorkersForProvider(workers int, jobs int, providerID string) int {
+	requestedWorkers := workers
 	workers = effectiveOCRWorkers(workers, jobs)
-	if limit := localOCRWorkerLimit(providerID); limit > 0 && workers > limit {
-		return limit
+	if requestedWorkers <= 0 {
+		if limit := localOCRWorkerLimit(providerID); limit > 0 && workers > limit {
+			return limit
+		}
 	}
 	return workers
 }
 
 func EffectiveOCRWorkersForVisionProvider(workers int, jobs int, vision provider.Provider) int {
+	requestedWorkers := workers
 	workers = effectiveOCRWorkers(workers, jobs)
-	if isLocalVisionProvider(vision) && workers > 1 {
+	if requestedWorkers <= 0 && isLocalVisionProvider(vision) && workers > 1 {
 		return 1
 	}
 	return workers

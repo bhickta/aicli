@@ -361,9 +361,9 @@ func TestEffectiveOCRWorkersCapsLocalModelServers(t *testing.T) {
 		want       int
 	}{
 		{name: "lm studio auto", providerID: "lms", workers: 0, jobs: 48, want: 1},
-		{name: "lm studio explicit", providerID: "lms", workers: 48, jobs: 48, want: 1},
-		{name: "ollama explicit", providerID: "ollama", workers: 8, jobs: 48, want: 1},
-		{name: "vllm explicit", providerID: "vllm", workers: 8, jobs: 48, want: 1},
+		{name: "lm studio explicit", providerID: "lms", workers: 48, jobs: 48, want: 48},
+		{name: "ollama explicit", providerID: "ollama", workers: 8, jobs: 48, want: 8},
+		{name: "vllm explicit", providerID: "vllm", workers: 8, jobs: 48, want: 8},
 		{name: "remote explicit", providerID: "openrouter", workers: 8, jobs: 48, want: 8},
 	}
 	for _, tt := range tests {
@@ -386,7 +386,8 @@ func TestEffectiveOCRWorkersUsesProviderCapability(t *testing.T) {
 		jobs    int
 		want    int
 	}{
-		{name: "custom local provider caps explicit workers", vision: localFakeVision{}, workers: 8, jobs: 48, want: 1},
+		{name: "custom local provider caps auto workers", vision: localFakeVision{}, workers: 0, jobs: 48, want: 1},
+		{name: "custom local provider honors explicit workers", vision: localFakeVision{}, workers: 8, jobs: 48, want: 8},
 		{name: "remote provider keeps explicit workers", vision: fakeVision{}, workers: 8, jobs: 48, want: 8},
 		{name: "nil provider uses generic worker count", vision: nil, workers: 8, jobs: 48, want: 8},
 	}

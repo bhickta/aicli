@@ -8,7 +8,7 @@ const topperCopyFields: WorkflowDefinition["fields"] = [
   { type: "path", id: "path", label: "Topper copy PDF" },
   { type: "number", id: "dpi", label: "Render DPI", min: 150, max: 400, default: 300 },
   { type: "number", id: "render_workers", label: "Render workers (0 = auto)", min: 0, default: 0 },
-  { type: "number", id: "workers", label: "OCR workers (local models capped to 1)", min: 0, default: 0 },
+  { type: "number", id: "workers", label: "OCR workers (0 = safe auto, explicit = parallel)", min: 0, default: 0 },
   { type: "checkbox", id: "question_split", label: "Question-wise split", checked: true },
   { type: "number", id: "question_workers", label: "Question split workers (0 = auto, capped by pages)", min: 0, default: 0 },
   { type: "checkbox", id: "unload_models", label: "Unload local models when job ends", checked: true },
