@@ -10,8 +10,9 @@ import StudyImportPanel from "../components/study/StudyImportPanel.vue";
 import StudyQuestionsPanel from "../components/study/StudyQuestionsPanel.vue";
 import StudyWorkflowPanel from "../components/study/StudyWorkflowPanel.vue";
 import { useStudyCopies } from "../composables/useStudyCopies";
+import StudyArchiveView from "./StudyArchiveView.vue";
 
-type StudySection = "copies" | "questions" | "analytics" | "import" | "run";
+type StudySection = "copies" | "questions" | "analytics" | "archive" | "import" | "run";
 
 const route = useRoute();
 const router = useRouter();
@@ -34,13 +35,14 @@ const {
 
 const activeSection = computed<StudySection>(() => {
   const section = String(route.params.section || "copies");
-  if (["questions", "analytics", "import", "run"].includes(section)) return section as StudySection;
+  if (["questions", "analytics", "archive", "import", "run"].includes(section)) return section as StudySection;
   return "copies";
 });
 const tabs = computed(() => [
   { label: "Copies", to: { name: "study", params: { section: "copies" } }, active: activeSection.value === "copies" },
   { label: "Questions", to: { name: "study", params: { section: "questions" } }, active: activeSection.value === "questions" },
   { label: "Analytics", to: { name: "study", params: { section: "analytics" } }, active: activeSection.value === "analytics" },
+  { label: "Archive", to: { name: "study", params: { section: "archive" } }, active: activeSection.value === "archive" },
   { label: "Import", to: { name: "study", params: { section: "import" } }, active: activeSection.value === "import" },
   { label: "Run", to: { name: "study", params: { section: "run" } }, active: activeSection.value === "run" },
 ]);
@@ -75,6 +77,10 @@ async function openCopy(id: string) {
 
     <main v-if="activeSection === 'run'" class="study-run">
       <StudyWorkflowPanel />
+    </main>
+
+    <main v-else-if="activeSection === 'archive'" class="study-run">
+      <StudyArchiveView />
     </main>
 
     <main v-else class="study-workspace">
