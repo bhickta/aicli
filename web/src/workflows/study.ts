@@ -4,7 +4,7 @@ import { providerModelField, providerModelPayload } from "./builders";
 const topperCopyFields: WorkflowDefinition["fields"] = [
   { type: "stepProviderModel", id: "ocr", label: "Gemini-Lite PDF model" },
   { type: "path", id: "path", label: "Topper copy PDF" },
-  { type: "checkbox", id: "force_ocr", label: "Rerun PDF analysis even if saved", checked: false },
+  { type: "checkbox", id: "force_ocr", label: "Bypass cache", checked: false },
 ];
 
 function topperCopyPayload(values: Record<string, unknown>) {

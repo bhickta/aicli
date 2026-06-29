@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/bhickta/aicli/internal/server/workflowapi/core"
 	"github.com/bhickta/aicli/internal/storage"
+	"github.com/bhickta/aicli/internal/workflow/analyze"
 )
 
 type studyStore interface {
@@ -131,6 +133,19 @@ func (h *Handler) syncStudyCopy(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusInternalServerError, existingErr)
 		return
 	}
+	if payload, ok := decodeStudyCopySyncPayload(w, r); !ok {
+		return
+	} else if payload.Review != nil {
+		if existingErr != nil {
+			existing = storage.StudyCopyRecord{}
+		}
+		if err := h.saveStudyCopySyncPayload(r.Context(), store, topperStore, id, existing, payload); err != nil {
+			core.WriteError(w, http.StatusInternalServerError, err)
+			return
+		}
+		h.getStudyCopy(w, r)
+		return
+	}
 	record, err := topperStore.GetTopperReview(r.Context(), id)
 	if errors.Is(err, storage.ErrNotFound) && existingErr == nil {
 		synced, syncErr := h.syncStudyCopyFromMatchingTopper(r.Context(), store, existing, true)
@@ -161,6 +176,57 @@ func (h *Handler) syncStudyCopy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.getStudyCopy(w, r)
+}
+
+type studyCopySyncPayload struct {
+	Review     *analyze.Response `json:"review"`
+	ProviderID string            `json:"provider_id"`
+	Model      string            `json:"model"`
+	SourcePath string            `json:"source_path"`
+}
+
+func decodeStudyCopySyncPayload(w http.ResponseWriter, r *http.Request) (studyCopySyncPayload, bool) {
+	if r.Body == nil || r.ContentLength == 0 {
+		return studyCopySyncPayload{}, true
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
+	if err != nil {
+		core.WriteError(w, http.StatusBadRequest, err)
+		return studyCopySyncPayload{}, false
+	}
+	if len(strings.TrimSpace(string(body))) == 0 {
+		return studyCopySyncPayload{}, true
+	}
+	var payload studyCopySyncPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		core.WriteError(w, http.StatusBadRequest, err)
+		return studyCopySyncPayload{}, false
+	}
+	return payload, true
+}
+
+func (h *Handler) saveStudyCopySyncPayload(
+	ctx context.Context,
+	store studyStore,
+	topperStore studyTopperStore,
+	copyID string,
+	existing storage.StudyCopyRecord,
+	payload studyCopySyncPayload,
+) error {
+	review := *payload.Review
+	review.Kind = firstString(review.Kind, "topper_copy_review")
+	review.ReviewID = copyID
+	review.PDFName = firstString(review.PDFName, existing.PDFName, filepath.Base(firstString(payload.SourcePath, existing.SourcePath)))
+	record := studyTopperReviewRecord(review, studyTopperReviewMeta{
+		SourcePath: firstString(payload.SourcePath, existing.SourcePath),
+		ProviderID: payload.ProviderID,
+		Model:      payload.Model,
+		Status:     "ready",
+	})
+	if err := topperStore.SaveTopperReview(ctx, record); err != nil {
+		return fmt.Errorf("save topper review %s: %w", record.ID, err)
+	}
+	return saveStudyFromTopperRecordAsCopy(ctx, store, record, copyID, existing)
 }
 
 func (h *Handler) updateStudyCopy(w http.ResponseWriter, r *http.Request) {

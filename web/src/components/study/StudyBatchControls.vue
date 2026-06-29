@@ -41,7 +41,7 @@ const emit = defineEmits<{
           :disabled="running"
           @change="emit('update:forceRerun', ($event.target as HTMLInputElement).checked)"
         />
-        <span>Rerun saved analysis</span>
+        <span>Bypass cache</span>
       </label>
     </div>
   </section>

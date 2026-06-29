@@ -21,7 +21,7 @@ const emit = defineEmits<{
     <template v-if="activeCopyId">
       <div class="study-copy-actions">
         <button type="button" :disabled="running" @click="emit('runCopy', activeCopyId)">
-          {{ running ? "Analysis running..." : forceRerun ? "Rerun analysis" : "Analyze PDF" }}
+          {{ running ? "Analysis running..." : forceRerun ? "Bypass cache and analyze" : "Analyze PDF" }}
         </button>
       </div>
       <StudyWorkflowPanel

@@ -96,7 +96,15 @@ async function syncStudyCopyAfterRun() {
   if (!props.syncCopyId || !isTopperCopyReview(parsedResult.value)) return;
   status.value = "Saving study copy...";
   try {
-    await api(`/api/study/copies/${encodeURIComponent(props.syncCopyId)}/sync`, { method: "POST" });
+    await api(`/api/study/copies/${encodeURIComponent(props.syncCopyId)}/sync`, {
+      method: "POST",
+      body: JSON.stringify({
+        review: parsedResult.value,
+        source_path: props.sourcePath,
+        provider_id: providerModel.provider_id,
+        model: providerModel.model,
+      }),
+    });
     status.value = "Saved to study copy";
     emit("synced");
   } catch (error) {
