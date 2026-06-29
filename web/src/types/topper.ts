@@ -13,6 +13,9 @@ export interface QuestionDimensions {
   outro: string;
   transition: string;
   diagram: string;
+  fact: string;
+  fact_usage: string;
+  custom: string;
 }
 
 export interface TopperCopyQuestion {

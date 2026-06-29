@@ -107,6 +107,7 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
             <div class="archive-actions">
               <button type="button" :disabled="archive.running.value" @click="archive.saveReview()">Save Edits</button>
               <button type="button" class="primary" :disabled="archive.running.value" @click="rerun('questions')">Rerun Questions</button>
+              <button type="button" :disabled="archive.running.value" @click="rerun('analytics')">Rerun Analytics</button>
               <button type="button" :disabled="archive.running.value" @click="rerun('report')">Rerun Report</button>
               <button type="button" :disabled="archive.running.value || !archive.canRerunOCR.value" @click="rerun('all')">Rerun All</button>
             </div>

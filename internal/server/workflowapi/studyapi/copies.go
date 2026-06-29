@@ -337,6 +337,9 @@ func saveStudyFromTopperRecord(ctx context.Context, store studyStore, record sto
 				"outro":        question.Dimensions.Outro,
 				"transition":   question.Dimensions.Transition,
 				"diagram":      question.Dimensions.Diagram,
+				"fact":         question.Dimensions.Fact,
+				"fact_usage":   question.Dimensions.FactUsage,
+				"custom":       question.Dimensions.Custom,
 			}
 			for key, val := range dims {
 				if strings.TrimSpace(val) == "" {

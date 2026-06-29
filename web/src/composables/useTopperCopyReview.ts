@@ -1,7 +1,7 @@
 import { computed, reactive, shallowRef, watch, type ComputedRef } from "vue";
 import type { TopperCopyPage, TopperCopyQuestion, TopperCopyReview } from "../types";
 
-export type TopperRerunAction = "ocr" | "questions" | "report" | "all";
+export type TopperRerunAction = "ocr" | "questions" | "analytics" | "report" | "all";
 
 interface TopperReviewProps {
   review: TopperCopyReview;

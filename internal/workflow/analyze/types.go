@@ -67,6 +67,9 @@ type QuestionDimensions struct {
 	Outro        string `json:"outro"`
 	Transition   string `json:"transition"`
 	Diagram      string `json:"diagram"`
+	Fact         string `json:"fact"`
+	FactUsage    string `json:"fact_usage"`
+	Custom       string `json:"custom"`
 }
 
 type Question struct {

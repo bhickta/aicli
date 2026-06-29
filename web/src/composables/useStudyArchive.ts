@@ -4,7 +4,7 @@ import type { Job, TopperCopyReview, TopperReviewRecord } from "../types";
 import { useConfirm } from "./useConfirm";
 import { useToasts } from "./useToasts";
 
-export type TopperRerunAction = "ocr" | "questions" | "report" | "all";
+export type TopperRerunAction = "ocr" | "questions" | "analytics" | "report" | "all";
 
 export function useStudyArchive() {
   const toasts = useToasts();

@@ -86,7 +86,10 @@ Schema:
   "introduction": "Evaluate the quality of the intro. What category is it (e.g. definition, data, quote)? Why does it work or not work?",
   "outro": "Evaluate the conclusion/outro. Does it summarize, provide a way forward, or link to a broader theme? Is it effective?",
   "transition": "Evaluate the transitions between paragraphs and headings. Is the flow logical? Do they use linking sentences?",
-  "diagram": "Evaluate any diagrams, flowcharts, or maps. Do they add value or just consume space? Are they well integrated?"
+  "diagram": "Evaluate any diagrams, flowcharts, or maps. Do they add value or just consume space? Are they well integrated?",
+  "fact": "Did the answer include specific facts, data points, or statistics? What were they?",
+  "fact_usage": "Evaluate how those facts were used. Were they dropped randomly, or integrated logically to support an argument?",
+  "custom": "Any other unique structural or thematic observations (e.g. good use of keywords, innovative formatting)."
 }
 
 Rules:
