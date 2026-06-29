@@ -136,7 +136,7 @@ func TestOpenAICompatibleGeminiDocumentParsesUsage(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasSuffix(r.URL.Path, "/models/gemini-3.1-flash-lite:generateContent") {
+		if !strings.HasSuffix(r.URL.Path, "/models/gemini-flash-lite-latest:generateContent") {
 			t.Fatalf("path = %s, want Gemini generateContent path", r.URL.Path)
 		}
 		w.Write([]byte(`{
@@ -159,7 +159,7 @@ func TestOpenAICompatibleGeminiDocumentParsesUsage(t *testing.T) {
 	}, srv.Client())
 
 	res, err := p.Document(context.Background(), provider.DocumentRequest{
-		Model:    "gemini-3.1-flash-lite",
+		Model:    "models/gemini-flash-lite-latest",
 		Prompt:   "read",
 		Data:     []byte("pdf"),
 		MIMEType: "application/pdf",

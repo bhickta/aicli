@@ -21,7 +21,7 @@ import (
 
 const (
 	defaultStudyBatchProviderID  = "gemini"
-	defaultStudyBatchModel       = "gemini-3.1-flash-lite"
+	defaultStudyBatchModel       = "models/gemini-flash-lite-latest"
 	defaultStudyBatchParallelism = 2
 	maxStudyBatchParallelism     = 5
 )

@@ -85,7 +85,7 @@ export const studyWorkflowDefinitions: WorkflowDefinition[] = [
     label: "Topper copy analysis",
     endpoint: "/api/workflows/analyze/run",
     preferredProviderId: "gemini",
-    preferredModel: "gemini-3.1-flash-lite",
+    preferredModel: "models/gemini-flash-lite-latest",
     fields: topperCopyFields,
     buildPayload: topperCopyPayload,
   },
