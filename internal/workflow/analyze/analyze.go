@@ -136,32 +136,34 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 			Verified:     false,
 		})
 	}
+	analysisPages := answerBearingPages(pages)
+	s.logInfo("topper copy analysis page filter completed", "path", req.Path, "total_pages", len(pages), "analysis_pages", len(analysisPages), "skipped_pages", len(pages)-len(analysisPages))
 
-	questions := pageFallbackQuestions(pages)
+	questions := pageFallbackQuestions(analysisPages)
 	if req.QuestionSplit {
-		questionWorkers := EffectiveQuestionWorkers(req.QuestionWorkers, len(pages))
+		questionWorkers := EffectiveQuestionWorkers(req.QuestionWorkers, len(analysisPages))
 		stageStart = time.Now()
-		s.logInfo("topper copy question split started", "path", req.Path, "pages", len(pages), "workers", questionWorkers, "provider", providerID(s.questionProvider), "model", firstNonBlank(req.QuestionModel, req.Model))
-		questions, err = s.splitQuestions(ctx, firstNonBlank(req.QuestionModel, req.Model), pages, req.QuestionWorkers, func(completedPages int, totalPages int) {
+		s.logInfo("topper copy question split started", "path", req.Path, "pages", len(analysisPages), "workers", questionWorkers, "provider", providerID(s.questionProvider), "model", firstNonBlank(req.QuestionModel, req.Model))
+		questions, err = s.splitQuestions(ctx, firstNonBlank(req.QuestionModel, req.Model), analysisPages, req.QuestionWorkers, func(completedPages int, totalPages int) {
 			progressUnits(progress, fmt.Sprintf("question-wise split with %d worker(s)", questionWorkers), completedPages, totalPages, "page")
 		})
 		if err != nil {
-			s.logWarn("topper copy question split failed", "path", req.Path, "pages", len(pages), "workers", questionWorkers, "elapsed_ms", elapsedMS(stageStart), "error", err)
+			s.logWarn("topper copy question split failed", "path", req.Path, "pages", len(analysisPages), "workers", questionWorkers, "elapsed_ms", elapsedMS(stageStart), "error", err)
 			return Response{}, err
 		}
-		s.logInfo("topper copy question split completed", "path", req.Path, "pages", len(pages), "questions", len(questions), "workers", questionWorkers, "elapsed_ms", elapsedMS(stageStart))
+		s.logInfo("topper copy question split completed", "path", req.Path, "pages", len(analysisPages), "questions", len(questions), "workers", questionWorkers, "elapsed_ms", elapsedMS(stageStart))
 		completedSteps++
 		progressUnits(progress, "question-wise split complete", completedSteps, totalSteps, "step")
 	}
 	progressUnits(progress, "generating final analysis", completedSteps, totalSteps, "step")
 	stageStart = time.Now()
-	s.logInfo("topper copy report started", "path", req.Path, "pages", len(pages), "questions", len(questions), "provider", providerID(s.reportProvider), "model", firstNonBlank(req.ReportModel, req.Model))
-	report, err := s.report(ctx, firstNonBlank(req.ReportModel, req.Model), pages, questions)
+	s.logInfo("topper copy report started", "path", req.Path, "pages", len(analysisPages), "questions", len(questions), "provider", providerID(s.reportProvider), "model", firstNonBlank(req.ReportModel, req.Model))
+	report, err := s.report(ctx, firstNonBlank(req.ReportModel, req.Model), analysisPages, questions)
 	if err != nil {
-		s.logWarn("topper copy report failed", "path", req.Path, "pages", len(pages), "questions", len(questions), "elapsed_ms", elapsedMS(stageStart), "error", err)
+		s.logWarn("topper copy report failed", "path", req.Path, "pages", len(analysisPages), "questions", len(questions), "elapsed_ms", elapsedMS(stageStart), "error", err)
 		return Response{}, err
 	}
-	s.logInfo("topper copy report completed", "path", req.Path, "pages", len(pages), "questions", len(questions), "report_chars", len(report), "elapsed_ms", elapsedMS(stageStart))
+	s.logInfo("topper copy report completed", "path", req.Path, "pages", len(analysisPages), "questions", len(questions), "report_chars", len(report), "elapsed_ms", elapsedMS(stageStart))
 	completedSteps++
 	progressUnits(progress, "final analysis complete", completedSteps, totalSteps, "step")
 	res := Response{

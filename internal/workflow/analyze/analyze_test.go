@@ -151,6 +151,40 @@ func TestMergeQuestionBlocksAttachesContinuationToPreviousQuestion(t *testing.T)
 	}
 }
 
+func TestAnswerBearingPagesExcludeCoverAndOCRFailures(t *testing.T) {
+	t.Parallel()
+
+	pages := answerBearingPages([]Page{
+		{
+			Number: 1,
+			Text:   "ForumIAS ACADEMY\nName Of Candidate\nINDEX TABLE\nINSTRUCTIONS\nMaximum Marks",
+		},
+		{
+			Number: 2,
+			Text:   "> OCR failed for this page: OCR response was empty",
+		},
+		{
+			Number: 3,
+			Text:   "Q.2 answer body with useful content",
+		},
+	})
+	if len(pages) != 1 || pages[0].Number != 3 {
+		t.Fatalf("answerBearingPages() = %#v, want only page 3", pages)
+	}
+}
+
+func TestQuestionsForPagesDropsNonAnswerQuestions(t *testing.T) {
+	t.Parallel()
+
+	got := questionsForPages([]Question{
+		{Label: "Page 1", SourcePages: []int{1}},
+		{Label: "Q.2", SourcePages: []int{4, 5}},
+	}, []Page{{Number: 4}, {Number: 5}})
+	if len(got) != 1 || got[0].Label != "Q.2" {
+		t.Fatalf("questionsForPages() = %#v, want only Q.2", got)
+	}
+}
+
 func TestRunAnalyzeSplitsQuestionsAndWritesArtifacts(t *testing.T) {
 	t.Parallel()
 

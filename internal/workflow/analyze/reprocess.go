@@ -37,7 +37,7 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 	}
 
 	if action == "questions" || action == "all" {
-		pages := pagesFromSet(review.Pages, selected)
+		pages := answerBearingPages(pagesFromSet(review.Pages, selected))
 		stageStart := time.Now()
 		questions, err := s.splitQuestions(ctx, firstNonBlank(req.QuestionModel, req.Model), pages, req.QuestionWorkers, func(done int, totalPages int) {
 			progressUnits(progress, fmt.Sprintf("splitting %d selected page(s)", totalPages), completed+done, total, "page")
@@ -54,12 +54,14 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 
 	if action == "report" || action == "questions" || action == "all" {
 		stageStart := time.Now()
-		report, err := s.report(ctx, firstNonBlank(req.ReportModel, req.Model), review.Pages, review.Questions)
+		pages := answerBearingPages(review.Pages)
+		questions := questionsForPages(review.Questions, pages)
+		report, err := s.report(ctx, firstNonBlank(req.ReportModel, req.Model), pages, questions)
 		if err != nil {
-			s.logWarn("topper copy reprocess report failed", "review_id", review.ReviewID, "pages", len(review.Pages), "questions", len(review.Questions), "elapsed_ms", elapsedMS(stageStart), "error", err)
+			s.logWarn("topper copy reprocess report failed", "review_id", review.ReviewID, "pages", len(pages), "questions", len(questions), "elapsed_ms", elapsedMS(stageStart), "error", err)
 			return Response{}, err
 		}
-		s.logInfo("topper copy reprocess report completed", "review_id", review.ReviewID, "pages", len(review.Pages), "questions", len(review.Questions), "report_chars", len(report), "elapsed_ms", elapsedMS(stageStart))
+		s.logInfo("topper copy reprocess report completed", "review_id", review.ReviewID, "pages", len(pages), "questions", len(questions), "report_chars", len(report), "elapsed_ms", elapsedMS(stageStart))
 		review.Report = report
 		completed++
 		progressUnits(progress, "final analysis updated", completed, total, "stage")
