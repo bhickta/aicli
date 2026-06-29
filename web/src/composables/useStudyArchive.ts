@@ -104,6 +104,7 @@ export function useStudyArchive() {
         status.value = job.error || `${action} failed`;
         return;
       }
+      await api(`/api/study/copies/${encodeURIComponent(selectedRecord.value.id)}/sync`, { method: "POST" }).catch(() => {});
       const output = parseJobOutput(job.output) as TopperCopyReview | null;
       if (output?.kind === "topper_copy_review") selectedReview.value = output;
       await loadReviews();

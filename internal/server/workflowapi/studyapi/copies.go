@@ -40,6 +40,16 @@ type studyTopperStore interface {
 	GetTopperReview(context.Context, string) (storage.TopperReviewRecord, error)
 }
 
+func (h *Handler) RegisterRoutes(r *http.ServeMux) {
+	r.HandleFunc("GET /api/study/copies", h.listStudyCopies)
+	r.HandleFunc("GET /api/study/copies/{id}", h.getStudyCopy)
+	r.HandleFunc("POST /api/study/copies/{id}/sync", h.syncStudyCopy)
+	r.HandleFunc("PUT /api/study/copies/{id}", h.updateStudyCopy)
+	r.HandleFunc("POST /api/study/imports", h.importStudyCopies)
+	r.HandleFunc("POST /api/study/batches", h.startStudyBatch)
+	r.HandleFunc("POST /api/study/stages", h.startStudyStage)
+}
+
 func (h *Handler) listStudyCopies(w http.ResponseWriter, r *http.Request) {
 	store, ok := h.studyStore(w)
 	if !ok {
@@ -98,6 +108,29 @@ func (h *Handler) getStudyCopy(w http.ResponseWriter, r *http.Request) {
 	core.WriteJSON(w, http.StatusOK, map[string]any{
 		"copy": copyRecord, "pages": pages, "questions": questions, "analyses": analyses,
 	})
+}
+
+func (h *Handler) syncStudyCopy(w http.ResponseWriter, r *http.Request) {
+	store, ok := h.studyStore(w)
+	if !ok {
+		return
+	}
+	id := r.PathValue("id")
+	topperStore, ok := h.runtime.Store().(studyTopperStore)
+	if !ok {
+		core.WriteError(w, http.StatusInternalServerError, fmt.Errorf("no topper store"))
+		return
+	}
+	record, err := topperStore.GetTopperReview(r.Context(), id)
+	if err != nil {
+		core.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := saveStudyFromTopperRecord(r.Context(), store, record); err != nil {
+		core.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
+	h.getStudyCopy(w, r)
 }
 
 func (h *Handler) updateStudyCopy(w http.ResponseWriter, r *http.Request) {
