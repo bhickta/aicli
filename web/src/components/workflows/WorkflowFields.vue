@@ -44,6 +44,7 @@ function isFieldVisible(field: WorkflowFieldType) {
 
   const hiddenInDirectPDF = [
     "question",
+    "report",
     "question_split",
     "question_workers",
     "dpi",

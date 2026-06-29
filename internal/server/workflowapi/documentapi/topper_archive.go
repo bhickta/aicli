@@ -168,7 +168,12 @@ func (h *Handler) rerunTopperReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if (req.Action == "ocr" || req.Action == "all") && !recordHasPageImages(record) {
+	isDirectPDF := recordIsDirectPDF(record)
+	if req.Action == "ocr" && isDirectPDF {
+		core.WriteError(w, http.StatusBadRequest, fmt.Errorf("PDF-direct reviews do not support page OCR rerun; use Rerun All"))
+		return
+	}
+	if (req.Action == "ocr" || req.Action == "all") && !isDirectPDF && !recordHasPageImages(record) {
 		core.WriteError(w, http.StatusBadRequest, fmt.Errorf("saved page images are missing; run a fresh Topper copy analysis or PDF OCR before OCR rerun"))
 		return
 	}
@@ -211,6 +216,36 @@ func (h *Handler) rerunTopperReview(w http.ResponseWriter, r *http.Request) {
 		review, err := decodeTopperReview(latest)
 		if err != nil {
 			return nil, err
+		}
+		if review.SourceMode == analyze.OCRInputModePDFDirect && req.Action == "all" {
+			req := analyze.Request{
+				OCRModel:     ocrModel,
+				Path:         latest.SourcePath,
+				OCRInputMode: analyze.OCRInputModePDFDirect,
+				ForceOCR:     true,
+				ReviewID:     review.ReviewID,
+			}
+			result, err := analyze.New(
+				h.runtime.Settings().Tools,
+				tool.ExecRunner{},
+				ocrProvider,
+				analyze.WithLogger(h.runtime.Logger()),
+			).RunWithProgress(ctx, req, func(stage string, completed int, total int, label string) {
+				progress(core.Units(stage, completed, total, label))
+			})
+			if err != nil {
+				return nil, err
+			}
+			if err := h.saveTopperReviewRecord(ctx, store, result, topperReviewMeta{
+				JobID:      job.ID,
+				SourcePath: latest.SourcePath,
+				ProviderID: ocrProviderID,
+				Model:      ocrModel,
+				Status:     "ready",
+			}, latest.CreatedAt); err != nil {
+				return nil, err
+			}
+			return result, nil
 		}
 		req.Model = model
 		req.OCRModel = ocrModel
@@ -322,6 +357,11 @@ func recordHasPageImages(record storage.TopperReviewRecord) bool {
 		}
 	}
 	return len(review.Pages) > 0
+}
+
+func recordIsDirectPDF(record storage.TopperReviewRecord) bool {
+	review, err := decodeTopperReview(record)
+	return err == nil && review.SourceMode == analyze.OCRInputModePDFDirect
 }
 
 func (h *Handler) readTopperReviewRecord(w http.ResponseWriter, r *http.Request) (storage.TopperReviewRecord, bool) {

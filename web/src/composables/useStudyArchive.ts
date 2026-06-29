@@ -17,12 +17,6 @@ export function useStudyArchive() {
   const running = shallowRef(false);
   const deletePDF = shallowRef(false);
   const providerModel = reactive({ provider_id: "", model: "" });
-  const ocrProviderModel = reactive({ provider_id: "", model: "" });
-  const questionProviderModel = reactive({ provider_id: "", model: "" });
-  const reportProviderModel = reactive({ provider_id: "", model: "" });
-  const questionWorkers = shallowRef(0);
-  const ocrWorkers = shallowRef(0);
-  const ocrBatchSize = shallowRef(0);
   const unloadModels = shallowRef(true);
 
   const summary = computed(() => {
@@ -33,6 +27,8 @@ export function useStudyArchive() {
     const review = selectedReview.value;
     return Boolean(review?.pages.length) && Boolean(review?.pages.every((page) => page.path || page.image_url));
   });
+  const isPDFDirectReview = computed(() => selectedReview.value?.source_mode === "pdf_direct");
+  const canRerunAll = computed(() => isPDFDirectReview.value || canRerunOCR.value);
 
   async function loadReviews() {
     status.value = "Loading saved reviews...";
@@ -51,12 +47,6 @@ export function useStudyArchive() {
       selectedReview.value = payload.review;
       providerModel.provider_id = payload.record.provider_id;
       providerModel.model = payload.record.model;
-      ocrProviderModel.provider_id = payload.record.provider_id;
-      ocrProviderModel.model = payload.record.model;
-      questionProviderModel.provider_id = payload.record.provider_id;
-      questionProviderModel.model = payload.record.model;
-      reportProviderModel.provider_id = payload.record.provider_id;
-      reportProviderModel.model = payload.record.model;
       status.value = "Review loaded";
     } catch (err: any) {
       status.value = err.message || "Failed to load review";
@@ -88,18 +78,18 @@ export function useStudyArchive() {
         body: JSON.stringify({
           provider_id: providerModel.provider_id,
           model: providerModel.model,
-          ocr_provider_id: ocrProviderModel.provider_id || providerModel.provider_id,
-          ocr_model: ocrProviderModel.model || providerModel.model,
-          question_provider_id: questionProviderModel.provider_id || providerModel.provider_id,
-          question_model: questionProviderModel.model || providerModel.model,
-          report_provider_id: reportProviderModel.provider_id || providerModel.provider_id,
-          report_model: reportProviderModel.model || providerModel.model,
+          ocr_provider_id: providerModel.provider_id,
+          ocr_model: providerModel.model,
+          question_provider_id: providerModel.provider_id,
+          question_model: providerModel.model,
+          report_provider_id: providerModel.provider_id,
+          report_model: providerModel.model,
           action,
           page_numbers: pageNumbers,
           question_split: true,
-          question_workers: questionWorkers.value,
-          workers: ocrWorkers.value,
-          ocr_batch_size: ocrBatchSize.value,
+          question_workers: 0,
+          workers: 0,
+          ocr_batch_size: 0,
           unload_models: unloadModels.value,
         }),
       });
@@ -166,15 +156,11 @@ export function useStudyArchive() {
     running,
     deletePDF,
     providerModel,
-    ocrProviderModel,
-    questionProviderModel,
-    reportProviderModel,
-    questionWorkers,
-    ocrWorkers,
-    ocrBatchSize,
     unloadModels,
     summary,
     canRerunOCR,
+    isPDFDirectReview,
+    canRerunAll,
     loadReviews,
     openReview,
     saveReview,

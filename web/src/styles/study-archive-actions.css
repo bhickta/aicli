@@ -1,0 +1,93 @@
+.study-review-action-row {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.action-cards-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  width: 100%;
+}
+
+.action-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px;
+  transition: all 0.2s ease;
+}
+
+.action-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.action-card.primary-card {
+  background: rgba(59, 130, 246, 0.05);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.action-info h4 {
+  color: #e2e8f0;
+  font-size: 13px;
+  margin: 0 0 4px;
+}
+
+.action-info p {
+  color: #8b9bb4;
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.action-card button {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #e2e8f0;
+  font-weight: 500;
+  justify-content: center;
+  padding: 8px 16px;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.action-card button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.action-card button.primary {
+  background: #3b82f6;
+  border-color: transparent;
+  color: #ffffff;
+}
+
+.action-card button.primary:hover:not(:disabled) {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+.study-review-controls.embedded {
+  background: transparent;
+  border: none;
+  gap: 20px;
+  padding: 16px;
+}
+
+.study-review-controls.embedded label {
+  color: #8b9bb4;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}

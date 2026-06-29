@@ -23,14 +23,18 @@ func (r *fakeRunner) CombinedOutput(_ context.Context, _ string, args ...string)
 }
 
 type fakeProvider struct {
-	id            string
-	visionContent string
-	visionPrompt  string
-	visionCalls   int
-	chatPrompt    string
-	chatPrompts   []string
-	chatResponses []string
-	chatErr       error
+	id              string
+	visionContent   string
+	visionPrompt    string
+	visionCalls     int
+	documentContent string
+	documentPrompt  string
+	documentCalls   int
+	documentReason  string
+	chatPrompt      string
+	chatPrompts     []string
+	chatResponses   []string
+	chatErr         error
 }
 
 type progressEvent struct {
@@ -77,6 +81,11 @@ func (p *fakeProvider) Vision(_ context.Context, req provider.VisionRequest) (pr
 		return provider.ChatResponse{Content: p.visionContent}, nil
 	}
 	return provider.ChatResponse{Content: "page text"}, nil
+}
+func (p *fakeProvider) Document(_ context.Context, req provider.DocumentRequest) (provider.DocumentResponse, error) {
+	p.documentPrompt = req.Prompt
+	p.documentCalls++
+	return provider.DocumentResponse{Content: p.documentContent, FinishReason: p.documentReason}, nil
 }
 
 func TestRunAnalyzePipeline(t *testing.T) {
@@ -183,6 +192,42 @@ func TestRunAnalyzeReusesSavedOCRPages(t *testing.T) {
 	}
 	if res.ReviewID != "cached-review" || len(res.Pages) != 1 || res.Pages[0].Text != "saved page text" {
 		t.Fatalf("response = %#v, want cached review/pages", res)
+	}
+}
+
+func TestRunAnalyzeDirectPDFUsesGeminiDocumentOnly(t *testing.T) {
+	t.Parallel()
+
+	pdf := filepath.Join(t.TempDir(), "answers.pdf")
+	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	provider := &fakeProvider{
+		id: "gemini",
+		documentContent: `{
+			"pages":[{"number":1,"name":"page-1","text":"source notes","unclear_count":0}],
+			"questions":[{"id":"q1","label":"Q.1","title":"Polity","source_pages":[1],"answer_markdown":"answer text","dimensions":{"introduction":"clear intro","fact":"Article 21"}}],
+			"report":"final report"
+		}`,
+	}
+	res, err := New(config.ToolConfig{PDFToPPM: "pdftoppm"}, &fakeRunner{}, provider).Run(
+		context.Background(),
+		Request{Path: pdf, OCRModel: "gemini-2.5-flash-lite", OCRInputMode: OCRInputModeAuto},
+	)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if provider.documentCalls != 1 || provider.visionCalls != 0 || len(provider.chatPrompts) != 0 {
+		t.Fatalf("calls: document=%d vision=%d chat=%d, want document only", provider.documentCalls, provider.visionCalls, len(provider.chatPrompts))
+	}
+	if res.SourceMode != OCRInputModePDFDirect || res.Report != "final report" || len(res.Questions) != 1 {
+		t.Fatalf("response = %#v, want direct PDF review", res)
+	}
+	if res.Questions[0].Dimensions == nil || res.Questions[0].Dimensions.Introduction != "clear intro" {
+		t.Fatalf("dimensions = %#v, want parsed dimensions", res.Questions[0].Dimensions)
+	}
+	if !strings.Contains(provider.documentPrompt, "Gemini Flash-Lite") || !strings.Contains(provider.documentPrompt, "valid JSON only") {
+		t.Fatalf("document prompt = %q, want Gemini-Lite JSON prompt", provider.documentPrompt)
 	}
 }
 
@@ -431,7 +476,7 @@ func TestParseQuestionSplitRejectsEmptyQuestionBlocks(t *testing.T) {
 func TestParseOneShotPDFManifest(t *testing.T) {
 	t.Parallel()
 
-	content := "```json\n{\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"source_pages\":[1],\"answer_markdown\":\"test answer\"}],\"report\":\"test report\"}\n```"
+	content := "```json\n{\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"source_pages\":[1],\"answer_markdown\":\"test answer\",\"dimensions\":{\"fact\":\"good examples\"}}],\"report\":\"test report\"}\n```"
 	pages, questions, report, err := parseOneShotPDFManifest(content, "copy.pdf")
 	if err != nil {
 		t.Fatalf("parseOneShotPDFManifest() error = %v", err)
@@ -442,8 +487,30 @@ func TestParseOneShotPDFManifest(t *testing.T) {
 	if len(questions) != 1 || questions[0].Label != "Q.1" || questions[0].Title != "History" || questions[0].SourcePages[0] != 1 || questions[0].AnswerMarkdown != "test answer" {
 		t.Fatalf("questions = %#v", questions)
 	}
+	if questions[0].Dimensions == nil || questions[0].Dimensions.Fact != "good examples" {
+		t.Fatalf("dimensions = %#v, want fact dimension", questions[0].Dimensions)
+	}
 	if report != "test report" {
 		t.Fatalf("report = %q", report)
+	}
+}
+
+func TestParseOneShotPDFManifestRejectsIncompletePayload(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "empty answer", content: `{"pages":[{"number":1}],"questions":[{"label":"Q.1","answer_markdown":""}],"report":"report"}`},
+		{name: "empty report", content: `{"pages":[{"number":1}],"questions":[{"label":"Q.1","answer_markdown":"answer"}],"report":""}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, _, _, err := parseOneShotPDFManifest(tt.content, "copy.pdf"); err == nil {
+				t.Fatalf("parseOneShotPDFManifest() error = nil, want error for %s", tt.name)
+			}
+		})
 	}
 }
 

@@ -1,0 +1,66 @@
+.study-status-badge {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 600;
+  gap: 6px;
+  line-height: 1.2;
+  padding: 3px 8px;
+  text-transform: uppercase;
+}
+
+.status-ready {
+  background: rgba(46, 160, 67, 0.15);
+  border-color: rgba(46, 160, 67, 0.3);
+  color: #3fb950;
+}
+
+.status-failed {
+  background: rgba(248, 81, 73, 0.15);
+  border-color: rgba(248, 81, 73, 0.3);
+  color: #ff7b72;
+}
+
+.status-running {
+  background: rgba(56, 139, 253, 0.15);
+  border-color: rgba(56, 139, 253, 0.3);
+  color: #58a6ff;
+}
+
+.status-pending {
+  background: rgba(110, 118, 129, 0.15);
+  border-color: rgba(110, 118, 129, 0.3);
+  color: #8b949e;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinner-icon {
+  animation: spin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+.study-empty {
+  align-items: center;
+  color: #8b949e;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.study-empty p {
+  font-size: 0.95rem;
+  margin: 12px 0 0;
+  max-width: 280px;
+}
+
+.empty-icon {
+  color: #30363d;
+}

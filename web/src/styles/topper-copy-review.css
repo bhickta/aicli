@@ -151,3 +151,44 @@
   color: #f8d49a;
   margin-bottom: 0.6rem;
 }
+
+.topper-dimensions {
+  background: #0f1724;
+  border: 1px solid #253247;
+  border-radius: 0.4rem;
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  padding: 0.7rem;
+}
+
+.topper-dimensions h5 {
+  color: #e5e7eb;
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.topper-dimensions dl {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.topper-dimensions div {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.topper-dimensions dt {
+  color: #93c5fd;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.topper-dimensions dd {
+  color: #cbd5e1;
+  font-size: 0.83rem;
+  line-height: 1.45;
+  margin: 0;
+}

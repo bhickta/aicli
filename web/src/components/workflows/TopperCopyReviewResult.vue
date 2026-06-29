@@ -3,6 +3,7 @@ import "../../styles/topper-copy-review.css";
 import { useTopperCopyReview, type TopperRerunAction } from "../../composables/useTopperCopyReview";
 import type { TopperCopyReview } from "../../types";
 import TopperOcrViewer from "./TopperOcrViewer.vue";
+import TopperQuestionDimensions from "./TopperQuestionDimensions.vue";
 
 const props = defineProps<{
   review: TopperCopyReview;
@@ -154,6 +155,7 @@ const {
             @input="updateActiveQuestionAnswer(($event.target as HTMLTextAreaElement).value)"
           />
           <pre v-else>{{ activeQuestion?.answer_markdown || "" }}</pre>
+          <TopperQuestionDimensions :dimensions="activeQuestion?.dimensions" />
         </section>
         <section v-if="!isPDFDirect" class="topper-page-image compact">
           <div class="topper-page-toolbar">

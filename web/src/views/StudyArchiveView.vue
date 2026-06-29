@@ -71,27 +71,11 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
           <div class="study-review-control-row">
             <div class="study-step-models">
               <div class="field">
-                <label>OCR Model</label>
+                <label>Gemini-Lite Model</label>
                 <ProviderModelControl
-                  :provider-id="archive.ocrProviderModel.provider_id"
-                  :model="archive.ocrProviderModel.model"
-                  @change="Object.assign(archive.ocrProviderModel, $event)"
-                />
-              </div>
-              <div class="field">
-                <label>Question Split Model</label>
-                <ProviderModelControl
-                  :provider-id="archive.questionProviderModel.provider_id"
-                  :model="archive.questionProviderModel.model"
-                  @change="Object.assign(archive.questionProviderModel, $event)"
-                />
-              </div>
-              <div class="field">
-                <label>Report Model</label>
-                <ProviderModelControl
-                  :provider-id="archive.reportProviderModel.provider_id"
-                  :model="archive.reportProviderModel.model"
-                  @change="Object.assign(archive.reportProviderModel, $event)"
+                  :provider-id="archive.providerModel.provider_id"
+                  :model="archive.providerModel.model"
+                  @change="Object.assign(archive.providerModel, $event)"
                 />
               </div>
             </div>
@@ -126,9 +110,9 @@ function rerun(action: TopperRerunAction, pageNumbers: number[] = []) {
               <div class="action-card">
                 <div class="action-info">
                   <h4>Rerun All</h4>
-                  <p>Runs the full OCR and extraction pipeline from scratch.</p>
+                  <p>{{ archive.isPDFDirectReview.value ? "Runs full Gemini-Lite PDF extraction from the original PDF." : "Runs the full OCR and extraction pipeline from scratch." }}</p>
                 </div>
-                <button type="button" :disabled="archive.running.value || !archive.canRerunOCR.value" @click="rerun('all')">Run</button>
+                <button type="button" :disabled="archive.running.value || !archive.canRerunAll.value" @click="rerun('all')">Run</button>
               </div>
             </div>
             
