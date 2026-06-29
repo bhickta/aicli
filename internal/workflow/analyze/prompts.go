@@ -2,16 +2,19 @@ package analyze
 
 import "fmt"
 
-const topperCopyOCRPrompt = `Extract this UPSC topper answer-copy page as Markdown.
+const topperCopyOCRPrompt = `Transcribe this UPSC answer-copy page as compact Markdown.
 
 Preserve:
 - question/answer numbers and page order
-- headings, subheadings, bullets, numbering, tables, diagrams, flowcharts, maps, underlines, boxes, arrows, margin notes, marks, ticks, and evaluator comments
+- headings, bullets, numbering, diagrams, flowcharts, maps, underlines, boxes, arrows, margin notes, marks, ticks, and evaluator comments
 - visible keywords, examples, data, quotes, case studies, committee names, article numbers, schemes, and conclusion lines
 
 Rules:
 - Do not summarize the page.
 - Do not correct the student's language unless the handwriting clearly says so.
+- Do not repeat any line or block.
+- Do not include OCR bounding boxes or detector tags.
+- For diagrams/flowcharts, write only the visible labels and arrows.
 - Mark unreadable words as [unclear].
 - Output Markdown only.`
 

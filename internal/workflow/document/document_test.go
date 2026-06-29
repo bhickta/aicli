@@ -238,43 +238,31 @@ func TestOCRImagesKeepsPartialPageFailures(t *testing.T) {
 	}
 }
 
-func TestOCRImagesRejectsTruncatedAndServerErrorResponses(t *testing.T) {
+func TestOCRImagesKeepsTruncatedTextAndRejectsServerErrorResponses(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name     string
-		response provider.ChatResponse
-		want     string
-	}{
-		{
-			name:     "truncated",
-			response: provider.ChatResponse{Content: "partial repeated OCR", FinishReason: "length"},
-			want:     "truncated",
-		},
-		{
-			name:     "html error page",
-			response: provider.ChatResponse{Content: "<html><body><pre>Internal Server Error</pre></body></html>"},
-			want:     "error page",
-		},
+	got, err := cleanOCRResponse(provider.ChatResponse{Content: "partial OCR", FinishReason: "length"})
+	if err != nil {
+		t.Fatalf("cleanOCRResponse(truncated) error = %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pages, err := OCRImages(
-				context.Background(),
-				badOCRVision{response: tt.response},
-				"model",
-				[]ImageInput{{Name: "page-1", Data: []byte("image")}},
-				"prompt",
-				1,
-				nil,
-			)
-			if err == nil {
-				t.Fatal("OCRImages() error = nil, want all-pages failure")
-			}
-			if len(pages) != 1 || !strings.Contains(pages[0].Text, tt.want) {
-				t.Fatalf("pages = %#v, want failure marker containing %q", pages, tt.want)
-			}
-		})
+	if !strings.Contains(got, "partial OCR") || !strings.Contains(got, "OCR truncated") {
+		t.Fatalf("cleaned truncated OCR = %q, want partial text and marker", got)
+	}
+
+	pages, err := OCRImages(
+		context.Background(),
+		badOCRVision{response: provider.ChatResponse{Content: "<html><body><pre>Internal Server Error</pre></body></html>"}},
+		"model",
+		[]ImageInput{{Name: "page-1", Data: []byte("image")}},
+		"prompt",
+		1,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("OCRImages(server error) error = nil, want all-pages failure")
+	}
+	if len(pages) != 1 || !strings.Contains(pages[0].Text, "error page") {
+		t.Fatalf("pages = %#v, want failure marker containing error page", pages)
 	}
 }
 
@@ -299,6 +287,9 @@ func TestCleanOCRResponseStripsDetectorTagsAndDeduplicates(t *testing.T) {
 	}
 	if strings.Count(got, "short") != 2 {
 		t.Fatalf("cleaned OCR = %q, want short repeated text preserved", got)
+	}
+	if got, err := cleanOCRResponse(provider.ChatResponse{Content: `$\\rightarrow$ line`}); err != nil || strings.Contains(got, `\rightarrow`) {
+		t.Fatalf("cleaned OCR = %q, err = %v, want arrow normalized", got, err)
 	}
 }
 

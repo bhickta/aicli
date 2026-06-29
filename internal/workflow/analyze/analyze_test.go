@@ -107,7 +107,7 @@ func TestRunAnalyzePipeline(t *testing.T) {
 	if !hasArgPair(runner.args, "-r", "300") {
 		t.Fatalf("pdftoppm args = %#v, want default 300 DPI", runner.args)
 	}
-	for _, want := range []string{"UPSC topper answer-copy", "diagrams", "marks", "[unclear]"} {
+	for _, want := range []string{"UPSC answer-copy", "diagrams", "marks", "[unclear]"} {
 		if !strings.Contains(fp.visionPrompt, want) {
 			t.Fatalf("vision prompt missing %q:\n%s", want, fp.visionPrompt)
 		}
@@ -116,6 +116,38 @@ func TestRunAnalyzePipeline(t *testing.T) {
 		if !strings.Contains(fp.chatPrompt, want) {
 			t.Fatalf("chat prompt missing %q:\n%s", want, fp.chatPrompt)
 		}
+	}
+}
+
+func TestMergeQuestionBlocksAttachesContinuationToPreviousQuestion(t *testing.T) {
+	t.Parallel()
+
+	questions := mergeQuestionBlocks([]Question{
+		{
+			ID:             "page-3-continuation",
+			Label:          "Page 3 continuation",
+			AnswerMarkdown: "continued answer",
+			SourcePages:    []int{3},
+			Status:         "detected",
+		},
+		{
+			ID:             "q.1",
+			Label:          "Q.1",
+			Title:          "Question one",
+			AnswerMarkdown: "main answer",
+			SourcePages:    []int{2},
+			Status:         "detected",
+		},
+	})
+	if len(questions) != 1 {
+		t.Fatalf("questions = %#v, want one merged question", questions)
+	}
+	got := questions[0]
+	if got.ID != "q.1" || got.Label != "Q.1" || !strings.Contains(got.AnswerMarkdown, "continued answer") {
+		t.Fatalf("merged question = %#v, want continuation attached to Q.1", got)
+	}
+	if len(got.SourcePages) != 2 || got.SourcePages[0] != 2 || got.SourcePages[1] != 3 {
+		t.Fatalf("source pages = %#v, want [2 3]", got.SourcePages)
 	}
 }
 

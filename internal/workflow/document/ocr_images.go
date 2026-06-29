@@ -12,6 +12,8 @@ import (
 	"github.com/bhickta/aicli/internal/systemresources"
 )
 
+const topperCopyOCRMaxTokens = 5000
+
 func OCRImages(
 	ctx context.Context,
 	vision provider.Provider,
@@ -172,7 +174,7 @@ func ocrImage(ctx context.Context, vision provider.Provider, model string, input
 		Image:       data,
 		MIMEType:    mimeType,
 		Temperature: 0,
-		MaxTokens:   2200,
+		MaxTokens:   topperCopyOCRMaxTokens,
 	})
 	if err != nil {
 		return OCRPage{}, err
@@ -189,9 +191,6 @@ func ocrImage(ctx context.Context, vision provider.Provider, model string, input
 }
 
 func cleanOCRResponse(res provider.ChatResponse) (string, error) {
-	if strings.EqualFold(strings.TrimSpace(res.FinishReason), "length") {
-		return "", errors.New("OCR response was truncated by the model token limit")
-	}
 	text := strings.TrimSpace(res.Content)
 	if text == "" {
 		return "", errors.New("OCR response was empty")
@@ -203,6 +202,9 @@ func cleanOCRResponse(res provider.ChatResponse) (string, error) {
 	text = collapseDuplicateOCRLines(text)
 	if strings.TrimSpace(text) == "" {
 		return "", errors.New("OCR response had no readable text")
+	}
+	if strings.EqualFold(strings.TrimSpace(res.FinishReason), "length") {
+		text = strings.TrimSpace(text + "\n\n[OCR truncated: rerun this page if important]")
 	}
 	return text, nil
 }
@@ -236,6 +238,7 @@ func collapseDuplicateOCRLines(text string) string {
 		if line == "" {
 			continue
 		}
+		line = normalizeOCRMarkdownArtifacts(line)
 		key := strings.ToLower(strings.Join(strings.Fields(line), " "))
 		if len([]rune(key)) >= 20 {
 			if seenLong[key] {
@@ -246,6 +249,23 @@ func collapseDuplicateOCRLines(text string) string {
 		out = append(out, line)
 	}
 	return strings.Join(out, "\n")
+}
+
+func normalizeOCRMarkdownArtifacts(line string) string {
+	replacements := []struct {
+		old string
+		new string
+	}{
+		{`$\rightarrow$`, "->"},
+		{`$\\rightarrow$`, "->"},
+		{`\rightarrow`, "->"},
+		{`\\rightarrow`, "->"},
+		{"\rightarrow", "->"},
+	}
+	for _, replacement := range replacements {
+		line = strings.ReplaceAll(line, replacement.old, replacement.new)
+	}
+	return line
 }
 
 type pageError struct {

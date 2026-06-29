@@ -63,38 +63,66 @@ sendPages:
 		return nil, err
 	default:
 	}
-	merged := []Question{}
-	seen := map[string]int{}
+	detected := []Question{}
 	for questions := range results {
 		for _, question := range questions {
-			key := normalizeQuestionLabel(question.Label)
-			if key == "" {
-				key = normalizeQuestionLabel(question.ID)
-			}
-			if key == "" {
-				key = fmt.Sprintf("page-%d", firstInt(question.SourcePages))
-			}
-			if idx, ok := seen[key]; ok {
-				merged[idx].AnswerMarkdown = strings.TrimSpace(merged[idx].AnswerMarkdown + "\n\n" + question.AnswerMarkdown)
-				merged[idx].SourcePages = appendUniqueInts(merged[idx].SourcePages, question.SourcePages...)
-				if merged[idx].Title == "" {
-					merged[idx].Title = question.Title
-				}
-				continue
-			}
-			question.ID = key
 			if question.Status == "" {
 				question.Status = "detected"
 			}
-			seen[key] = len(merged)
-			merged = append(merged, question)
+			detected = append(detected, question)
 		}
 	}
-	if len(merged) == 0 {
+	if len(detected) == 0 {
 		return pageFallbackQuestions(pages), nil
 	}
+	merged := mergeQuestionBlocks(detected)
 	sortQuestions(merged)
 	return merged, nil
+}
+
+func mergeQuestionBlocks(questions []Question) []Question {
+	sortQuestions(questions)
+	merged := []Question{}
+	seen := map[string]int{}
+	for _, question := range questions {
+		key := normalizedQuestionKey(question)
+		if isContinuationQuestion(question) && len(merged) > 0 {
+			appendQuestionBlock(&merged[len(merged)-1], question)
+			continue
+		}
+		if idx, ok := seen[key]; ok {
+			appendQuestionBlock(&merged[idx], question)
+			continue
+		}
+		question.ID = key
+		seen[key] = len(merged)
+		merged = append(merged, question)
+	}
+	return merged
+}
+
+func normalizedQuestionKey(question Question) string {
+	key := normalizeQuestionLabel(question.Label)
+	if key == "" {
+		key = normalizeQuestionLabel(question.ID)
+	}
+	if key == "" {
+		key = fmt.Sprintf("page-%d", firstInt(question.SourcePages))
+	}
+	return key
+}
+
+func isContinuationQuestion(question Question) bool {
+	label := strings.ToLower(strings.TrimSpace(question.Label + " " + question.ID))
+	return strings.Contains(label, "continuation")
+}
+
+func appendQuestionBlock(dst *Question, src Question) {
+	dst.AnswerMarkdown = strings.TrimSpace(dst.AnswerMarkdown + "\n\n" + src.AnswerMarkdown)
+	dst.SourcePages = appendUniqueInts(dst.SourcePages, src.SourcePages...)
+	if dst.Title == "" {
+		dst.Title = src.Title
+	}
 }
 
 func reportQuestionProgress(progress func(completed int, total int), completed *int, completedMu *sync.Mutex, total int) {
