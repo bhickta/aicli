@@ -26,6 +26,16 @@ func NewCompatible(cfg config.ProviderConfig, client *http.Client) *OpenAICompat
 
 func (p *OpenAICompatible) ID() string { return p.cfg.ID }
 
+func (p *OpenAICompatible) LocalModelServer() bool {
+	if strings.EqualFold(strings.TrimSpace(p.cfg.Type), "vllm") {
+		return true
+	}
+	baseURL := strings.ToLower(p.cfg.BaseURL)
+	return p.cfg.ID == "lms" ||
+		strings.Contains(baseURL, "localhost:1234") ||
+		strings.Contains(baseURL, "127.0.0.1:1234")
+}
+
 func (p *OpenAICompatible) Health(ctx context.Context) error {
 	_, err := p.ListModels(ctx)
 	return err

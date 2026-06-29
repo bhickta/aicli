@@ -2,6 +2,7 @@ package registry
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/bhickta/aicli/internal/config"
@@ -25,9 +26,11 @@ func New(configs []config.ProviderConfig, toolConfigs ...config.ToolConfig) *Reg
 		tools = config.Normalize(config.Settings{Tools: toolConfigs[0]}).Tools
 	}
 	for _, cfg := range configs {
-		switch cfg.Type {
+		switch strings.ToLower(strings.TrimSpace(cfg.Type)) {
 		case "ollama":
 			providers[cfg.ID] = ollama.New(cfg, client)
+		case "vllm":
+			providers[cfg.ID] = openai.NewCompatible(normalizeVLLMConfig(cfg), client)
 		case "codex-cli":
 			providers[cfg.ID] = codexcli.New(cfg, tools, tool.ExecRunner{})
 		case "gemini-cli":
@@ -37,6 +40,13 @@ func New(configs []config.ProviderConfig, toolConfigs ...config.ToolConfig) *Reg
 		}
 	}
 	return &Registry{providers: providers}
+}
+
+func normalizeVLLMConfig(cfg config.ProviderConfig) config.ProviderConfig {
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = "http://localhost:8000/v1"
+	}
+	return cfg
 }
 
 func (r *Registry) List() []string {

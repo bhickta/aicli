@@ -89,6 +89,24 @@ func TestOpenAICompatibleListModelsAppliesModelFilter(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleVLLMIsLocalModelServer(t *testing.T) {
+	t.Parallel()
+
+	p := NewCompatible(config.ProviderConfig{
+		ID:      "custom-vllm",
+		Type:    "vllm",
+		BaseURL: "http://example.test/v1",
+	}, http.DefaultClient)
+
+	local, ok := any(p).(provider.LocalModelServer)
+	if !ok {
+		t.Fatal("OpenAICompatible does not implement provider.LocalModelServer")
+	}
+	if !local.LocalModelServer() {
+		t.Fatal("LocalModelServer() = false, want true for vllm")
+	}
+}
+
 func TestOpenAICompatibleUsesAPIKeyEnv(t *testing.T) {
 	t.Setenv("AICLI_TEST_API_KEY", "env-key")
 

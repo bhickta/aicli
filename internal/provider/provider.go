@@ -69,3 +69,7 @@ type Provider interface {
 type ModelUnloader interface {
 	UnloadModel(ctx context.Context, model string) error
 }
+
+type LocalModelServer interface {
+	LocalModelServer() bool
+}

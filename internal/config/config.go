@@ -65,6 +65,13 @@ func DefaultSettings() Settings {
 				APIKey:  "lms",
 			},
 			{
+				ID:      "vllm",
+				Type:    "vllm",
+				Name:    "vLLM",
+				BaseURL: "http://localhost:8000/v1",
+				Model:   "baidu/Unlimited-OCR",
+			},
+			{
 				ID:      "ollama",
 				Type:    "ollama",
 				Name:    "Ollama",

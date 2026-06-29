@@ -25,6 +25,8 @@ func New(cfg config.ProviderConfig, client *http.Client) *Ollama {
 
 func (p *Ollama) ID() string { return p.cfg.ID }
 
+func (p *Ollama) LocalModelServer() bool { return true }
+
 func (p *Ollama) Health(ctx context.Context) error {
 	_, err := p.ListModels(ctx)
 	return err

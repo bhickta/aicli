@@ -81,6 +81,15 @@ func (fakeVision) Vision(context.Context, provider.VisionRequest) (provider.Chat
 	return provider.ChatResponse{Content: "page text"}, nil
 }
 
+type localFakeVision struct {
+	fakeVision
+}
+
+func (localFakeVision) ID() string { return "custom-local" }
+func (localFakeVision) LocalModelServer() bool {
+	return true
+}
+
 type flakyVision struct{}
 
 func (flakyVision) ID() string { return "flaky" }
@@ -354,6 +363,7 @@ func TestEffectiveOCRWorkersCapsLocalModelServers(t *testing.T) {
 		{name: "lm studio auto", providerID: "lms", workers: 0, jobs: 48, want: 1},
 		{name: "lm studio explicit", providerID: "lms", workers: 48, jobs: 48, want: 1},
 		{name: "ollama explicit", providerID: "ollama", workers: 8, jobs: 48, want: 1},
+		{name: "vllm explicit", providerID: "vllm", workers: 8, jobs: 48, want: 1},
 		{name: "remote explicit", providerID: "openrouter", workers: 8, jobs: 48, want: 8},
 	}
 	for _, tt := range tests {
@@ -361,6 +371,30 @@ func TestEffectiveOCRWorkersCapsLocalModelServers(t *testing.T) {
 			got := EffectiveOCRWorkersForProvider(tt.workers, tt.jobs, tt.providerID)
 			if got != tt.want {
 				t.Fatalf("EffectiveOCRWorkersForProvider(%d, %d, %q) = %d, want %d", tt.workers, tt.jobs, tt.providerID, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEffectiveOCRWorkersUsesProviderCapability(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		vision  provider.Provider
+		workers int
+		jobs    int
+		want    int
+	}{
+		{name: "custom local provider caps explicit workers", vision: localFakeVision{}, workers: 8, jobs: 48, want: 1},
+		{name: "remote provider keeps explicit workers", vision: fakeVision{}, workers: 8, jobs: 48, want: 8},
+		{name: "nil provider uses generic worker count", vision: nil, workers: 8, jobs: 48, want: 8},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := EffectiveOCRWorkersForVisionProvider(tt.workers, tt.jobs, tt.vision)
+			if got != tt.want {
+				t.Fatalf("EffectiveOCRWorkersForVisionProvider(%d, %d, %T) = %d, want %d", tt.workers, tt.jobs, tt.vision, got, tt.want)
 			}
 		})
 	}

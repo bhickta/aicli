@@ -23,6 +23,9 @@ func TestLoadCreatesDefaultSettings(t *testing.T) {
 	if !hasProvider(settings.Providers, "codex-cli") {
 		t.Fatalf("default settings missing codex-cli provider: %#v", settings.Providers)
 	}
+	if !hasProvider(settings.Providers, "vllm") {
+		t.Fatalf("default settings missing vllm provider: %#v", settings.Providers)
+	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("settings file was not created: %v", err)
 	}
@@ -48,6 +51,34 @@ func TestNormalizeAppendsMissingDefaultProviders(t *testing.T) {
 	}
 	if !hasProvider(settings.Providers, "codex-cli") {
 		t.Fatalf("Normalize() missing codex-cli provider: %#v", settings.Providers)
+	}
+	if !hasProvider(settings.Providers, "vllm") {
+		t.Fatalf("Normalize() missing vllm provider: %#v", settings.Providers)
+	}
+}
+
+func TestDefaultVLLMProvider(t *testing.T) {
+	t.Parallel()
+
+	settings := DefaultSettings()
+	var vllm ProviderConfig
+	for _, provider := range settings.Providers {
+		if provider.ID == "vllm" {
+			vllm = provider
+			break
+		}
+	}
+	if vllm.Type != "vllm" {
+		t.Fatalf("vllm type = %q, want vllm", vllm.Type)
+	}
+	if vllm.BaseURL != "http://localhost:8000/v1" {
+		t.Fatalf("vllm BaseURL = %q, want http://localhost:8000/v1", vllm.BaseURL)
+	}
+	if vllm.Model != "baidu/Unlimited-OCR" {
+		t.Fatalf("vllm Model = %q, want baidu/Unlimited-OCR", vllm.Model)
+	}
+	if vllm.APIKey != "" || vllm.APIKeyEnv != "" {
+		t.Fatalf("vllm auth defaults = %q/%q, want empty", vllm.APIKey, vllm.APIKeyEnv)
 	}
 }
 
