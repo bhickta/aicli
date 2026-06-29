@@ -123,11 +123,19 @@ CREATE TABLE IF NOT EXISTS study_analyses (
 CREATE INDEX IF NOT EXISTS idx_study_analyses_copy ON study_analyses(copy_id, scope_type, dimension_key);
 CREATE TABLE IF NOT EXISTS study_batches (
 	id TEXT PRIMARY KEY,
+	job_id TEXT NOT NULL DEFAULT '',
 	status TEXT NOT NULL DEFAULT '',
 	stage TEXT NOT NULL DEFAULT '',
+	provider_id TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	parallelism INTEGER NOT NULL DEFAULT 0,
+	force_rerun INTEGER NOT NULL DEFAULT 0,
 	total INTEGER NOT NULL DEFAULT 0,
 	completed INTEGER NOT NULL DEFAULT 0,
 	failed INTEGER NOT NULL DEFAULT 0,
+	started_at TIMESTAMP,
+	finished_at TIMESTAMP,
+	duration_ms INTEGER NOT NULL DEFAULT 0,
 	created_at TIMESTAMP NOT NULL,
 	updated_at TIMESTAMP NOT NULL
 );
@@ -137,6 +145,16 @@ CREATE TABLE IF NOT EXISTS study_batch_items (
 	stage TEXT NOT NULL DEFAULT '',
 	status TEXT NOT NULL DEFAULT '',
 	error TEXT NOT NULL DEFAULT '',
+	error_kind TEXT NOT NULL DEFAULT '',
+	attempt INTEGER NOT NULL DEFAULT 0,
+	cache_hit INTEGER NOT NULL DEFAULT 0,
+	api_calls INTEGER NOT NULL DEFAULT 0,
+	input_tokens INTEGER NOT NULL DEFAULT 0,
+	output_tokens INTEGER NOT NULL DEFAULT 0,
+	total_tokens INTEGER NOT NULL DEFAULT 0,
+	started_at TIMESTAMP,
+	finished_at TIMESTAMP,
+	duration_ms INTEGER NOT NULL DEFAULT 0,
 	created_at TIMESTAMP NOT NULL,
 	updated_at TIMESTAMP NOT NULL,
 	PRIMARY KEY(batch_id, copy_id, stage)
@@ -146,7 +164,7 @@ CREATE INDEX IF NOT EXISTS idx_study_batch_items_batch ON study_batch_items(batc
 	if err != nil {
 		return err
 	}
-	for _, stmt := range jobColumnMigrations {
+	for _, stmt := range schemaColumnMigrations {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return err
 		}
@@ -154,7 +172,7 @@ CREATE INDEX IF NOT EXISTS idx_study_batch_items_batch ON study_batch_items(batc
 	return nil
 }
 
-var jobColumnMigrations = []string{
+var schemaColumnMigrations = []string{
 	`ALTER TABLE jobs ADD COLUMN stage TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE jobs ADD COLUMN progress REAL NOT NULL DEFAULT 0`,
 	`ALTER TABLE jobs ADD COLUMN current_step INTEGER NOT NULL DEFAULT 0`,
@@ -167,4 +185,22 @@ var jobColumnMigrations = []string{
 	`ALTER TABLE jobs ADD COLUMN progress_started_at TIMESTAMP`,
 	`ALTER TABLE jobs ADD COLUMN progress_ends_at TIMESTAMP`,
 	`ALTER TABLE jobs ADD COLUMN finished_at TIMESTAMP`,
+	`ALTER TABLE study_batches ADD COLUMN job_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE study_batches ADD COLUMN provider_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE study_batches ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE study_batches ADD COLUMN parallelism INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE study_batches ADD COLUMN force_rerun INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE study_batches ADD COLUMN started_at TIMESTAMP`,
+	`ALTER TABLE study_batches ADD COLUMN finished_at TIMESTAMP`,
+	`ALTER TABLE study_batches ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE study_batch_items ADD COLUMN error_kind TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE study_batch_items ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE study_batch_items ADD COLUMN cache_hit INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE study_batch_items ADD COLUMN api_calls INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE study_batch_items ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE study_batch_items ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE study_batch_items ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE study_batch_items ADD COLUMN started_at TIMESTAMP`,
+	`ALTER TABLE study_batch_items ADD COLUMN finished_at TIMESTAMP`,
+	`ALTER TABLE study_batch_items ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0`,
 }

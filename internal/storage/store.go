@@ -151,24 +151,42 @@ type StudyAnalysisRecord struct {
 }
 
 type StudyBatchRecord struct {
-	ID        string    `json:"id"`
-	Status    string    `json:"status"`
-	Stage     string    `json:"stage"`
-	Total     int       `json:"total"`
-	Completed int       `json:"completed"`
-	Failed    int       `json:"failed"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	JobID       string    `json:"job_id"`
+	Status      string    `json:"status"`
+	Stage       string    `json:"stage"`
+	ProviderID  string    `json:"provider_id"`
+	Model       string    `json:"model"`
+	Parallelism int       `json:"parallelism"`
+	ForceRerun  bool      `json:"force_rerun"`
+	Total       int       `json:"total"`
+	Completed   int       `json:"completed"`
+	Failed      int       `json:"failed"`
+	StartedAt   time.Time `json:"started_at,omitempty"`
+	FinishedAt  time.Time `json:"finished_at,omitempty"`
+	DurationMS  int       `json:"duration_ms"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type StudyBatchItemRecord struct {
-	BatchID   string    `json:"batch_id"`
-	CopyID    string    `json:"copy_id"`
-	Stage     string    `json:"stage"`
-	Status    string    `json:"status"`
-	Error     string    `json:"error"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	BatchID      string    `json:"batch_id"`
+	CopyID       string    `json:"copy_id"`
+	Stage        string    `json:"stage"`
+	Status       string    `json:"status"`
+	Error        string    `json:"error"`
+	ErrorKind    string    `json:"error_kind"`
+	Attempt      int       `json:"attempt"`
+	CacheHit     bool      `json:"cache_hit"`
+	APICalls     int       `json:"api_calls"`
+	InputTokens  int       `json:"input_tokens"`
+	OutputTokens int       `json:"output_tokens"`
+	TotalTokens  int       `json:"total_tokens"`
+	StartedAt    time.Time `json:"started_at,omitempty"`
+	FinishedAt   time.Time `json:"finished_at,omitempty"`
+	DurationMS   int       `json:"duration_ms"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 var ErrNotFound = errors.New("not found")

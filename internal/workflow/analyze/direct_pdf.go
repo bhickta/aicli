@@ -74,6 +74,7 @@ func (s *Service) directPDFReview(ctx context.Context, req Request, reviewID str
 		ReviewID:   reviewID,
 		PDFName:    filepath.Base(req.Path),
 		SourceMode: OCRInputModePDFDirect,
+		Usage:      res.Usage,
 		Pages:      pages,
 		Questions:  questions,
 		Report:     report,

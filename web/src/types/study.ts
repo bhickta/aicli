@@ -82,11 +82,19 @@ export interface StudyCopyDetail {
 
 export interface StudyBatchRecord {
   id: string;
+  job_id: string;
   status: string;
   stage: string;
+  provider_id: string;
+  model: string;
+  parallelism: number;
+  force_rerun: boolean;
   total: number;
   completed: number;
   failed: number;
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
   created_at: string;
   updated_at: string;
 }
@@ -103,6 +111,16 @@ export interface StudyBatchItemRecord {
   stage: string;
   status: string;
   error: string;
+  error_kind: string;
+  attempt: number;
+  cache_hit: boolean;
+  api_calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
   created_at: string;
   updated_at: string;
 }

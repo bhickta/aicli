@@ -132,6 +132,49 @@ func TestOpenAICompatibleVLLMIsLocalModelServer(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleGeminiDocumentParsesUsage(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/models/gemini-3.1-flash-lite:generateContent") {
+			t.Fatalf("path = %s, want Gemini generateContent path", r.URL.Path)
+		}
+		w.Write([]byte(`{
+			"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}],
+			"usageMetadata":{
+				"promptTokenCount":100,
+				"cachedContentTokenCount":40,
+				"candidatesTokenCount":25,
+				"thoughtsTokenCount":3,
+				"totalTokenCount":128
+			}
+		}`))
+	}))
+	defer srv.Close()
+
+	p := NewCompatible(config.ProviderConfig{
+		ID:      "gemini",
+		BaseURL: srv.URL + "/v1beta/openai",
+		APIKey:  "key",
+	}, srv.Client())
+
+	res, err := p.Document(context.Background(), provider.DocumentRequest{
+		Model:    "gemini-3.1-flash-lite",
+		Prompt:   "read",
+		Data:     []byte("pdf"),
+		MIMEType: "application/pdf",
+	})
+	if err != nil {
+		t.Fatalf("Document() error = %v", err)
+	}
+	if res.Content != "done" || res.Usage == nil {
+		t.Fatalf("response = %#v, want content and usage", res)
+	}
+	if res.Usage.InputTokens != 100 || res.Usage.CachedInputTokens != 40 || res.Usage.OutputTokens != 25 || res.Usage.ReasoningOutputTokens != 3 || res.Usage.TotalTokens != 128 {
+		t.Fatalf("usage = %#v, want Gemini usage mapped", res.Usage)
+	}
+}
+
 func TestOpenAICompatibleUsesAPIKeyEnv(t *testing.T) {
 	t.Setenv("AICLI_TEST_API_KEY", "env-key")
 

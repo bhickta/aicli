@@ -1,4 +1,5 @@
 @import "./study-questions.css";
+@import "./study-run.css";
 @import "./study-status.css";
 
 /* Modern, Aesthetic Layout for Study Workspace */
@@ -50,7 +51,6 @@
 }
 
 .study-toolbar,
-.study-batchbar,
 .study-card-header,
 .study-kpis {
   align-items: center;
@@ -75,8 +75,7 @@
   outline: none;
 }
 
-.study-toolbar button,
-.study-batchbar button {
+.study-toolbar button {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #e6edf3;
@@ -87,14 +86,9 @@
   font-weight: 500;
 }
 
-.study-toolbar button:hover,
-.study-batchbar button:hover:not(:disabled) {
+.study-toolbar button:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.2);
-}
-
-.study-batchbar button {
-  flex: 1;
 }
 
 .study-parallel-control {
@@ -113,11 +107,6 @@
   color: #fff;
   padding: 10px 8px;
   width: 56px;
-}
-
-.study-batchbar button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .study-summary,

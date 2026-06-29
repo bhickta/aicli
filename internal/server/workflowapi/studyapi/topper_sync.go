@@ -227,7 +227,7 @@ func saveStudyFromTopperRecordAsCopy(
 ) error {
 	var review analyze.Response
 	if err := json.Unmarshal([]byte(record.ReviewJSON), &review); err != nil {
-		return nil
+		return fmt.Errorf("parse topper review %s: %w", record.ID, err)
 	}
 	copyID = firstString(copyID, record.ID)
 	createdAt := firstTime(existing.CreatedAt, record.CreatedAt)
@@ -253,24 +253,19 @@ func saveStudyFromTopperRecordAsCopy(
 		ReportStatus:   statusFromText(review.Report),
 		CreatedAt:      createdAt,
 	}
-	if err := store.SaveStudyCopy(ctx, copyRecord); err != nil {
-		return err
-	}
-	if err := saveStudyPagesFromTopper(ctx, store, copyID, record.CreatedAt, review.Pages); err != nil {
-		return err
-	}
-	return saveStudyQuestionsFromTopper(ctx, store, copyID, record, review)
+	pages := studyPagesFromTopper(copyID, record.CreatedAt, review.Pages)
+	questions, analyses := studyQuestionsAndAnalysesFromTopper(copyID, record, review)
+	return store.ReplaceStudyCopyResult(ctx, copyRecord, pages, questions, analyses)
 }
 
-func saveStudyPagesFromTopper(
-	ctx context.Context,
-	store studyStore,
+func studyPagesFromTopper(
 	copyID string,
 	createdAt time.Time,
 	pages []analyze.Page,
-) error {
+) []storage.StudyPageRecord {
+	out := make([]storage.StudyPageRecord, 0, len(pages))
 	for _, page := range pages {
-		if err := store.SaveStudyPage(ctx, storage.StudyPageRecord{
+		out = append(out, storage.StudyPageRecord{
 			CopyID:       copyID,
 			PageNumber:   page.Number,
 			Name:         page.Name,
@@ -282,23 +277,21 @@ func saveStudyPagesFromTopper(
 			UnclearCount: page.UnclearCount,
 			Verified:     page.Verified,
 			CreatedAt:    createdAt,
-		}); err != nil {
-			return err
-		}
+		})
 	}
-	return nil
+	return out
 }
 
-func saveStudyQuestionsFromTopper(
-	ctx context.Context,
-	store studyStore,
+func studyQuestionsAndAnalysesFromTopper(
 	copyID string,
 	record storage.TopperReviewRecord,
 	review analyze.Response,
-) error {
+) ([]storage.StudyQuestionRecord, []storage.StudyAnalysisRecord) {
+	questions := make([]storage.StudyQuestionRecord, 0, len(review.Questions))
+	analyses := make([]storage.StudyAnalysisRecord, 0, len(review.Questions)*4+1)
 	for index, question := range review.Questions {
 		qid := scopedStudyQuestionID(copyID, question.ID, index+1)
-		if err := store.SaveStudyQuestion(ctx, storage.StudyQuestionRecord{
+		questions = append(questions, storage.StudyQuestionRecord{
 			ID:          qid,
 			CopyID:      copyID,
 			QuestionNo:  inferQuestionNo(question.Label, index+1),
@@ -308,37 +301,31 @@ func saveStudyQuestionsFromTopper(
 			SourcePages: question.SourcePages,
 			Status:      firstString(question.Status, "ready"),
 			CreatedAt:   record.CreatedAt,
-		}); err != nil {
-			return err
-		}
-		if err := saveStudyQuestionDimensions(ctx, store, copyID, qid, record, question); err != nil {
-			return err
-		}
+		})
+		analyses = append(analyses, studyQuestionDimensionAnalyses(copyID, qid, record, question)...)
 	}
-	if strings.TrimSpace(review.Report) == "" {
-		return nil
+	if strings.TrimSpace(review.Report) != "" {
+		analyses = append(analyses, storage.StudyAnalysisRecord{
+			ID:           copyID + "-report",
+			CopyID:       copyID,
+			ScopeType:    "copy",
+			ScopeID:      copyID,
+			DimensionKey: "report",
+			ProviderID:   record.ProviderID,
+			Model:        record.Model,
+			ResultJSON:   jsonString(map[string]string{"report": review.Report}),
+			CreatedAt:    record.CreatedAt,
+		})
 	}
-	return store.SaveStudyAnalysis(ctx, storage.StudyAnalysisRecord{
-		ID:           copyID + "-report",
-		CopyID:       copyID,
-		ScopeType:    "copy",
-		ScopeID:      copyID,
-		DimensionKey: "report",
-		ProviderID:   record.ProviderID,
-		Model:        record.Model,
-		ResultJSON:   jsonString(map[string]string{"report": review.Report}),
-		CreatedAt:    record.CreatedAt,
-	})
+	return questions, analyses
 }
 
-func saveStudyQuestionDimensions(
-	ctx context.Context,
-	store studyStore,
+func studyQuestionDimensionAnalyses(
 	copyID string,
 	qid string,
 	record storage.TopperReviewRecord,
 	question analyze.Question,
-) error {
+) []storage.StudyAnalysisRecord {
 	if question.Dimensions == nil {
 		return nil
 	}
@@ -351,11 +338,12 @@ func saveStudyQuestionDimensions(
 		"fact_usage":   question.Dimensions.FactUsage,
 		"custom":       question.Dimensions.Custom,
 	}
+	out := []storage.StudyAnalysisRecord{}
 	for key, value := range dims {
 		if strings.TrimSpace(value) == "" {
 			continue
 		}
-		if err := store.SaveStudyAnalysis(ctx, storage.StudyAnalysisRecord{
+		out = append(out, storage.StudyAnalysisRecord{
 			ID:           fmt.Sprintf("%s-dim-%s", qid, key),
 			CopyID:       copyID,
 			ScopeType:    "question",
@@ -365,11 +353,9 @@ func saveStudyQuestionDimensions(
 			Model:        record.Model,
 			ResultJSON:   jsonString(map[string]string{"analysis": value}),
 			CreatedAt:    record.CreatedAt,
-		}); err != nil {
-			return err
-		}
+		})
 	}
-	return nil
+	return out
 }
 
 var unsafeStudyIDCharPattern = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)

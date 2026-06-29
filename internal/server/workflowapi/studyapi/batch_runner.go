@@ -21,7 +21,7 @@ import (
 
 const (
 	defaultStudyBatchProviderID  = "gemini"
-	defaultStudyBatchModel       = "gemini-2.5-flash-lite"
+	defaultStudyBatchModel       = "gemini-3.1-flash-lite"
 	defaultStudyBatchParallelism = 2
 	maxStudyBatchParallelism     = 5
 )
@@ -34,9 +34,14 @@ type studyBatchRunOptions struct {
 }
 
 type studyBatchCopyResult struct {
-	CopyID string `json:"copy_id"`
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
+	CopyID       string `json:"copy_id"`
+	Status       string `json:"status"`
+	Error        string `json:"error,omitempty"`
+	CacheHit     bool   `json:"cache_hit"`
+	APICalls     int    `json:"api_calls"`
+	InputTokens  int    `json:"input_tokens"`
+	OutputTokens int    `json:"output_tokens"`
+	TotalTokens  int    `json:"total_tokens"`
 }
 
 type studyBatchRunResult struct {
@@ -54,6 +59,8 @@ func (h *Handler) startStudyBatchJob(
 	options studyBatchRunOptions,
 ) {
 	job := core.NewJob("study-batch", batch.ID)
+	batch.JobID = job.ID
+	_ = store.SaveStudyBatch(r.Context(), batch)
 	h.runtime.StartWorkflowWithResponse(
 		w,
 		r,
@@ -124,16 +131,51 @@ func (h *Handler) runStudyBatchCopy(
 	vision provider.Provider,
 	options studyBatchRunOptions,
 ) studyBatchCopyResult {
-	if err := saveStudyBatchItemStatus(ctx, store, batch, copyRecord.ID, "running", ""); err != nil {
+	startedAt := time.Now().UTC()
+	if err := saveStudyBatchItem(ctx, store, storage.StudyBatchItemRecord{
+		BatchID:   batch.ID,
+		CopyID:    copyRecord.ID,
+		Stage:     batch.Stage,
+		Status:    "running",
+		Attempt:   1,
+		StartedAt: startedAt,
+	}); err != nil {
 		return studyBatchCopyResult{CopyID: copyRecord.ID, Status: "failed", Error: err.Error()}
 	}
-	err := h.analyzeStudyBatchCopy(ctx, store, jobID, copyRecord, vision, options)
+	result, err := h.analyzeStudyBatchCopy(ctx, store, jobID, copyRecord, vision, options)
+	finishedAt := time.Now().UTC()
 	if err != nil {
-		_ = saveStudyBatchItemStatus(ctx, store, batch, copyRecord.ID, "failed", err.Error())
+		_ = saveStudyBatchItem(ctx, store, storage.StudyBatchItemRecord{
+			BatchID:    batch.ID,
+			CopyID:     copyRecord.ID,
+			Stage:      batch.Stage,
+			Status:     "failed",
+			Error:      err.Error(),
+			ErrorKind:  studyBatchErrorKind(err),
+			Attempt:    1,
+			StartedAt:  startedAt,
+			FinishedAt: finishedAt,
+			DurationMS: int(finishedAt.Sub(startedAt).Milliseconds()),
+		})
 		return studyBatchCopyResult{CopyID: copyRecord.ID, Status: "failed", Error: err.Error()}
 	}
-	_ = saveStudyBatchItemStatus(ctx, store, batch, copyRecord.ID, "ready", "")
-	return studyBatchCopyResult{CopyID: copyRecord.ID, Status: "ready"}
+	item := storage.StudyBatchItemRecord{
+		BatchID:      batch.ID,
+		CopyID:       copyRecord.ID,
+		Stage:        batch.Stage,
+		Status:       "ready",
+		Attempt:      1,
+		CacheHit:     result.CacheHit,
+		APICalls:     result.APICalls,
+		InputTokens:  result.InputTokens,
+		OutputTokens: result.OutputTokens,
+		TotalTokens:  result.TotalTokens,
+		StartedAt:    startedAt,
+		FinishedAt:   finishedAt,
+		DurationMS:   int(finishedAt.Sub(startedAt).Milliseconds()),
+	}
+	_ = saveStudyBatchItem(ctx, store, item)
+	return result
 }
 
 func (h *Handler) analyzeStudyBatchCopy(
@@ -143,42 +185,29 @@ func (h *Handler) analyzeStudyBatchCopy(
 	copyRecord storage.StudyCopyRecord,
 	vision provider.Provider,
 	options studyBatchRunOptions,
-) error {
+) (studyBatchCopyResult, error) {
 	if strings.TrimSpace(copyRecord.SourcePath) == "" {
-		return fmt.Errorf("copy %s has no source PDF path", copyRecord.ID)
+		return studyBatchCopyResult{}, fmt.Errorf("copy %s has no source PDF path", copyRecord.ID)
 	}
 	if !options.ForceOCR {
 		if shouldSkipStudyBatchCopy(copyRecord) {
-			return nil
+			return studyBatchCopyResult{CopyID: copyRecord.ID, Status: "ready", CacheHit: true}, nil
 		}
 		synced, err := h.syncStudyCopyFromMatchingTopper(ctx, store, copyRecord, false)
 		if err != nil {
-			return err
+			return studyBatchCopyResult{}, err
 		}
 		if synced {
-			return nil
+			return studyBatchCopyResult{CopyID: copyRecord.ID, Status: "ready", CacheHit: true}, nil
 		}
 	}
-	result, err := analyze.New(
-		h.runtime.Settings().Tools,
-		tool.ExecRunner{},
-		vision,
-		analyze.WithArtifactDir(studyBatchArtifactDir(h.runtime.DataDir())),
-		analyze.WithLogger(h.runtime.Logger()),
-	).RunWithProgress(ctx, analyze.Request{
-		Model:        options.Model,
-		OCRModel:     options.Model,
-		Path:         copyRecord.SourcePath,
-		OCRInputMode: analyze.OCRInputModePDFDirect,
-		ReviewID:     copyRecord.ID,
-		ForceOCR:     options.ForceOCR,
-	}, nil)
+	result, err := h.runDirectPDFAnalysisWithRetry(ctx, copyRecord, vision, options)
 	if err != nil {
-		return err
+		return studyBatchCopyResult{}, err
 	}
 	topperStore, ok := h.runtime.Store().(studyTopperStore)
 	if !ok {
-		return fmt.Errorf("topper review archive is not supported by this store")
+		return studyBatchCopyResult{}, fmt.Errorf("topper review archive is not supported by this store")
 	}
 	record := studyTopperReviewRecord(result, studyTopperReviewMeta{
 		JobID:      jobID,
@@ -188,12 +217,61 @@ func (h *Handler) analyzeStudyBatchCopy(
 		Status:     "ready",
 	})
 	if err := topperStore.SaveTopperReview(ctx, record); err != nil {
-		return err
+		return studyBatchCopyResult{}, err
 	}
 	if err := h.syncStudyTopperReviewArtifact(result); err != nil {
-		return err
+		return studyBatchCopyResult{}, err
 	}
-	return saveStudyFromTopperRecordAsCopy(ctx, store, record, copyRecord.ID, copyRecord)
+	if err := saveStudyFromTopperRecordAsCopy(ctx, store, record, copyRecord.ID, copyRecord); err != nil {
+		return studyBatchCopyResult{}, err
+	}
+	out := studyBatchCopyResult{CopyID: copyRecord.ID, Status: "ready", APICalls: 1}
+	if result.Usage != nil {
+		out.InputTokens = result.Usage.InputTokens
+		out.OutputTokens = result.Usage.OutputTokens
+		out.TotalTokens = result.Usage.TotalTokens
+	}
+	return out, nil
+}
+
+func (h *Handler) runDirectPDFAnalysisWithRetry(
+	ctx context.Context,
+	copyRecord storage.StudyCopyRecord,
+	vision provider.Provider,
+	options studyBatchRunOptions,
+) (analyze.Response, error) {
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		result, err := analyze.New(
+			h.runtime.Settings().Tools,
+			tool.ExecRunner{},
+			vision,
+			analyze.WithArtifactDir(studyBatchArtifactDir(h.runtime.DataDir())),
+			analyze.WithLogger(h.runtime.Logger()),
+		).RunWithProgress(ctx, analyze.Request{
+			Model:        options.Model,
+			OCRModel:     options.Model,
+			Path:         copyRecord.SourcePath,
+			OCRInputMode: analyze.OCRInputModePDFDirect,
+			ReviewID:     copyRecord.ID,
+			ForceOCR:     options.ForceOCR,
+		}, nil)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if !isTransientStudyBatchError(err) || attempt == 3 {
+			break
+		}
+		timer := time.NewTimer(time.Duration(attempt*attempt) * time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return analyze.Response{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return analyze.Response{}, lastErr
 }
 
 func (h *Handler) collectStudyBatchResults(
@@ -226,6 +304,17 @@ func (h *Handler) collectStudyBatchResults(
 	}
 	if err := ctx.Err(); err != nil && firstErr == nil {
 		firstErr = err
+	}
+	if batch.Completed+batch.Failed >= batch.Total {
+		batch.FinishedAt = time.Now().UTC()
+		if !batch.StartedAt.IsZero() {
+			batch.DurationMS = int(batch.FinishedAt.Sub(batch.StartedAt).Milliseconds())
+		}
+		if batch.Failed > 0 && batch.Completed > 0 {
+			batch.Status = "partial_failed"
+			firstErr = nil
+		}
+		_ = store.SaveStudyBatch(ctx, batch)
 	}
 	out.Batch = batch
 	return out, firstErr
@@ -301,14 +390,31 @@ func (h *Handler) syncStudyTopperReviewArtifact(review analyze.Response) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-func saveStudyBatchItemStatus(ctx context.Context, store studyStore, batch storage.StudyBatchRecord, copyID string, status string, itemErr string) error {
-	return store.SaveStudyBatchItem(ctx, storage.StudyBatchItemRecord{
-		BatchID: batch.ID,
-		CopyID:  copyID,
-		Stage:   batch.Stage,
-		Status:  status,
-		Error:   itemErr,
-	})
+func saveStudyBatchItem(ctx context.Context, store studyStore, item storage.StudyBatchItemRecord) error {
+	return store.SaveStudyBatchItem(ctx, item)
+}
+
+func isTransientStudyBatchError(err error) bool {
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "429") ||
+		strings.Contains(text, "too many requests") ||
+		strings.Contains(text, "rate limit") ||
+		strings.Contains(text, "500") ||
+		strings.Contains(text, "502") ||
+		strings.Contains(text, "503") ||
+		strings.Contains(text, "504") ||
+		strings.Contains(text, "timeout") ||
+		strings.Contains(text, "temporarily unavailable")
+}
+
+func studyBatchErrorKind(err error) string {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return "cancelled"
+	}
+	if isTransientStudyBatchError(err) {
+		return "transient"
+	}
+	return "permanent"
 }
 
 func shouldSkipStudyBatchCopy(copyRecord storage.StudyCopyRecord) bool {

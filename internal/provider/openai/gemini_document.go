@@ -78,6 +78,7 @@ func (p *OpenAICompatible) Document(ctx context.Context, req provider.DocumentRe
 			} `json:"content"`
 			FinishReason string `json:"finishReason"`
 		} `json:"candidates"`
+		UsageMetadata geminiUsageMetadata `json:"usageMetadata"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
 		return provider.DocumentResponse{}, err
@@ -92,7 +93,29 @@ func (p *OpenAICompatible) Document(ctx context.Context, req provider.DocumentRe
 	return provider.DocumentResponse{
 		Content:      out.String(),
 		FinishReason: payload.Candidates[0].FinishReason,
+		Usage:        payload.UsageMetadata.providerUsage(),
 	}, nil
+}
+
+type geminiUsageMetadata struct {
+	PromptTokenCount        int `json:"promptTokenCount"`
+	CachedContentTokenCount int `json:"cachedContentTokenCount"`
+	CandidatesTokenCount    int `json:"candidatesTokenCount"`
+	ThoughtsTokenCount      int `json:"thoughtsTokenCount"`
+	TotalTokenCount         int `json:"totalTokenCount"`
+}
+
+func (u geminiUsageMetadata) providerUsage() *provider.TokenUsage {
+	if u.PromptTokenCount == 0 && u.CandidatesTokenCount == 0 && u.ThoughtsTokenCount == 0 && u.TotalTokenCount == 0 && u.CachedContentTokenCount == 0 {
+		return nil
+	}
+	return &provider.TokenUsage{
+		InputTokens:           u.PromptTokenCount,
+		CachedInputTokens:     u.CachedContentTokenCount,
+		OutputTokens:          u.CandidatesTokenCount,
+		ReasoningOutputTokens: u.ThoughtsTokenCount,
+		TotalTokens:           u.TotalTokenCount,
+	}
 }
 
 func (p *OpenAICompatible) usesGeminiGenerateContent() bool {

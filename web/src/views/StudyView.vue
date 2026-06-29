@@ -2,34 +2,21 @@
 import { computed, onMounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import PageHeader from "../components/layout/PageHeader.vue";
-import StudyCopyTable from "../components/study/StudyCopyTable.vue";
-import StudyQuestionsPanel from "../components/study/StudyQuestionsPanel.vue";
-import StudyWorkflowPanel from "../components/study/StudyWorkflowPanel.vue";
+import StudyCopyWorkspace from "../components/study/StudyCopyWorkspace.vue";
+import StudyRunStatusPanel from "../components/study/StudyRunStatusPanel.vue";
+import StudySidebar from "../components/study/StudySidebar.vue";
 import { useStudyCopies } from "../composables/useStudyCopies";
 
 const route = useRoute();
 const router = useRouter();
 const study = useStudyCopies();
-const {
-  status,
-  query,
-  copies,
-  selected,
-  selectedIds,
-  batchParallelism,
-  summary,
-  loadCopies,
-  openCopy: loadCopy,
-  startBatch,
-  toggleCopy,
-} = study;
 
-const activeCopyId = computed(() => selected.value?.copy.id || "");
+const activeCopyId = computed(() => study.selected.value?.copy.id || "");
 
 onMounted(async () => {
-  await loadCopies();
+  await study.loadCopies();
   const id = String(route.params.copyId || "");
-  if (id) await loadCopy(id);
+  if (id) await study.openCopy(id);
 });
 
 watch(
@@ -41,67 +28,57 @@ watch(
 
 async function openCopy(id: string) {
   await router.push({ name: "study", params: { copyId: id } });
-  await loadCopy(id);
+  await study.openCopy(id);
 }
 
 function clearSelection() {
   router.push({ name: "study" });
-  selected.value = null;
+  study.clearSelectedCopy();
 }
 
 async function refreshActiveCopy() {
   if (!activeCopyId.value) return;
-  await loadCopy(activeCopyId.value);
-  await loadCopies();
+  await study.openCopy(activeCopyId.value);
+  await study.loadCopies();
 }
 </script>
 
 <template>
   <div class="study-shell">
     <header class="study-topbar">
-      <PageHeader title="Study Workspace" description="Import PDFs, track answer copies, split questions, and review analytics." />
+      <PageHeader title="Study Workspace" description="Import PDFs, analyze topper copies, and review question-wise output." />
     </header>
 
     <main class="study-workspace">
-      <aside class="study-sidebar">
-        <div class="study-toolbar">
-          <input v-model="query" type="search" placeholder="Search copies, candidate, paper" @keyup.enter="loadCopies" />
-          <button type="button" @click="loadCopies">Search</button>
-        </div>
-        <p class="study-summary">{{ summary }} · {{ status }}</p>
-        <div class="study-batchbar">
-          <button type="button" @click="clearSelection">New Import / Run</button>
-        </div>
-        <div class="study-batchbar">
-          <label class="study-parallel-control">
-            <span>Parallel</span>
-            <input v-model.number="batchParallelism" type="number" min="1" max="5" />
-          </label>
-          <button type="button" :disabled="!selectedIds.length" @click="startBatch('all')">Run selected</button>
-          <button type="button" :disabled="!selectedIds.length" @click="startBatch('ocr')">OCR</button>
-        </div>
-        <StudyCopyTable
-          :copies="copies"
-          :active-id="activeCopyId"
-          :selected-ids="selectedIds"
-          @open="openCopy"
-          @toggle="toggleCopy"
-        />
-      </aside>
+      <StudySidebar
+        v-model:query="study.query.value"
+        v-model:parallelism="study.batchParallelism.value"
+        v-model:force-rerun="study.forceRerun.value"
+        :summary="study.summary.value"
+        :status="study.status.value"
+        :copies="study.copies.value"
+        :active-id="activeCopyId"
+        :selected-ids="study.selectedIds.value"
+        @search="study.loadCopies"
+        @clear="clearSelection"
+        @run-selected="study.startBatch('all')"
+        @open="openCopy"
+        @toggle="study.toggleCopy"
+      />
 
       <section class="study-main">
-        <template v-if="activeCopyId">
-          <StudyWorkflowPanel
-            compact
-            locked-workflow-id="analyze"
-            :review-id="activeCopyId"
-            :sync-copy-id="activeCopyId"
-            :source-path="selected?.copy.source_path || ''"
-            @synced="refreshActiveCopy"
-          />
-          <StudyQuestionsPanel :detail="selected" />
-        </template>
-        <StudyWorkflowPanel v-else />
+        <StudyRunStatusPanel
+          :batch="study.activeBatch.value"
+          :items="study.batchItems.value"
+          :status="study.status.value"
+        />
+        <StudyCopyWorkspace
+          :active-copy-id="activeCopyId"
+          :detail="study.selected.value"
+          :force-rerun="study.forceRerun.value"
+          @run-copy="study.runCopy"
+          @synced="refreshActiveCopy"
+        />
       </section>
     </main>
   </div>

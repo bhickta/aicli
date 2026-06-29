@@ -1,0 +1,88 @@
+.study-batch-controls,
+.study-run-status,
+.study-copy-workspace {
+  display: grid;
+  gap: 12px;
+}
+
+.study-batch-row,
+.study-copy-actions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.study-batch-row button,
+.study-copy-actions button {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #e6edf3;
+  cursor: pointer;
+  flex: 1;
+  font-weight: 500;
+  padding: 10px 16px;
+}
+
+.study-batch-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.study-rerun-control {
+  align-items: center;
+  color: #8b949e;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 8px;
+}
+
+.study-run-status {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+}
+
+.study-run-status header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.study-run-status header div {
+  display: grid;
+  gap: 2px;
+}
+
+.study-run-status span,
+.study-run-item small {
+  color: #8b949e;
+}
+
+.study-run-status strong {
+  color: #e6edf3;
+}
+
+.study-run-items {
+  display: grid;
+  gap: 6px;
+}
+
+.study-run-item {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(120px, 1fr) 90px minmax(140px, 1.4fr);
+  min-height: 38px;
+  padding: 8px 12px;
+}
+
+.study-run-item span,
+.study-run-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
