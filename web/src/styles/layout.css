@@ -1,54 +1,115 @@
 #app {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   min-height: 100vh;
 }
 
-aside {
+.app-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 18px;
+  gap: 16px;
+  padding: 18px 14px;
   background: #191d24;
   border-right: 1px solid #2b313b;
+}
+
+.app-brand {
+  display: grid;
+  gap: 2px;
+  padding: 2px 4px 10px;
+}
+
+.app-brand strong {
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.app-brand span {
+  color: #9aa4b2;
+  font-size: 12px;
 }
 
 #primary-tabs {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
 }
 
-#primary-tabs [role="tab"] {
+.nav-group {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nav-group-label {
+  color: #8f9bad;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin: 0;
+  padding: 0 6px;
+  text-transform: uppercase;
+}
+
+#primary-tabs button {
   width: 100%;
   border-radius: 6px;
   border: 1px solid #343b46;
   background: #1f252e;
   color: #d6deea;
+  display: grid;
+  gap: 2px;
+  min-height: 58px;
+  padding: 9px 10px;
 }
 
-#primary-tabs [role="tab"].active-tab {
+#primary-tabs button.active-tab {
   border-color: #6ea8fe;
   background: #2d405e;
   box-shadow: 0 0 0 1px #6ea8fe inset;
 }
 
-#primary-tabs [role="tab"][aria-selected="false"] {
+#primary-tabs button:not(.active-tab) {
   opacity: 0.86;
 }
 
-section {
+.nav-label {
+  font-weight: 700;
+}
+
+.nav-description {
+  color: #9aa4b2;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+#primary-tabs button.active-tab .nav-description {
+  color: #d2e2f7;
+}
+
+.app-main {
   min-width: 0;
   padding: 24px;
   overflow: auto;
 }
 
-header {
+.app-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 24px;
+}
+
+.app-title {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.app-title p {
+  color: #9aa4b2;
+  margin: 0;
 }
 
 .header-status {

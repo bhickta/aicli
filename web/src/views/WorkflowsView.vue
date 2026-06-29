@@ -48,50 +48,65 @@ function cancelButtonLabel() {
 </script>
 
 <template>
-  <div class="panel grid">
-    <h2>Workflows</h2>
-    <WorkflowCategoryTabs
-      :categories="workflowCategories"
-      :active-category="appState.workflow.category"
-      @select="selectWorkflowCategory"
-    />
-    <WorkflowSelector
-      :workflows="activeWorkflowDefinitions"
-      :selected-id="activeWorkflow?.id || ''"
-      @select="chooseWorkflow"
-    />
-    <DropZone @upload="handleDrop" />
-    <WorkflowSoundControl />
-    <p class="muted">Workflow controls are shown only for the selected workflow. Study-specific workflows live in the Study tab.</p>
-    <p v-if="resourceHint" class="status-line compact">{{ resourceHint }}</p>
-    <WorkflowFields
-      :fields="nonProviderFields"
-      :values="values"
-      :has-provider-model="hasProviderModel"
-      :provider-model="providerModel"
-      :preferred-provider-id="activeWorkflow?.preferredProviderId"
-      :preferred-model="activeWorkflow?.preferredModel"
-      @update-field="updateField"
-      @update-provider-model="Object.assign(providerModel, $event)"
-      @browse="browse"
-    />
-    <WorkflowRunControls
-      :running="running"
-      :can-cancel="Boolean(currentJob)"
-      :cancel-label="cancelButtonLabel()"
-      @run="runWorkflow"
-      @cancel="cancelWorkflow"
-    />
-    <WorkflowResult
-      :status="status"
-      :progress="progress"
-      :progress-mode="progressMode"
-      :progress-visible="progressVisible"
-      :result="result"
-      :parsed-result="parsedResult"
-      :source-preview="sourcePreview"
-      :markdown-preview="markdownPreview"
-    />
+  <div class="panel workflows-page">
+    <section class="workflows-rail">
+      <div class="workflows-heading">
+        <h2>Workflows</h2>
+        <p class="muted">Pick a category, then search within its tools.</p>
+      </div>
+      <WorkflowCategoryTabs
+        :categories="workflowCategories"
+        :active-category="appState.workflow.category"
+        @select="selectWorkflowCategory"
+      />
+      <WorkflowSelector
+        :workflows="activeWorkflowDefinitions"
+        :selected-id="activeWorkflow?.id || ''"
+        @select="chooseWorkflow"
+      />
+    </section>
+
+    <section class="workflows-workbench">
+      <header class="workflows-active-header">
+        <div>
+          <span>{{ appState.workflow.category }}</span>
+          <h3>{{ activeWorkflow?.label || "Select a workflow" }}</h3>
+        </div>
+        <WorkflowSoundControl />
+      </header>
+      <DropZone @upload="handleDrop" />
+      <p v-if="resourceHint" class="status-line compact">{{ resourceHint }}</p>
+      <section class="workflow-run-card">
+        <WorkflowFields
+          :fields="nonProviderFields"
+          :values="values"
+          :has-provider-model="hasProviderModel"
+          :provider-model="providerModel"
+          :preferred-provider-id="activeWorkflow?.preferredProviderId"
+          :preferred-model="activeWorkflow?.preferredModel"
+          @update-field="updateField"
+          @update-provider-model="Object.assign(providerModel, $event)"
+          @browse="browse"
+        />
+        <WorkflowRunControls
+          :running="running"
+          :can-cancel="Boolean(currentJob)"
+          :cancel-label="cancelButtonLabel()"
+          @run="runWorkflow"
+          @cancel="cancelWorkflow"
+        />
+      </section>
+      <WorkflowResult
+        :status="status"
+        :progress="progress"
+        :progress-mode="progressMode"
+        :progress-visible="progressVisible"
+        :result="result"
+        :parsed-result="parsedResult"
+        :source-preview="sourcePreview"
+        :markdown-preview="markdownPreview"
+      />
+    </section>
     <FileBrowser :field="browserField" @select="handleBrowserSelect" @close="closeBrowser" />
   </div>
 </template>

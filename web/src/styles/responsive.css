@@ -3,34 +3,53 @@
     grid-template-columns: 1fr;
   }
 
-  aside {
+  .app-sidebar {
     position: sticky;
     top: 0;
     z-index: 10;
     flex-direction: row;
+    gap: 12px;
     overflow-x: auto;
     border-right: 0;
     border-bottom: 1px solid #2b313b;
+    padding: 10px;
+  }
+
+  .app-brand {
+    flex: 0 0 auto;
+    padding: 4px 8px;
+  }
+
+  .app-brand span,
+  .nav-description,
+  .nav-group-label {
+    display: none;
   }
 
   #primary-tabs {
     flex-direction: row;
+    gap: 8px;
     overflow-x: auto;
     flex: 1;
     min-width: 0;
   }
 
-  #primary-tabs [role="tab"] {
+  .nav-group {
+    display: contents;
+  }
+
+  #primary-tabs button {
     width: auto;
     white-space: nowrap;
     flex: 0 0 auto;
+    min-height: 2.3rem;
   }
 
-  section {
+  .app-main {
     padding: 14px;
   }
 
-  header {
+  .app-header {
     align-items: flex-start;
     flex-direction: column;
     margin-bottom: 16px;
@@ -69,6 +88,21 @@
 
   .workflow-category-tabs [role="tab"] {
     white-space: nowrap;
+  }
+
+  .workflows-page {
+    grid-template-columns: 1fr;
+  }
+
+  .workflows-rail {
+    border-bottom: 1px solid #2b313b;
+    border-right: 0;
+    padding: 0 0 12px;
+  }
+
+  .workflows-active-header {
+    align-items: stretch;
+    display: grid;
   }
 
   .review-pane {

@@ -13,6 +13,7 @@ const activeSection = shallowRef<StudySection>("topper-copies");
     <header class="study-header">
       <div class="study-title">
         <h2>Study</h2>
+        <p>Analyze UPSC answer copies, review saved OCR, and run study utilities.</p>
       </div>
       <nav class="study-tabs" aria-label="Study sections">
         <button
@@ -20,14 +21,14 @@ const activeSection = shallowRef<StudySection>("topper-copies");
           :class="{ active: activeSection === 'topper-copies' }"
           @click="activeSection = 'topper-copies'"
         >
-          Topper copies
+          Saved copies
         </button>
         <button
           type="button"
           :class="{ active: activeSection === 'workflows' }"
           @click="activeSection = 'workflows'"
         >
-          Workflows
+          Run analysis
         </button>
       </nav>
     </header>
@@ -68,6 +69,12 @@ const activeSection = shallowRef<StudySection>("topper-copies");
   margin: 0;
   font-size: 18px;
   line-height: 1.2;
+}
+
+.study-title p {
+  color: #94a3b8;
+  font-size: 13px;
+  margin: 3px 0 0;
 }
 
 .study-tabs {

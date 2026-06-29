@@ -1,10 +1,82 @@
+.workflows-page {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);
+  min-height: calc(100vh - 8rem);
+}
+
+.workflows-rail,
+.workflows-workbench,
+.workflow-run-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.workflows-rail {
+  align-content: start;
+  border-right: 1px solid #2b313b;
+  padding-right: 12px;
+}
+
+.workflows-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.workflows-heading p {
+  margin: 0;
+}
+
+.workflows-workbench {
+  align-content: start;
+}
+
+.workflows-active-header {
+  align-items: center;
+  background: #0f141c;
+  border: 1px solid #2b3440;
+  border-radius: 7px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin: 0;
+  min-width: 0;
+  padding: 8px;
+}
+
+.workflows-active-header div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.workflows-active-header span {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.workflows-active-header h3 {
+  font-size: 17px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.workflow-run-card {
+  background: #0d121b;
+  border: 1px solid #253247;
+  border-radius: 7px;
+  padding: 10px;
+}
+
 .workflow-category-tabs {
   margin-top: 4px;
 }
 
 .workflow-category-tabs [role="tab"] {
-  border-radius: 999px;
-  padding: 6px 12px;
+  border-radius: 6px;
+  padding: 7px 10px;
+  text-align: center;
 }
 
 .workflow-category-tabs [role="tab"].active-tab {
