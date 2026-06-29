@@ -226,6 +226,13 @@ func parseQuestionSplit(content string, pageNumber int) ([]Question, error) {
 	return questions, nil
 }
 
+func limitString(s string, limit int) string {
+	if len(s) > limit {
+		return s[:limit] + "... [truncated]"
+	}
+	return s
+}
+
 func extractQuestionSplitJSON(content string) (string, error) {
 	content = strings.TrimSpace(content)
 	if content == "" {
@@ -244,11 +251,11 @@ func extractQuestionSplitJSON(content string) (string, error) {
 	start := strings.Index(content, "{")
 	end := strings.LastIndex(content, "}")
 	if start < 0 || end <= start {
-		return "", errors.New("question split response did not contain JSON object")
+		return "", fmt.Errorf("question split response did not contain JSON object. Raw output: %s", limitString(content, 1000))
 	}
 	candidate := strings.TrimSpace(content[start : end+1])
 	if !json.Valid([]byte(candidate)) {
-		return "", errors.New("question split response contained invalid JSON")
+		return "", fmt.Errorf("question split response contained invalid JSON. Raw output: %s", limitString(candidate, 1000))
 	}
 	return candidate, nil
 }
