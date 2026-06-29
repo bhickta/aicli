@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/bhickta/aicli/internal/provider"
 )
@@ -39,61 +40,148 @@ func (s *Service) directPDFReview(ctx context.Context, req Request, reviewID str
 	if err != nil {
 		return Response{}, err
 	}
-	res, err := processor.Document(ctx, provider.DocumentRequest{
+
+	s.logInfo("direct PDF manifest extraction started", "path", req.Path)
+	manifestRes, err := processor.Document(ctx, provider.DocumentRequest{
 		Model:       firstNonBlank(req.OCRModel, req.Model),
-		Prompt:      directPDFPrompt(filepath.Base(req.Path)),
+		Prompt:      directPDFManifestPrompt(filepath.Base(req.Path)),
 		Data:        data,
 		MIMEType:    "application/pdf",
 		Temperature: 0,
-		MaxTokens:   12000,
+		MaxTokens:   4000,
 	})
 	if err != nil {
 		return Response{}, err
 	}
-	review, err := parseDirectPDFReview(res.Content, reviewID, filepath.Base(req.Path))
+
+	pages, questions, err := parseDirectPDFManifest(manifestRes.Content, filepath.Base(req.Path))
 	if err != nil {
 		return Response{}, err
 	}
-	return review, nil
+
+	s.logInfo("direct PDF manifest extracted", "pages", len(pages), "questions", len(questions))
+
+	if len(questions) == 0 {
+		return Response{}, errors.New("direct PDF manifest returned no question blocks")
+	}
+
+	// Extract answers for each question in parallel
+	workers := EffectiveQuestionWorkers(req.QuestionWorkers, len(questions))
+	s.logInfo("direct PDF answer extraction started", "questions", len(questions), "workers", workers)
+
+	type job struct {
+		index int
+		q     Question
+	}
+	type result struct {
+		index  int
+		answer string
+		err    error
+	}
+
+	jobs := make(chan job, len(questions))
+	results := make(chan result, len(questions))
+
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				ans, err := s.extractDirectPDFAnswer(ctx, processor, firstNonBlank(req.OCRModel, req.Model), data, j.q)
+				results <- result{index: j.index, answer: ans, err: err}
+			}
+		}()
+	}
+
+	for i, q := range questions {
+		jobs <- job{index: i, q: q}
+	}
+	close(jobs)
+
+	wg.Wait()
+	close(results)
+
+	// Collect results
+	for res := range results {
+		if res.err != nil {
+			s.logWarn("direct PDF answer extraction failed for question", "question", questions[res.index].Label, "error", res.err)
+			return Response{}, fmt.Errorf("failed to extract answer for %s: %w", questions[res.index].Label, res.err)
+		}
+		questions[res.index].AnswerMarkdown = res.answer
+		questions[res.index].Status = "detected"
+	}
+
+	s.logInfo("direct PDF answer extraction completed", "questions", len(questions))
+
+	// Generate report using the existing report generator
+	s.logInfo("direct PDF report generation started")
+	report, err := s.report(ctx, firstNonBlank(req.ReportModel, req.Model), pages, questions)
+	if err != nil {
+		s.logWarn("direct PDF report generation failed", "error", err)
+		report = "Failed to generate report: " + err.Error()
+	} else {
+		s.logInfo("direct PDF report generation completed", "report_chars", len(report))
+	}
+
+	return Response{
+		Kind:       "topper_copy_review",
+		ReviewID:   reviewID,
+		PDFName:    filepath.Base(req.Path),
+		SourceMode: OCRInputModePDFDirect,
+		Pages:      pages,
+		Questions:  questions,
+		Report:     report,
+	}, nil
 }
 
-func directPDFPrompt(pdfName string) string {
+func directPDFManifestPrompt(pdfName string) string {
 	return `Analyze this UPSC topper answer-copy PDF directly.
+Identify all pages and all questions.
 
 Return strict JSON only. Do not wrap in markdown fences.
 Use this exact shape:
 {
   "pages": [
-    {"number": 1, "name": "page-1", "text": "brief source notes useful for inspection", "unclear_count": 0}
+    {"number": 1, "name": "page-1", "text": "brief summary of page content (1-2 sentences)", "unclear_count": 0}
   ],
   "questions": [
     {
       "id": "q1",
       "label": "Q.1",
-      "title": "visible question heading if present",
-      "answer_markdown": "complete answer text transcribed from the PDF, preserving bullets, diagrams as text, examples, data, and [unclear] markers",
-      "source_pages": [1, 2],
-      "status": "detected"
+      "title": "visible question heading if present (the actual question prompt text)",
+      "source_pages": [1, 2]
     }
-  ],
-  "report": "Markdown final analysis with Executive Summary, Answer-Wise Analysis, Reusable Patterns, Weak Spots or Risks, and Action Checklist"
+  ]
 }
 
 Rules:
-- Extract final question/answer blocks directly from the full PDF.
-- Preserve question numbers, page references, diagrams/flowcharts/maps as visible labels and arrows.
-- Do not invent official model answers or facts not visible in the copy.
-- Mark unreadable words as [unclear].
-- Keep pages[].text concise; questions[].answer_markdown must contain the full visible answer text.
-- The report must be based only on visible PDF content.
+- List every page in the PDF in the "pages" array.
+- Identify every question block in the PDF. Each question should have a "label" (e.g., "Q.1", "Q.2(a)", etc.), a "title" (the exact text of the question prompt as written in the PDF), and "source_pages" (the 1-indexed page numbers where the question and its answer are written).
+- Do not transcribe the full answer text yet. Just identify the questions, their titles, and their page ranges.
 
 PDF name: ` + pdfName
 }
 
-func parseDirectPDFReview(content string, reviewID string, pdfName string) (Response, error) {
+func directPDFAnswerPrompt(q Question) string {
+	return fmt.Sprintf(`Analyze this UPSC topper answer-copy PDF directly.
+Focus ONLY on the question: %q (%s) which is located on pages: %v.
+
+Extract and transcribe the complete, full answer text written by the candidate for this question.
+Preserve the exact structure, bullets, diagrams as text, examples, data, and mark any unreadable words as [unclear].
+Do not summarize. Do not invent official model answers or facts not visible in the copy.
+
+Return strict JSON only. Do not wrap in markdown fences.
+Use this exact shape:
+{
+  "answer_markdown": "complete answer text transcribed from the PDF"
+}`, q.Label, q.Title, q.SourcePages)
+}
+
+func parseDirectPDFManifest(content string, pdfName string) ([]Page, []Question, error) {
 	jsonText, err := extractQuestionSplitJSON(content)
 	if err != nil {
-		return Response{}, err
+		return nil, nil, err
 	}
 	var payload struct {
 		Pages []struct {
@@ -102,15 +190,17 @@ func parseDirectPDFReview(content string, reviewID string, pdfName string) (Resp
 			Text         string `json:"text"`
 			UnclearCount int    `json:"unclear_count"`
 		} `json:"pages"`
-		Questions []Question `json:"questions"`
-		Report    string     `json:"report"`
+		Questions []struct {
+			ID          string `json:"id"`
+			Label       string `json:"label"`
+			Title       string `json:"title"`
+			SourcePages []int  `json:"source_pages"`
+		} `json:"questions"`
 	}
 	if err := json.Unmarshal([]byte(jsonText), &payload); err != nil {
-		return Response{}, err
+		return nil, nil, err
 	}
-	if len(payload.Questions) == 0 {
-		return Response{}, errors.New("direct PDF response returned no question blocks")
-	}
+
 	pages := make([]Page, 0, len(payload.Pages))
 	for i, page := range payload.Pages {
 		number := page.Number
@@ -129,12 +219,9 @@ func parseDirectPDFReview(content string, reviewID string, pdfName string) (Resp
 			Verified:     false,
 		})
 	}
+
 	questions := make([]Question, 0, len(payload.Questions))
 	for _, question := range payload.Questions {
-		answer := strings.TrimSpace(question.AnswerMarkdown)
-		if answer == "" {
-			continue
-		}
 		label := strings.TrimSpace(question.Label)
 		if label == "" {
 			label = strings.TrimSpace(question.ID)
@@ -146,29 +233,40 @@ func parseDirectPDFReview(content string, reviewID string, pdfName string) (Resp
 		if id == "" {
 			id = normalizeQuestionLabel(label)
 		}
-		status := strings.TrimSpace(question.Status)
-		if status == "" {
-			status = "detected"
-		}
 		questions = append(questions, Question{
-			ID:             id,
-			Label:          label,
-			Title:          strings.TrimSpace(question.Title),
-			AnswerMarkdown: answer,
-			SourcePages:    question.SourcePages,
-			Status:         status,
+			ID:          id,
+			Label:       label,
+			Title:       strings.TrimSpace(question.Title),
+			SourcePages: question.SourcePages,
+			Status:      "detected",
 		})
 	}
-	if len(questions) == 0 {
-		return Response{}, errors.New("direct PDF response returned no usable question answers")
+
+	return pages, questions, nil
+}
+
+func (s *Service) extractDirectPDFAnswer(ctx context.Context, processor provider.DocumentProcessor, model string, pdfData []byte, q Question) (string, error) {
+	prompt := directPDFAnswerPrompt(q)
+	res, err := processor.Document(ctx, provider.DocumentRequest{
+		Model:       model,
+		Prompt:      prompt,
+		Data:        pdfData,
+		MIMEType:    "application/pdf",
+		Temperature: 0,
+		MaxTokens:   8000,
+	})
+	if err != nil {
+		return "", err
 	}
-	return Response{
-		Kind:       "topper_copy_review",
-		ReviewID:   reviewID,
-		PDFName:    pdfName,
-		SourceMode: OCRInputModePDFDirect,
-		Pages:      pages,
-		Questions:  questions,
-		Report:     strings.TrimSpace(payload.Report),
-	}, nil
+	jsonText, err := extractQuestionSplitJSON(res.Content)
+	if err != nil {
+		return "", err
+	}
+	var payload struct {
+		AnswerMarkdown string `json:"answer_markdown"`
+	}
+	if err := json.Unmarshal([]byte(jsonText), &payload); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(payload.AnswerMarkdown), nil
 }

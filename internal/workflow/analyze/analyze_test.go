@@ -420,22 +420,19 @@ func TestParseQuestionSplitRejectsEmptyQuestionBlocks(t *testing.T) {
 	}
 }
 
-func TestParseDirectPDFReview(t *testing.T) {
+func TestParseDirectPDFManifest(t *testing.T) {
 	t.Parallel()
 
-	content := "```json\n{\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"answer_markdown\":\"answer text\",\"source_pages\":[1],\"status\":\"detected\"}],\"report\":\"final report\"}\n```"
-	review, err := parseDirectPDFReview(content, "review-1", "copy.pdf")
+	content := "```json\n{\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"source_pages\":[1]}]}\n```"
+	pages, questions, err := parseDirectPDFManifest(content, "copy.pdf")
 	if err != nil {
-		t.Fatalf("parseDirectPDFReview() error = %v", err)
+		t.Fatalf("parseDirectPDFManifest() error = %v", err)
 	}
-	if review.Kind != "topper_copy_review" || review.ReviewID != "review-1" || review.PDFName != "copy.pdf" || review.SourceMode != OCRInputModePDFDirect {
-		t.Fatalf("review metadata = %#v", review)
+	if len(pages) != 1 || pages[0].Text != "ocr text" || pages[0].UnclearCount != 1 {
+		t.Fatalf("pages = %#v", pages)
 	}
-	if len(review.Pages) != 1 || review.Pages[0].Text != "ocr text" || review.Pages[0].UnclearCount != 1 {
-		t.Fatalf("pages = %#v", review.Pages)
-	}
-	if len(review.Questions) != 1 || review.Questions[0].AnswerMarkdown != "answer text" || review.Report != "final report" {
-		t.Fatalf("review = %#v, want question and report", review)
+	if len(questions) != 1 || questions[0].Label != "Q.1" || questions[0].Title != "History" || questions[0].SourcePages[0] != 1 {
+		t.Fatalf("questions = %#v", questions)
 	}
 }
 

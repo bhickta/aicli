@@ -38,6 +38,32 @@ function updateStepProviderModel(field: WorkflowFieldType, value: ProviderModelS
   emit("updateField", field.id + "_provider_id", value.provider_id);
   emit("updateField", field.id + "_model", value.model);
 }
+
+function isFieldVisible(field: WorkflowFieldType) {
+  if (!field.id) return true;
+
+  const hiddenInDirectPDF = [
+    "question",
+    "question_split",
+    "question_workers",
+    "dpi",
+    "render_workers",
+    "workers",
+    "ocr_batch_size",
+    "force_ocr",
+  ];
+
+  if (hiddenInDirectPDF.includes(field.id)) {
+    const ocrInputMode = props.values["ocr_input_mode"];
+    const ocrProviderId = props.values["ocr_provider_id"];
+    const isDirectPDF = ocrInputMode === "pdf_direct" || 
+      ((ocrInputMode === "auto" || !ocrInputMode) && String(ocrProviderId || "").toLowerCase().includes("gemini"));
+    if (isDirectPDF) {
+      return false;
+    }
+  }
+  return true;
+}
 </script>
 
 <template>
@@ -49,7 +75,7 @@ function updateStepProviderModel(field: WorkflowFieldType, value: ProviderModelS
       @change="emit('updateProviderModel', $event)"
     />
     <template v-for="field in fields" :key="field.id">
-      <div v-if="field.id && field.type === 'stepProviderModel'" class="field">
+      <div v-if="field.id && field.type === 'stepProviderModel' && isFieldVisible(field)" class="field">
         <label>{{ field.label }}</label>
         <ProviderModelControl
           :provider-id="stepProviderID(field)"
@@ -58,7 +84,7 @@ function updateStepProviderModel(field: WorkflowFieldType, value: ProviderModelS
         />
       </div>
       <WorkflowField
-        v-else
+        v-else-if="isFieldVisible(field)"
         :field="field"
         :value="field.id ? values[field.id] : ''"
         @update="(id, value) => emit('updateField', id, value)"

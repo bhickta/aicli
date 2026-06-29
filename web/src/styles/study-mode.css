@@ -207,3 +207,74 @@
     grid-template-columns: 1fr;
   }
 }
+
+.study-question-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  border-bottom: 1px solid #27303d;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+}
+
+.study-question-info {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.study-question-prompt {
+  margin: 0;
+  font-size: 0.92rem;
+  color: #c9d1d9;
+}
+
+.study-question-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.study-btn-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #238636;
+  border: 1px solid rgba(240, 246, 252, 0.1);
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.study-btn-action:hover:not(:disabled) {
+  background: #2ea043;
+}
+
+.study-btn-action:disabled {
+  background: #21262d;
+  border-color: #30363d;
+  color: #8b949e;
+  cursor: not-allowed;
+}
+
+.study-btn-action.secondary {
+  background: #21262d;
+  border-color: #30363d;
+  color: #c9d1d9;
+}
+
+.study-btn-action.secondary:hover:not(:disabled) {
+  background: #30363d;
+  border-color: #8b949e;
+}
+
+.study-btn-action svg {
+  flex-shrink: 0;
+}
+
