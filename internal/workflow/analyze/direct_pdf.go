@@ -139,8 +139,14 @@ func directPDFManifestPrompt(pdfName string) string {
 	return `Analyze this UPSC topper answer-copy PDF directly.
 Identify all pages and all questions.
 
-Return strict JSON only. Do not wrap in markdown fences.
-Use this exact shape:
+You must return a valid JSON object matching the exact schema below.
+- Do not wrap the JSON in markdown code fences (like ` + "```" + `json or ` + "```" + `).
+- Do not include any trailing commas.
+- Do not include any comments or additional text.
+- Escape all double quotes in string values as \".
+- Escape all newlines in string values as \n (do not output literal newlines in string values).
+
+Schema:
 {
   "pages": [
     {"number": 1, "name": "page-1", "text": "brief summary of page content (1-2 sentences)", "unclear_count": 0}
@@ -171,11 +177,7 @@ Extract and transcribe the complete, full answer text written by the candidate f
 Preserve the exact structure, bullets, diagrams as text, examples, data, and mark any unreadable words as [unclear].
 Do not summarize. Do not invent official model answers or facts not visible in the copy.
 
-Return strict JSON only. Do not wrap in markdown fences.
-Use this exact shape:
-{
-  "answer_markdown": "complete answer text transcribed from the PDF"
-}`, q.Label, q.Title, q.SourcePages)
+Return the transcribed answer in Markdown format directly. Do not wrap it in JSON.`, q.Label, q.Title, q.SourcePages)
 }
 
 func parseDirectPDFManifest(content string, pdfName string) ([]Page, []Question, error) {
@@ -258,15 +260,20 @@ func (s *Service) extractDirectPDFAnswer(ctx context.Context, processor provider
 	if err != nil {
 		return "", err
 	}
-	jsonText, err := extractQuestionSplitJSON(res.Content)
-	if err != nil {
-		return "", err
+	return stripMarkdownCodeBlock(res.Content), nil
+}
+
+func stripMarkdownCodeBlock(content string) string {
+	content = strings.TrimSpace(content)
+	if strings.HasPrefix(content, "```") {
+		lines := strings.Split(content, "\n")
+		if len(lines) >= 2 {
+			firstLine := strings.ToLower(strings.TrimSpace(lines[0]))
+			if strings.HasPrefix(firstLine, "```") {
+				content = strings.Join(lines[1:], "\n")
+			}
+		}
+		content = strings.TrimSpace(strings.TrimSuffix(content, "```"))
 	}
-	var payload struct {
-		AnswerMarkdown string `json:"answer_markdown"`
-	}
-	if err := json.Unmarshal([]byte(jsonText), &payload); err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(payload.AnswerMarkdown), nil
+	return content
 }

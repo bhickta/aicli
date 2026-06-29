@@ -21,7 +21,14 @@ Rules:
 func topperCopyQuestionPrompt(page Page) string {
 	return fmt.Sprintf(`Split this OCR from UPSC topper answer-copy page %d into question-wise answer blocks.
 
-Return strict JSON only:
+You must return a valid JSON object matching the exact schema below.
+- Do not wrap the JSON in markdown code fences (like ` + "```" + `json or ` + "```" + `).
+- Do not include any trailing commas.
+- Do not include any comments or additional text.
+- Escape all double quotes in string values as \".
+- Escape all newlines in string values as \n (do not output literal newlines in string values).
+
+Schema:
 {
   "questions": [
     {
