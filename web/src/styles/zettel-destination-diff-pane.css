@@ -1,0 +1,240 @@
+@import "./zettel-destination-diff-lines.css";
+.diff-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  margin: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid #2b313b;
+}
+
+.merge-map-header span {
+  color: #9aa4b2;
+  font-size: 12px;
+}
+
+.source-note {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border-bottom: 1px solid #2b313b;
+}
+
+.source-label {
+  color: #7ee787;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.source-note strong,
+.source-note small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.processed-path {
+  color: #9aa4b2;
+}
+
+.source-content {
+  margin-top: 4px;
+  min-width: 0;
+}
+
+.source-content summary {
+  cursor: pointer;
+  color: #d6deea;
+  font-size: 12px;
+}
+
+.source-content pre {
+  max-height: 180px;
+  min-height: 92px;
+  margin: 8px 0 0;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid #2b313b;
+  border-radius: 4px;
+  background: #0d1117;
+  color: #d6deea;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.merge-arrow {
+  padding: 7px 10px;
+  border-bottom: 1px solid #2b313b;
+  color: #9aa4b2;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.destination-files {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.destination-files-header span {
+  color: #9aa4b2;
+  font-size: 12px;
+}
+
+.destination-file {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-bottom: 1px solid #202632;
+  border-radius: 0;
+  background: transparent;
+  color: #d6deea;
+  text-align: left;
+}
+
+.destination-file:hover,
+.destination-file.active {
+  background: #1f3554;
+}
+
+.file-state {
+  color: #6ea8fe;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.file-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.file-copy strong,
+.diff-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-copy small,
+.diff-title small {
+  overflow: hidden;
+  color: #9aa4b2;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-editor {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.diff-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.diff-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.diff-stats {
+  display: flex;
+  gap: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.diff-stats .added {
+  color: #7ee787;
+}
+
+.diff-stats .removed {
+  color: #ff7b72;
+}
+
+.fullscreen-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border-color: #343b46;
+  background: #1f252e;
+  color: #d6deea;
+  white-space: nowrap;
+}
+
+.fullscreen-button:hover {
+  border-color: #6ea8fe;
+  background: #2d405e;
+}
+
+.diff-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: 0;
+  overflow: auto;
+}
+
+.diff-pane {
+  min-width: 0;
+  border-right: 1px solid #2b313b;
+}
+
+.diff-pane:last-child {
+  border-right: 0;
+}
+
+.diff-pane-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 7px 10px;
+  border-bottom: 1px solid #2b313b;
+  background: #161b22;
+  color: #9aa4b2;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.diff-line {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  min-height: 22px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.diff-gutter {
+  padding: 2px 8px;
+  border-right: 1px solid #222936;
+  color: #6e7681;
+  text-align: right;
+  user-select: none;
+}
+
+.diff-code {
+  min-height: 22px;
+  padding: 2px 8px;
+  overflow-wrap: anywhere;
+  border-radius: 0;
+  background: transparent;
+  color: #d6deea;
+  white-space: pre-wrap;
+}

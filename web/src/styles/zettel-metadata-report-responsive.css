@@ -1,0 +1,15 @@
+@media (max-width: 820px) {
+  .metadata-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .metadata-note-list {
+    max-height: 260px;
+    border-right: 0;
+    border-bottom: 1px solid #2b313b;
+  }
+
+  .note-summary {
+    display: grid;
+  }
+}

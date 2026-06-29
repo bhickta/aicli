@@ -1,0 +1,148 @@
+.jobs-view {
+  display: grid;
+  gap: 14px;
+}
+
+.jobs-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.jobs-header h2,
+.jobs-header p {
+  margin: 0;
+}
+
+.jobs-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: end;
+}
+
+.job-filter-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.job-filter-tabs button {
+  padding: 6px 10px;
+  border-color: #343b46;
+  background: #161b22;
+}
+
+.job-filter-tabs button.active {
+  border-color: #69a1ff;
+  background: #1f3350;
+}
+
+.job-list {
+  display: grid;
+  gap: 8px;
+}
+
+.job-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #343b46;
+  border-radius: 6px;
+  background: #11161d;
+}
+
+.job-main {
+  min-width: 0;
+}
+
+.job-title-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.job-input,
+.job-row p {
+  margin: 4px 0 0;
+}
+
+.job-input {
+  overflow-wrap: anywhere;
+}
+
+.job-status {
+  padding: 2px 7px;
+  border: 1px solid #343b46;
+  border-radius: 999px;
+  color: #c8d1dc;
+  background: #1b222c;
+  font-size: 12px;
+}
+
+.job-status.running {
+  color: #d9ecff;
+  border-color: #4f83c2;
+  background: #16304f;
+}
+
+.job-status.completed {
+  color: #d7f8dd;
+  border-color: #44875a;
+  background: #183322;
+}
+
+.job-status.failed {
+  color: #ffdede;
+  border-color: #9a4d4d;
+  background: #3b1b1f;
+}
+
+.job-status.cancelled {
+  color: #f0dfbd;
+  border-color: #8d7040;
+  background: #352818;
+}
+
+.job-error {
+  color: #ffb7b7;
+  overflow-wrap: anywhere;
+}
+
+.job-details {
+  margin-top: 8px;
+}
+
+.job-details pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 8px;
+  border: 1px solid #2b3440;
+  border-radius: 6px;
+  background: #0c1117;
+  white-space: pre-wrap;
+}
+
+.empty-state {
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed #343b46;
+  border-radius: 6px;
+  color: #9aa7b6;
+}
+
+@media (max-width: 720px) {
+  .jobs-header,
+  .job-row {
+    grid-template-columns: 1fr;
+  }
+
+  .jobs-actions {
+    justify-content: start;
+  }
+}

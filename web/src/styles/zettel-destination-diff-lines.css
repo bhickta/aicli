@@ -1,0 +1,52 @@
+.diff-line.is-deleted .diff-gutter,
+.diff-line.is-changed:not(.empty) .diff-gutter {
+  background: rgba(248, 81, 73, 0.12);
+}
+
+.diff-line.is-deleted .diff-code,
+.diff-line.is-changed:not(.empty) .diff-code {
+  background: rgba(248, 81, 73, 0.18);
+}
+
+.diff-pane:last-child .diff-line.is-inserted .diff-gutter,
+.diff-pane:last-child .diff-line.is-changed:not(.empty) .diff-gutter {
+  background: rgba(46, 160, 67, 0.12);
+}
+
+.diff-pane:last-child .diff-line.is-inserted .diff-code,
+.diff-pane:last-child .diff-line.is-changed:not(.empty) .diff-code {
+  background: rgba(46, 160, 67, 0.18);
+}
+
+.diff-line.empty .diff-code {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(110, 118, 129, 0.18) 0,
+    rgba(110, 118, 129, 0.18) 1px,
+    transparent 1px,
+    transparent 6px
+  );
+}
+
+@media (max-width: 980px) {
+  .destination-diff,
+  .diff-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .destination-diff.is-expanded {
+    inset: 6px;
+    height: calc(100vh - 12px);
+    grid-template-columns: 1fr;
+  }
+
+  .merge-map {
+    max-height: 320px;
+    border-right: 0;
+    border-bottom: 1px solid #2b313b;
+  }
+
+  .source-content pre {
+    max-height: 120px;
+  }
+}

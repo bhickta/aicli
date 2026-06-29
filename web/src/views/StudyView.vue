@@ -20,11 +20,10 @@ const tabs = computed(() => [
 
 <template>
   <div class="study-panel panel">
-    <PageHeader title="Study" description="Analyze UPSC answer copies, review saved OCR, and run study utilities.">
-      <template #actions>
-        <PageTabs :tabs="tabs" label="Study sections" />
-      </template>
-    </PageHeader>
+    <div class="study-page-header">
+      <PageHeader title="Study" description="Analyze UPSC answer copies, review saved OCR, and run study utilities." />
+      <PageTabs :tabs="tabs" label="Study sections" />
+    </div>
 
     <main class="study-content">
       <StudyArchiveView v-if="activeSection === 'topper-copies'" />
@@ -37,13 +36,32 @@ const tabs = computed(() => [
 .study-panel {
   display: grid;
   align-content: start;
-  gap: 10px;
-  min-height: calc(100vh - 7.5rem);
+  gap: 12px;
+  min-height: calc(100vh - 10rem);
+  min-width: 0;
   padding: 12px;
+}
+
+.study-page-header {
+  align-items: start;
+  background: #0f141c;
+  border: 1px solid #2b3440;
+  border-radius: 7px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 8px;
 }
 
 .study-content {
   align-self: start;
   min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .study-page-header {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

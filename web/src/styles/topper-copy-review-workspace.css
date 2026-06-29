@@ -1,0 +1,109 @@
+.topper-page-workspace,
+.topper-question-workspace {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: minmax(0, 1.08fr) minmax(20rem, 0.92fr);
+  min-width: 0;
+}
+
+.topper-page-image,
+.topper-ocr-panel,
+.topper-question-panel,
+.topper-report-panel {
+  background: #0a0f18;
+  border: 1px solid #253247;
+  border-radius: 0.45rem;
+  min-width: 0;
+  padding: 0.55rem;
+}
+
+.topper-image-scroll {
+  align-items: flex-start;
+  background: #020617;
+  border-radius: 0.35rem;
+  display: flex;
+  justify-content: center;
+  margin-top: 0.5rem;
+  max-height: calc(100vh - 20rem);
+  min-height: 24rem;
+  overflow: auto;
+  padding: 0.75rem;
+}
+
+.topper-image-scroll img {
+  max-width: 100%;
+  transform-origin: top center;
+}
+
+.topper-question-editor,
+.topper-report-editor {
+  background: #020617;
+  border: 1px solid #253247;
+  border-radius: 0.35rem;
+  color: #e5e7eb;
+  font: 0.9rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  min-height: 24rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.topper-question-editor,
+.topper-report-editor {
+  margin-top: 0.6rem;
+}
+
+.topper-question-meta {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr) minmax(8rem, 12rem);
+  margin-top: 0.6rem;
+}
+
+.topper-question-meta label {
+  color: #94a3b8;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+}
+
+.topper-question-panel pre,
+.topper-report-panel pre {
+  color: #e5e7eb;
+  font: 0.9rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  margin: 0.6rem 0 0;
+  max-height: calc(100vh - 20rem);
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.topper-page-image.compact .topper-image-scroll {
+  min-height: 24rem;
+}
+
+@media (max-width: 900px) {
+  .topper-review-header,
+  .topper-review-actions {
+    align-items: stretch;
+    display: grid;
+    justify-content: stretch;
+  }
+
+  .topper-review-tabs {
+    width: auto;
+  }
+
+  .topper-review-grid,
+  .topper-page-workspace,
+  .topper-question-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .topper-review-list {
+    border-right: 0;
+    border-bottom: 1px solid #253247;
+    flex-direction: row;
+    max-height: none;
+    overflow-x: auto;
+    padding: 0 0 0.75rem;
+  }
+}

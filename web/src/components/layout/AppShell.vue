@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted, shallowRef } from "vue";
 import { RouterView, useRoute } from "vue-router";
 import { api, loadSettings } from "../../lib/api";
 import { appState } from "../../stores/appState";
@@ -10,6 +10,7 @@ import ToastHost from "../ui/ToastHost.vue";
 import AppSidebar from "./AppSidebar.vue";
 
 const route = useRoute();
+const settingsError = shallowRef("");
 const activeRouteMeta = computed(() => ({
   label: String(route.meta.label || "AICLI"),
   description: String(route.meta.description || "Local AI Control Center"),
@@ -27,7 +28,13 @@ onUnmounted(() => {
 });
 
 async function refreshSettings() {
-  appState.settings = await loadSettings();
+  settingsError.value = "";
+  try {
+    appState.settings = await loadSettings();
+  } catch (error) {
+    appState.settings = null;
+    settingsError.value = error instanceof Error ? error.message : "Failed to load settings";
+  }
 }
 
 async function refreshHealth() {
@@ -62,6 +69,12 @@ async function refreshResources() {
       </div>
     </header>
     <RouterView v-if="appState.settings" id="view" />
+    <div v-else-if="settingsError" id="view" class="panel grid">
+      <h2>Settings unavailable</h2>
+      <p class="status-line">{{ settingsError }}</p>
+      <p class="muted">Start the AICLI backend on http://127.0.0.1:8765 or use the embedded Go server UI.</p>
+      <button type="button" @click="refreshSettings">Retry</button>
+    </div>
     <div v-else id="view" class="panel grid">
       <h2>Loading</h2>
       <p class="status-line">Loading settings...</p>
