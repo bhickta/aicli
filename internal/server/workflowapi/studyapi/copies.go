@@ -97,6 +97,16 @@ func (h *Handler) getStudyCopy(w http.ResponseWriter, r *http.Request) {
 		core.WriteError(w, http.StatusInternalServerError, err)
 		return
 	}
+	if synced, err := h.syncStudyCopyFromMatchingTopper(r.Context(), store, copyRecord, false); err != nil {
+		core.WriteError(w, http.StatusInternalServerError, err)
+		return
+	} else if synced {
+		copyRecord, err = store.GetStudyCopy(r.Context(), id)
+		if err != nil {
+			core.WriteError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
 	pages, err := store.ListStudyPages(r.Context(), id)
 	if err != nil {
 		core.WriteError(w, http.StatusInternalServerError, err)

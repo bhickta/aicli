@@ -67,7 +67,7 @@ export const useStudyStore = defineStore("study", {
         this.copies = payload.copies || [];
         this.status = "Loaded";
         this.applyBatchItems(this.batchItems);
-        await this.loadRecentProblemBatch();
+        await this.loadRecentBatch();
       } catch (error) {
         this.status = errorMessage(error, "Load failed");
       } finally {
@@ -164,10 +164,10 @@ export const useStudyStore = defineStore("study", {
       }
     },
 
-    async loadRecentProblemBatch() {
+    async loadRecentBatch() {
       if (this.activeBatch || this.running) return;
       const payload = await api<{ batches: StudyBatchRecord[] }>("/api/study/batches?limit=10");
-      const batch = payload.batches.find((item) => ["running", "failed", "partial_failed"].includes(item.status));
+      const batch = payload.batches.find((item) => item.status !== "queued");
       if (!batch) return;
       const detail = await api<{ batch: StudyBatchRecord; items: StudyBatchItemRecord[] }>(
         `/api/study/batches/${encodeURIComponent(batch.id)}`,
@@ -175,7 +175,7 @@ export const useStudyStore = defineStore("study", {
       this.activeBatch = detail.batch;
       this.batchItems = detail.items || [];
       const failedItem = this.batchItems.find((item) => item.error);
-      this.runStatus = failedItem?.error || `Analysis ${detail.batch.status}`;
+      this.runStatus = failedItem?.error || batchStatusMessage(detail.batch.status);
       this.applyBatchItems(this.batchItems);
       if (detail.batch.status === "running") void this.pollBatch(detail.batch.id);
     },
@@ -219,4 +219,10 @@ function copyWithRunState(copy: StudyCopyRecord, item: StudyBatchItemRecord): St
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+function batchStatusMessage(status: string) {
+  if (status === "completed") return "Last analysis completed";
+  if (status === "running") return "Analysis running...";
+  return `Analysis ${status}`;
 }
