@@ -211,6 +211,7 @@ func TestRunAnalyzeDirectPDFUsesGeminiDocumentOnly(t *testing.T) {
 	provider := &fakeProvider{
 		id: "gemini",
 		documentContent: `{
+			"detected_questions":["Q.1"],
 			"pages":[{"number":1,"name":"page-1","text":"source notes","unclear_count":0}],
 			"questions":[{"id":"q1","label":"Q.1","title":"Polity","source_pages":[1],"answer_markdown":"answer text","dimensions":{"introduction":"clear intro","fact":"Article 21"}}],
 			"report":"final report"
@@ -482,7 +483,7 @@ func TestParseQuestionSplitRejectsEmptyQuestionBlocks(t *testing.T) {
 func TestParseOneShotPDFManifest(t *testing.T) {
 	t.Parallel()
 
-	content := "```json\n{\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"source_pages\":[1],\"answer_markdown\":\"test answer\",\"dimensions\":{\"fact\":\"good examples\"}}],\"report\":\"test report\"}\n```"
+	content := "```json\n{\"detected_questions\":[\"Q.1\"],\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"source_pages\":[1],\"answer_markdown\":\"test answer\",\"dimensions\":{\"fact\":\"good examples\"}}],\"report\":\"test report\"}\n```"
 	pages, questions, report, err := parseOneShotPDFManifest(content, "copy.pdf")
 	if err != nil {
 		t.Fatalf("parseOneShotPDFManifest() error = %v", err)
@@ -523,35 +524,19 @@ func TestParseOneShotPDFManifestRejectsIncompletePayload(t *testing.T) {
 func TestParseOneShotPDFManifestRejectsQuestionUnderExtraction(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name  string
-		pages string
-	}{
-		{
-			name: "answer to question",
-			pages: `[
-				{"number":3,"text":"Answer to Q.1 starts here."},
-				{"number":5,"text":"Answer to Q.2 starts here."},
-				{"number":7,"text":"Answer to Q.3 starts here."}
-			]`,
-		},
-		{
-			name: "page summary question start",
-			pages: `[
-				{"number":3,"text":"Q.1 start, contempt of court."},
-				{"number":5,"text":"Q.2 start, gender justice."},
-				{"number":7,"text":"Q.3 continuation, internet restrictions."}
-			]`,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			content := `{"pages":` + tt.pages + `,"questions":[{"label":"Q.1","source_pages":[3],"answer_markdown":"answer one"}],"report":"report"}`
-			_, _, _, err := parseOneShotPDFManifest(content, "copy.pdf")
-			if err == nil || !strings.Contains(err.Error(), "extracted 1 question") {
-				t.Fatalf("parseOneShotPDFManifest() error = %v, want incomplete coverage error", err)
-			}
-		})
+	content := `{
+		"detected_questions":["first visible answer block","second visible answer block","third visible answer block"],
+		"pages":[
+			{"number":3,"text":"first page notes"},
+			{"number":5,"text":"second page notes"},
+			{"number":7,"text":"third page notes"}
+		],
+		"questions":[{"label":"first visible answer block","source_pages":[3],"answer_markdown":"answer one"}],
+		"report":"report"
+	}`
+	_, _, _, err := parseOneShotPDFManifest(content, "copy.pdf")
+	if err == nil || !strings.Contains(err.Error(), "detected 3 question/answer block") {
+		t.Fatalf("parseOneShotPDFManifest() error = %v, want model-declared coverage error", err)
 	}
 }
 
@@ -563,6 +548,7 @@ func TestRunAnalyzeRetriesDirectPDFWhenQuestionCoverageIsIncomplete(t *testing.T
 		t.Fatal(err)
 	}
 	incomplete := `{
+		"detected_questions":["first answer","second answer","third answer"],
 		"pages":[
 			{"number":3,"text":"Answer to Q.1 starts here."},
 			{"number":5,"text":"Answer to Q.2 starts here."},
@@ -572,6 +558,7 @@ func TestRunAnalyzeRetriesDirectPDFWhenQuestionCoverageIsIncomplete(t *testing.T
 		"report":"report"
 	}`
 	complete := `{
+		"detected_questions":["first answer","second answer","third answer"],
 		"pages":[
 			{"number":3,"text":"Answer to Q.1 starts here."},
 			{"number":5,"text":"Answer to Q.2 starts here."},

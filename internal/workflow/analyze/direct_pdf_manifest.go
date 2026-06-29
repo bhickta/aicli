@@ -4,16 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 )
-
-var answerPageQuestionLabelPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)\banswer\s+(?:to|for)\s+Q\.?\s*(\d{1,3})\b`),
-	regexp.MustCompile(`(?i)\bQ\.?\s*(\d{1,3})\s*(?::|[.)-]|\s+(?:start|starts|continued|continuation|conclusion)\b)`),
-}
-var questionLabelNumberPattern = regexp.MustCompile(`(?i)\bQ\.?\s*(\d{1,3})\b`)
 
 type incompleteDirectPDFError struct {
 	message string
@@ -33,9 +26,10 @@ func isIncompleteDirectPDFError(err error) bool {
 }
 
 type oneShotPDFManifest struct {
-	Pages     []oneShotPDFPage     `json:"pages"`
-	Questions []oneShotPDFQuestion `json:"questions"`
-	Report    string               `json:"report"`
+	DetectedQuestions []string             `json:"detected_questions"`
+	Pages             []oneShotPDFPage     `json:"pages"`
+	Questions         []oneShotPDFQuestion `json:"questions"`
+	Report            string               `json:"report"`
 }
 
 type oneShotPDFPage struct {
@@ -65,13 +59,14 @@ func oneShotPDFRetryPrompt(pdfName string) string {
 func oneShotPDFPromptBody(pdfName string, strictCoverage bool) string {
 	prefix := ""
 	if strictCoverage {
-		prefix = `Your first priority is coverage. The previous extraction pattern can be invalid when it stops at Q.1.
-Scan the whole PDF first, enumerate every answer label internally, then return one questions[] object for every visible answer.
-If answer pages mention Q.1 through Q.20, questions[] must contain Q.1 through Q.20. Do not return only the first question.
+		prefix = `Your first priority is complete coverage across the whole answer-copy.
+Scan the full PDF first. Build detected_questions as your coverage ledger: one entry for each distinct visible question/answer block.
+Then return one questions[] object for every detected_questions entry. Do not stop at the first answer.
 
 `
 	}
-	return prefix + `Analyze this entire UPSC topper answer-copy PDF with Gemini Flash-Lite.
+	return prefix + `Analyze this entire UPSC/Mains topper answer-copy PDF with Gemini Flash-Lite.
+This may come from any coaching institute or test series. Ignore institute branding/layout differences and focus on visible answer blocks.
 Extract page source notes, every question with full answer text, per-question dimensions, and one final copy-level report.
 
 Return valid JSON only. No markdown fences, no trailing commas, no prose outside JSON.
@@ -79,6 +74,7 @@ Escape double quotes inside strings as \" and newlines inside strings as \n.
 
 Schema:
 {
+  "detected_questions": ["visible label for answer block 1", "visible label for answer block 2"],
   "pages": [
     {"number": 1, "name": "page-1", "text": "brief source notes for inspection", "unclear_count": 0}
   ],
@@ -104,13 +100,13 @@ Schema:
 }
 
 Rules:
-1. Extract every visible question/answer block. Do not invent official model answers.
-2. Keep pages[].text concise; answer_markdown must carry the complete visible answer.
-3. Preserve structure: bullets, headings, arrows, boxes, diagrams as text labels, and evaluator marks.
-4. Mark unreadable words as [unclear].
-5. If a field is uncertain, keep it empty instead of guessing.
-6. A continued page belongs to the same question. Merge continuations into that question's answer_markdown.
-7. The response is incomplete if pages[].text mentions later answer pages like "Q.2 start" or "Q.3 continuation" but questions[] stops at Q.1.
+1. First identify every distinct visible question/answer block in detected_questions. This is mandatory coverage accounting.
+2. Extract every detected question/answer block into questions[]. Do not invent official model answers.
+3. Do not include continuation pages separately in detected_questions. A continued page belongs to the same question.
+4. Keep pages[].text concise; answer_markdown must carry the complete visible answer.
+5. Preserve structure: bullets, headings, arrows, boxes, diagrams as text labels, and evaluator marks.
+6. Mark unreadable words as [unclear].
+7. If a field is uncertain, keep it empty instead of guessing.
 
 PDF name: ` + pdfName
 }
@@ -127,13 +123,14 @@ func parseOneShotPDFManifest(content string, _ string) ([]Page, []Question, stri
 
 	pages := normalizeManifestPages(payload.Pages)
 	questions := normalizeManifestQuestions(payload.Questions)
+	detectedQuestions := normalizeDetectedQuestionLabels(payload.DetectedQuestions)
 	if len(questions) == 0 {
 		return nil, nil, "", newIncompleteDirectPDFError("direct PDF response returned no usable question answers")
 	}
 	if len(pages) == 0 {
 		pages = pagesFromQuestionSources(questions)
 	}
-	if err := validateManifestQuestionCoverage(pages, questions); err != nil {
+	if err := validateManifestQuestionCoverage(detectedQuestions, questions, len(pages)); err != nil {
 		return nil, nil, "", err
 	}
 	report := strings.TrimSpace(payload.Report)
@@ -203,83 +200,44 @@ func normalizeManifestQuestions(in []oneShotPDFQuestion) []Question {
 	return questions
 }
 
-func validateManifestQuestionCoverage(pages []Page, questions []Question) error {
-	expected := answeredQuestionNumbersFromPages(pages)
-	if len(expected) < 3 {
+func normalizeDetectedQuestionLabels(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := map[string]bool{}
+	for _, label := range in {
+		label = strings.TrimSpace(label)
+		if label == "" {
+			continue
+		}
+		key := strings.ToLower(label)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, label)
+	}
+	return out
+}
+
+func validateManifestQuestionCoverage(detectedQuestions []string, questions []Question, pageCount int) error {
+	expected := len(detectedQuestions)
+	if expected == 0 {
+		if pageCount >= 6 {
+			return newIncompleteDirectPDFError(
+				"direct PDF response did not include detected_questions coverage list for %d page(s); refusing to save partial result",
+				pageCount,
+			)
+		}
 		return nil
 	}
-	extracted := questionNumbersFromQuestions(questions)
-	coverage := len(extracted)
-	if coverage == 0 {
-		coverage = len(questions)
-	}
-	if coverage >= len(expected) || coverage*100 >= len(expected)*70 {
+	extracted := len(questions)
+	if expected < 2 || extracted >= expected || extracted*100 >= expected*70 {
 		return nil
 	}
 	return newIncompleteDirectPDFError(
-		"direct PDF response is incomplete: extracted %d question(s), but page notes mention %d answered questions (%s); refusing to save partial result",
-		len(questions),
-		len(expected),
-		questionNumberRange(expected),
+		"direct PDF response is incomplete: detected %d question/answer block(s), but returned %d question answer block(s); refusing to save partial result",
+		expected,
+		extracted,
 	)
-}
-
-func answeredQuestionNumbersFromPages(pages []Page) []int {
-	seen := map[int]bool{}
-	for _, page := range pages {
-		for _, pattern := range answerPageQuestionLabelPatterns {
-			for _, number := range regexpQuestionNumbers(pattern, page.Text) {
-				seen[number] = true
-			}
-		}
-	}
-	return sortedQuestionNumbers(seen)
-}
-
-func questionNumbersFromQuestions(questions []Question) []int {
-	seen := map[int]bool{}
-	for _, question := range questions {
-		for _, value := range []string{question.Label, question.ID, question.Title} {
-			for _, number := range regexpQuestionNumbers(questionLabelNumberPattern, value) {
-				seen[number] = true
-			}
-		}
-	}
-	return sortedQuestionNumbers(seen)
-}
-
-func regexpQuestionNumbers(pattern *regexp.Regexp, text string) []int {
-	matches := pattern.FindAllStringSubmatch(text, -1)
-	out := make([]int, 0, len(matches))
-	for _, match := range matches {
-		for _, group := range match[1:] {
-			if group == "" {
-				continue
-			}
-			var number int
-			if _, err := fmt.Sscanf(group, "%d", &number); err == nil && number > 0 {
-				out = append(out, number)
-				break
-			}
-		}
-	}
-	return out
-}
-
-func sortedQuestionNumbers(seen map[int]bool) []int {
-	out := make([]int, 0, len(seen))
-	for number := range seen {
-		out = append(out, number)
-	}
-	sort.Ints(out)
-	return out
-}
-
-func questionNumberRange(numbers []int) string {
-	if len(numbers) == 0 {
-		return "none"
-	}
-	return fmt.Sprintf("Q.%d-Q.%d", numbers[0], numbers[len(numbers)-1])
 }
 
 func pagesFromQuestionSources(questions []Question) []Page {

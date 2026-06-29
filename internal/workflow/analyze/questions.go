@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -314,7 +313,7 @@ func firstInt(values []int) int {
 func normalizeQuestionLabel(label string) string {
 	label = strings.ToLower(strings.TrimSpace(label))
 	label = strings.Trim(label, ".:;-_ ")
-	label = regexp.MustCompile(`\s+`).ReplaceAllString(label, "-")
+	label = strings.Join(strings.Fields(label), "-")
 	return label
 }
 
