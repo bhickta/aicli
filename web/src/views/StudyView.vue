@@ -1,17 +1,32 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from "vue";
+import { storeToRefs } from "pinia";
 import { useRoute, useRouter } from "vue-router";
 import PageHeader from "../components/layout/PageHeader.vue";
 import StudyCopyWorkspace from "../components/study/StudyCopyWorkspace.vue";
 import StudyRunStatusPanel from "../components/study/StudyRunStatusPanel.vue";
 import StudySidebar from "../components/study/StudySidebar.vue";
-import { useStudyCopies } from "../composables/useStudyCopies";
+import { useStudyStore } from "../stores/study";
 
 const route = useRoute();
 const router = useRouter();
-const study = useStudyCopies();
+const study = useStudyStore();
+const {
+  query,
+  copies,
+  selected,
+  selectedIds,
+  batchParallelism,
+  forceRerun,
+  running,
+  activeBatch,
+  batchItems,
+  runStatus,
+  summary,
+  visibleStatus,
+} = storeToRefs(study);
 
-const activeCopyId = computed(() => study.selected.value?.copy.id || "");
+const activeCopyId = computed(() => selected.value?.copy.id || "");
 
 onMounted(async () => {
   await study.loadCopies();
@@ -51,15 +66,15 @@ async function refreshActiveCopy() {
 
     <main class="study-workspace">
       <StudySidebar
-        v-model:query="study.query.value"
-        v-model:parallelism="study.batchParallelism.value"
-        v-model:force-rerun="study.forceRerun.value"
-        :summary="study.summary.value"
-        :status="study.status.value"
-        :copies="study.copies.value"
+        v-model:query="query"
+        v-model:parallelism="batchParallelism"
+        v-model:force-rerun="forceRerun"
+        :summary="summary"
+        :status="visibleStatus"
+        :copies="copies"
         :active-id="activeCopyId"
-        :selected-ids="study.selectedIds.value"
-        :running="study.running.value"
+        :selected-ids="selectedIds"
+        :running="running"
         @search="study.loadCopies"
         @clear="clearSelection"
         @run-selected="study.startBatch('all')"
@@ -69,16 +84,16 @@ async function refreshActiveCopy() {
 
       <section class="study-main">
         <StudyRunStatusPanel
-          :batch="study.activeBatch.value"
-          :items="study.batchItems.value"
-          :status="study.runStatus.value"
-          :running="study.running.value"
+          :batch="activeBatch"
+          :items="batchItems"
+          :status="runStatus"
+          :running="running"
         />
         <StudyCopyWorkspace
           :active-copy-id="activeCopyId"
-          :detail="study.selected.value"
-          :force-rerun="study.forceRerun.value"
-          :running="study.running.value"
+          :detail="selected"
+          :force-rerun="forceRerun"
+          :running="running"
           @run-copy="study.runCopy"
           @synced="refreshActiveCopy"
         />

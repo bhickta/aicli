@@ -8,6 +8,7 @@
     "check:web": "vue-tsc --project web/tsconfig.json --noEmit"
   },
   "dependencies": {
+    "pinia": "^3.0.4",
     "vue": "3.5.34",
     "vue-router": "^4.6.4"
   },
