@@ -253,7 +253,7 @@ func (p *OpenAICompatible) authenticationHint() string {
 
 func openAIURL(baseURL string, path string) string {
 	baseURL = strings.TrimRight(baseURL, "/")
-	if strings.HasSuffix(baseURL, "/v1") {
+	if strings.HasSuffix(baseURL, "/v1") || strings.HasSuffix(baseURL, "/openai") {
 		return baseURL + path
 	}
 	return baseURL + "/v1" + path

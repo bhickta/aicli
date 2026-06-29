@@ -63,6 +63,31 @@ func TestOpenAICompatibleListModelsAddsV1WhenMissing(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleListModelsPreservesGeminiOpenAIBase(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1beta/openai/models" {
+			t.Fatalf("path = %s, want /v1beta/openai/models", r.URL.Path)
+		}
+		w.Write([]byte(`{"data":[{"id":"gemini-2.5-flash"}]}`))
+	}))
+	defer srv.Close()
+
+	p := NewCompatible(config.ProviderConfig{
+		ID:      "gemini",
+		BaseURL: srv.URL + "/v1beta/openai",
+	}, srv.Client())
+
+	models, err := p.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels() error = %v", err)
+	}
+	if len(models) != 1 || models[0].ID != "gemini-2.5-flash" {
+		t.Fatalf("models = %#v, want gemini-2.5-flash", models)
+	}
+}
+
 func TestOpenAICompatibleListModelsAppliesModelFilter(t *testing.T) {
 	t.Parallel()
 
