@@ -9,7 +9,10 @@ import (
 	"strings"
 )
 
-var answerQuestionLabelPattern = regexp.MustCompile(`(?i)\banswer\s+(?:to|for)\s+Q\.?\s*(\d{1,3})\b`)
+var answerPageQuestionLabelPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\banswer\s+(?:to|for)\s+Q\.?\s*(\d{1,3})\b`),
+	regexp.MustCompile(`(?i)\bQ\.?\s*(\d{1,3})\s*(?::|[.)-]|\s+(?:start|starts|continued|continuation|conclusion)\b)`),
+}
 var questionLabelNumberPattern = regexp.MustCompile(`(?i)\bQ\.?\s*(\d{1,3})\b`)
 
 type incompleteDirectPDFError struct {
@@ -107,7 +110,7 @@ Rules:
 4. Mark unreadable words as [unclear].
 5. If a field is uncertain, keep it empty instead of guessing.
 6. A continued page belongs to the same question. Merge continuations into that question's answer_markdown.
-7. The response is incomplete if answer pages mention later questions but questions[] stops at Q.1.
+7. The response is incomplete if pages[].text mentions later answer pages like "Q.2 start" or "Q.3 continuation" but questions[] stops at Q.1.
 
 PDF name: ` + pdfName
 }
@@ -224,8 +227,10 @@ func validateManifestQuestionCoverage(pages []Page, questions []Question) error 
 func answeredQuestionNumbersFromPages(pages []Page) []int {
 	seen := map[int]bool{}
 	for _, page := range pages {
-		for _, number := range regexpQuestionNumbers(answerQuestionLabelPattern, page.Text) {
-			seen[number] = true
+		for _, pattern := range answerPageQuestionLabelPatterns {
+			for _, number := range regexpQuestionNumbers(pattern, page.Text) {
+				seen[number] = true
+			}
 		}
 	}
 	return sortedQuestionNumbers(seen)
@@ -247,12 +252,15 @@ func regexpQuestionNumbers(pattern *regexp.Regexp, text string) []int {
 	matches := pattern.FindAllStringSubmatch(text, -1)
 	out := make([]int, 0, len(matches))
 	for _, match := range matches {
-		if len(match) < 2 {
-			continue
-		}
-		var number int
-		if _, err := fmt.Sscanf(match[1], "%d", &number); err == nil && number > 0 {
-			out = append(out, number)
+		for _, group := range match[1:] {
+			if group == "" {
+				continue
+			}
+			var number int
+			if _, err := fmt.Sscanf(group, "%d", &number); err == nil && number > 0 {
+				out = append(out, number)
+				break
+			}
 		}
 	}
 	return out

@@ -523,18 +523,35 @@ func TestParseOneShotPDFManifestRejectsIncompletePayload(t *testing.T) {
 func TestParseOneShotPDFManifestRejectsQuestionUnderExtraction(t *testing.T) {
 	t.Parallel()
 
-	content := `{
-		"pages":[
-			{"number":3,"text":"Answer to Q.1 starts here."},
-			{"number":5,"text":"Answer to Q.2 starts here."},
-			{"number":7,"text":"Answer to Q.3 starts here."}
-		],
-		"questions":[{"label":"Q.1","source_pages":[3],"answer_markdown":"answer one"}],
-		"report":"report"
-	}`
-	_, _, _, err := parseOneShotPDFManifest(content, "copy.pdf")
-	if err == nil || !strings.Contains(err.Error(), "extracted 1 question") {
-		t.Fatalf("parseOneShotPDFManifest() error = %v, want incomplete coverage error", err)
+	tests := []struct {
+		name  string
+		pages string
+	}{
+		{
+			name: "answer to question",
+			pages: `[
+				{"number":3,"text":"Answer to Q.1 starts here."},
+				{"number":5,"text":"Answer to Q.2 starts here."},
+				{"number":7,"text":"Answer to Q.3 starts here."}
+			]`,
+		},
+		{
+			name: "page summary question start",
+			pages: `[
+				{"number":3,"text":"Q.1 start, contempt of court."},
+				{"number":5,"text":"Q.2 start, gender justice."},
+				{"number":7,"text":"Q.3 continuation, internet restrictions."}
+			]`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := `{"pages":` + tt.pages + `,"questions":[{"label":"Q.1","source_pages":[3],"answer_markdown":"answer one"}],"report":"report"}`
+			_, _, _, err := parseOneShotPDFManifest(content, "copy.pdf")
+			if err == nil || !strings.Contains(err.Error(), "extracted 1 question") {
+				t.Fatalf("parseOneShotPDFManifest() error = %v, want incomplete coverage error", err)
+			}
+		})
 	}
 }
 
