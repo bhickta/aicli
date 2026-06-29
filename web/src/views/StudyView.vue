@@ -4,7 +4,6 @@ import { useRoute, useRouter } from "vue-router";
 import PageHeader from "../components/layout/PageHeader.vue";
 import PageTabs from "../components/layout/PageTabs.vue";
 import StudyAnalyticsPanel from "../components/study/StudyAnalyticsPanel.vue";
-import StudyCopyDetailPanel from "../components/study/StudyCopyDetailPanel.vue";
 import StudyCopyTable from "../components/study/StudyCopyTable.vue";
 import StudyImportPanel from "../components/study/StudyImportPanel.vue";
 import StudyQuestionsPanel from "../components/study/StudyQuestionsPanel.vue";
@@ -12,7 +11,7 @@ import StudyWorkflowPanel from "../components/study/StudyWorkflowPanel.vue";
 import { useStudyCopies } from "../composables/useStudyCopies";
 import StudyArchiveView from "./StudyArchiveView.vue";
 
-type StudySection = "copies" | "questions" | "analytics" | "archive" | "import" | "run";
+type StudySection = "questions" | "analytics" | "archive" | "import" | "run";
 
 const route = useRoute();
 const router = useRouter();
@@ -34,20 +33,20 @@ const {
 } = study;
 
 const activeSection = computed<StudySection>(() => {
-  const section = String(route.params.section || "copies");
-  if (["questions", "analytics", "archive", "import", "run"].includes(section)) return section as StudySection;
-  return "copies";
+  const section = String(route.params.section || "questions");
+  if (["analytics", "archive", "import", "run"].includes(section)) return section as StudySection;
+  return "questions";
 });
+
 const tabs = computed(() => [
-  { label: "Copies", to: { name: "study", params: { section: "copies" } }, active: activeSection.value === "copies" },
   { label: "Questions", to: { name: "study", params: { section: "questions" } }, active: activeSection.value === "questions" },
   { label: "Analytics", to: { name: "study", params: { section: "analytics" } }, active: activeSection.value === "analytics" },
   { label: "Archive", to: { name: "study", params: { section: "archive" } }, active: activeSection.value === "archive" },
   { label: "Import", to: { name: "study", params: { section: "import" } }, active: activeSection.value === "import" },
   { label: "Run", to: { name: "study", params: { section: "run" } }, active: activeSection.value === "run" },
 ]);
+
 const activeCopyId = computed(() => selected.value?.copy.id || "");
-const questions = computed(() => selected.value?.questions || []);
 
 onMounted(async () => {
   await loadCopies();
@@ -110,9 +109,8 @@ async function openCopy(id: string) {
           v-model:import-folder="importFolder"
           @import="importCopies"
         />
-        <StudyQuestionsPanel v-else-if="activeSection === 'questions'" :questions="questions" />
         <StudyAnalyticsPanel v-else-if="activeSection === 'analytics'" :detail="selected" />
-        <StudyCopyDetailPanel v-else :detail="selected" />
+        <StudyQuestionsPanel v-else :detail="selected" />
       </section>
     </main>
   </div>

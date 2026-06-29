@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import type { StudyQuestionRecord } from "../../types";
+import type { StudyCopyDetail, StudyQuestionRecord } from "../../types";
 
-defineProps<{ questions: StudyQuestionRecord[] }>();
+defineProps<{ detail: StudyCopyDetail | null }>();
 
 const copiedId = ref<string | null>(null);
 const copiedType = ref<"answer" | "qa" | null>(null);
@@ -114,14 +114,47 @@ function renderMarkdown(md: string): string {
 
 <template>
   <section class="study-card study-questions">
-    <header class="study-card-header">
-      <div>
-        <h2>Questions</h2>
-        <p>Question-wise answer text and source page mapping.</p>
+    <div v-if="!detail" class="study-empty">
+      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+      <p>Select a topper copy from the sidebar to view its metadata, questions, and answers.</p>
+    </div>
+    <template v-else>
+      <header class="study-card-header">
+        <div>
+          <h2>{{ detail.copy.pdf_name || detail.copy.id }}</h2>
+          <p>{{ detail.copy.source_path || "Question-wise answer text and source page mapping." }}</p>
+        </div>
+        <span class="study-pill">{{ detail.copy.status || "pending" }}</span>
+      </header>
+      
+      <div class="study-kpis">
+        <span><strong>{{ detail.pages.length }}</strong> pages</span>
+        <span><strong>{{ detail.questions.length }}</strong> questions</span>
+        <span><strong>{{ detail.copy.unclear_count }}</strong> unclear</span>
+        <span><strong>{{ detail.analyses.length }}</strong> analyses</span>
       </div>
-    </header>
-    <div class="study-questions-list" v-if="questions.length">
-      <article v-for="question in questions" :key="question.id" class="study-question">
+
+      <div class="study-meta-grid">
+        <label>
+          Candidate
+          <input :value="detail.copy.candidate_name" readonly />
+        </label>
+        <label>
+          Paper
+          <input :value="detail.copy.paper" readonly />
+        </label>
+        <label>
+          Test code
+          <input :value="detail.copy.test_code" readonly />
+        </label>
+        <label>
+          Roll no.
+          <input :value="detail.copy.roll_no" readonly />
+        </label>
+      </div>
+
+      <div class="study-questions-list" v-if="detail.questions.length">
+        <article v-for="question in detail.questions" :key="question.id" class="study-question">
         <div class="study-question-header">
           <div class="study-question-info">
             <h3>{{ question.label || `Q.${question.question_no}` }}</h3>
@@ -154,10 +187,10 @@ function renderMarkdown(md: string): string {
         <div v-if="question.answer_text" class="study-question-answer" v-html="renderMarkdown(question.answer_text)"></div>
         <div v-else class="study-question-answer empty">No answer text yet.</div>
       </article>
-    </div>
-    <div v-else class="study-empty">
-      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
-      <p>Select a topper copy from the sidebar to view its questions and answers.</p>
-    </div>
+      </div>
+      <div v-else class="study-empty">
+        <p>No questions split yet for this copy.</p>
+      </div>
+    </template>
   </section>
 </template>
