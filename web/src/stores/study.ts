@@ -67,6 +67,7 @@ export const useStudyStore = defineStore("study", {
         this.copies = payload.copies || [];
         this.status = "Loaded";
         this.applyBatchItems(this.batchItems);
+        await this.loadRecentProblemBatch();
       } catch (error) {
         this.status = errorMessage(error, "Load failed");
       } finally {
@@ -161,6 +162,22 @@ export const useStudyStore = defineStore("study", {
         if (terminalBatchStatuses.includes(payload.batch.status)) return;
         await sleep(900);
       }
+    },
+
+    async loadRecentProblemBatch() {
+      if (this.activeBatch || this.running) return;
+      const payload = await api<{ batches: StudyBatchRecord[] }>("/api/study/batches?limit=10");
+      const batch = payload.batches.find((item) => ["running", "failed", "partial_failed"].includes(item.status));
+      if (!batch) return;
+      const detail = await api<{ batch: StudyBatchRecord; items: StudyBatchItemRecord[] }>(
+        `/api/study/batches/${encodeURIComponent(batch.id)}`,
+      );
+      this.activeBatch = detail.batch;
+      this.batchItems = detail.items || [];
+      const failedItem = this.batchItems.find((item) => item.error);
+      this.runStatus = failedItem?.error || `Analysis ${detail.batch.status}`;
+      this.applyBatchItems(this.batchItems);
+      if (detail.batch.status === "running") void this.pollBatch(detail.batch.id);
     },
 
     updateJobStatus(job: Job) {

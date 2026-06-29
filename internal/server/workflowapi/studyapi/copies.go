@@ -33,6 +33,7 @@ type studyStore interface {
 	SaveStudyBatch(context.Context, storage.StudyBatchRecord) error
 	SaveStudyBatchItem(context.Context, storage.StudyBatchItemRecord) error
 	GetStudyBatch(context.Context, string) (storage.StudyBatchRecord, error)
+	ListStudyBatches(context.Context, int) ([]storage.StudyBatchRecord, error)
 	ListStudyBatchItems(context.Context, string) ([]storage.StudyBatchItemRecord, error)
 }
 
@@ -50,6 +51,7 @@ func (h *Handler) RegisterRoutes(r *http.ServeMux) {
 	r.HandleFunc("PUT /api/study/copies/{id}", h.updateStudyCopy)
 	r.HandleFunc("POST /api/study/imports", h.importStudyCopies)
 	r.HandleFunc("POST /api/study/batches", h.startStudyBatch)
+	r.HandleFunc("GET /api/study/batches", h.listStudyBatches)
 	r.HandleFunc("GET /api/study/batches/{id}", h.getStudyBatch)
 	r.HandleFunc("POST /api/study/stages", h.startStudyStage)
 }
@@ -312,6 +314,20 @@ func (h *Handler) getStudyBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	core.WriteJSON(w, http.StatusOK, map[string]any{"batch": batch, "items": items})
+}
+
+func (h *Handler) listStudyBatches(w http.ResponseWriter, r *http.Request) {
+	store, ok := h.studyStore(w)
+	if !ok {
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	batches, err := store.ListStudyBatches(r.Context(), limit)
+	if err != nil {
+		core.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
+	core.WriteJSON(w, http.StatusOK, map[string]any{"batches": batches})
 }
 
 func (h *Handler) startStudyBatch(w http.ResponseWriter, r *http.Request) {

@@ -285,6 +285,29 @@ func (s *SQLiteStore) GetStudyBatch(ctx context.Context, id string) (StudyBatchR
 	return batch, err
 }
 
+func (s *SQLiteStore) ListStudyBatches(ctx context.Context, limit int) ([]StudyBatchRecord, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, job_id, status, stage, provider_id, model, parallelism, force_rerun, total, completed, failed, started_at, finished_at, duration_ms, created_at, updated_at FROM study_batches ORDER BY created_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	batches := []StudyBatchRecord{}
+	for rows.Next() {
+		var batch StudyBatchRecord
+		if err := scanStudyBatch(rows, &batch); err != nil {
+			return nil, err
+		}
+		batches = append(batches, batch)
+	}
+	return batches, rows.Err()
+}
+
 func (s *SQLiteStore) ListStudyBatchItems(ctx context.Context, batchID string) ([]StudyBatchItemRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT batch_id, copy_id, stage, status, error, error_kind, attempt, cache_hit, api_calls, input_tokens, output_tokens, total_tokens, started_at, finished_at, duration_ms, created_at, updated_at FROM study_batch_items WHERE batch_id = ? ORDER BY updated_at DESC`, batchID)
 	if err != nil {
