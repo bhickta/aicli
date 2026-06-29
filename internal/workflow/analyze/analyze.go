@@ -60,81 +60,105 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		totalSteps++
 	}
 	completedSteps := 0
-	progressUnits(progress, "rendering PDF pages", completedSteps, totalSteps, "step")
-	stageStart := time.Now()
-	images, cleanup, err := document.RenderPDFToImages(ctx, s.tools, s.runner, req.Path, req.DPI, req.RenderWorkers)
-	if err != nil {
-		s.logWarn("topper copy render failed", "path", req.Path, "elapsed_ms", elapsedMS(stageStart), "error", err)
-		return Response{}, err
-	}
-	s.logInfo("topper copy render completed", "path", req.Path, "pages", len(images), "elapsed_ms", elapsedMS(stageStart))
-	defer cleanup()
-	completedSteps++
-	progressUnits(progress, "rendered PDF pages", completedSteps, totalSteps, "step")
-
-	reviewID := reviewID()
+	reviewIDValue := firstNonBlank(req.ReviewID, reviewID())
 	reviewDir := ""
-	if strings.TrimSpace(s.artifactDir) != "" {
-		reviewDir = filepath.Join(s.artifactDir, "topper-copy", reviewID)
-		if err := os.MkdirAll(reviewDir, 0o755); err != nil {
+	pages := append([]Page(nil), req.OCRPages...)
+	var err error
+	var stageStart time.Time
+	if len(pages) > 0 && !req.ForceOCR {
+		progressUnits(progress, "using saved OCR pages", completedSteps, totalSteps, "step")
+		s.logInfo("topper copy OCR reused", "path", req.Path, "review_id", reviewIDValue, "pages", len(pages))
+		completedSteps++
+		progressUnits(progress, "saved OCR pages loaded", completedSteps, totalSteps, "step")
+	} else {
+		progressUnits(progress, "rendering PDF pages", completedSteps, totalSteps, "step")
+		stageStart := time.Now()
+		images, cleanup, err := document.RenderPDFToImages(ctx, s.tools, s.runner, req.Path, req.DPI, req.RenderWorkers)
+		if err != nil {
+			s.logWarn("topper copy render failed", "path", req.Path, "elapsed_ms", elapsedMS(stageStart), "error", err)
 			return Response{}, err
 		}
-	}
+		s.logInfo("topper copy render completed", "path", req.Path, "pages", len(images), "elapsed_ms", elapsedMS(stageStart))
+		defer cleanup()
+		completedSteps++
+		progressUnits(progress, "rendered PDF pages", completedSteps, totalSteps, "step")
 
-	inputs := make([]document.ImageInput, 0, len(images))
-	for i, imagePath := range images {
-		stablePath := imagePath
-		if reviewDir != "" {
-			stablePath = filepath.Join(reviewDir, fmt.Sprintf("page-%03d.jpg", i+1))
-			if err := copyFile(stablePath, imagePath); err != nil {
+		if strings.TrimSpace(s.artifactDir) != "" {
+			reviewDir = filepath.Join(s.artifactDir, "topper-copy", reviewIDValue)
+			if err := os.MkdirAll(reviewDir, 0o755); err != nil {
 				return Response{}, err
 			}
 		}
-		inputs = append(inputs, document.ImageInput{
-			Name:     "page-" + strconv.Itoa(i+1),
-			Path:     stablePath,
-			MIMEType: "image/jpeg",
-		})
-	}
-	ocrWorkers := document.EffectiveOCRWorkersForVisionProvider(req.Workers, len(inputs), s.ocrProvider)
-	stageStart = time.Now()
-	s.logInfo("topper copy OCR started",
-		"path", req.Path,
-		"pages", len(inputs),
-		"workers", ocrWorkers,
-		"provider", providerID(s.ocrProvider),
-		"model", firstNonBlank(req.OCRModel, req.Model),
-	)
-	ocrPages, err := document.OCRImagesWithLogger(
-		ctx,
-		s.ocrProvider,
-		firstNonBlank(req.OCRModel, req.Model),
-		inputs,
-		topperCopyOCRPrompt,
-		req.Workers,
-		s.logger,
-		func(completedPages int, totalPages int) {
-			progressUnits(progress, fmt.Sprintf("OCR pages with %d worker(s)", ocrWorkers), completedPages, totalPages, "page")
-		},
-	)
-	if err != nil {
-		s.logWarn("topper copy OCR failed", "path", req.Path, "pages", len(inputs), "workers", ocrWorkers, "elapsed_ms", elapsedMS(stageStart), "error", err)
-		return Response{}, err
-	}
-	s.logInfo("topper copy OCR completed", "path", req.Path, "pages", len(ocrPages), "workers", ocrWorkers, "elapsed_ms", elapsedMS(stageStart))
-	completedSteps++
-	progressUnits(progress, "OCR pages complete", completedSteps, totalSteps, "step")
-	pages := make([]Page, 0, len(ocrPages))
-	for i, page := range ocrPages {
-		pages = append(pages, Page{
-			Number:       i + 1,
-			Name:         page.Name,
-			Path:         page.Path,
-			ImageURL:     artifactURL(s.artifactDir, page.Path),
-			Text:         page.Text,
-			UnclearCount: strings.Count(strings.ToLower(page.Text), "[unclear]"),
-			Verified:     false,
-		})
+
+		inputs := make([]document.ImageInput, 0, len(images))
+		for i, imagePath := range images {
+			stablePath := imagePath
+			if reviewDir != "" {
+				stablePath = filepath.Join(reviewDir, fmt.Sprintf("page-%03d.jpg", i+1))
+				if err := copyFile(stablePath, imagePath); err != nil {
+					return Response{}, err
+				}
+			}
+			inputs = append(inputs, document.ImageInput{
+				Name:     "page-" + strconv.Itoa(i+1),
+				Path:     stablePath,
+				MIMEType: "image/jpeg",
+			})
+		}
+		ocrWorkers := document.EffectiveOCRWorkersForVisionProvider(req.Workers, len(inputs), s.ocrProvider)
+		stageStart = time.Now()
+		s.logInfo("topper copy OCR started",
+			"path", req.Path,
+			"pages", len(inputs),
+			"workers", ocrWorkers,
+			"provider", providerID(s.ocrProvider),
+			"model", firstNonBlank(req.OCRModel, req.Model),
+		)
+		ocrPages, err := document.OCRImagesWithLogger(
+			ctx,
+			s.ocrProvider,
+			firstNonBlank(req.OCRModel, req.Model),
+			inputs,
+			topperCopyOCRPrompt,
+			req.Workers,
+			s.logger,
+			func(completedPages int, totalPages int) {
+				progressUnits(progress, fmt.Sprintf("OCR pages with %d worker(s)", ocrWorkers), completedPages, totalPages, "page")
+			},
+		)
+		if err != nil {
+			s.logWarn("topper copy OCR failed", "path", req.Path, "pages", len(inputs), "workers", ocrWorkers, "elapsed_ms", elapsedMS(stageStart), "error", err)
+			return Response{}, err
+		}
+		s.logInfo("topper copy OCR completed", "path", req.Path, "pages", len(ocrPages), "workers", ocrWorkers, "elapsed_ms", elapsedMS(stageStart))
+		completedSteps++
+		progressUnits(progress, "OCR pages complete", completedSteps, totalSteps, "step")
+		pages = make([]Page, 0, len(ocrPages))
+		for i, page := range ocrPages {
+			pages = append(pages, Page{
+				Number:       i + 1,
+				Name:         page.Name,
+				Path:         page.Path,
+				ImageURL:     artifactURL(s.artifactDir, page.Path),
+				Text:         page.Text,
+				UnclearCount: strings.Count(strings.ToLower(page.Text), "[unclear]"),
+				Verified:     false,
+			})
+		}
+		if s.ocrCheckpoint != nil {
+			checkpoint := Response{
+				Kind:      "topper_copy_review",
+				ReviewID:  reviewIDValue,
+				PDFName:   filepath.Base(req.Path),
+				Pages:     pages,
+				Questions: pageFallbackQuestions(pages),
+				Report:    "OCR checkpoint saved. Complete question split and report generation to finish analysis.",
+			}
+			if err := s.ocrCheckpoint(checkpoint); err != nil {
+				return Response{}, err
+			}
+			s.logInfo("topper copy OCR checkpoint saved", "path", req.Path, "review_id", reviewIDValue, "pages", len(pages))
+		}
 	}
 	analysisPages := answerBearingPages(pages)
 	s.logInfo("topper copy analysis page filter completed", "path", req.Path, "total_pages", len(pages), "analysis_pages", len(analysisPages), "skipped_pages", len(pages)-len(analysisPages))
@@ -168,7 +192,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 	progressUnits(progress, "final analysis complete", completedSteps, totalSteps, "step")
 	res := Response{
 		Kind:      "topper_copy_review",
-		ReviewID:  reviewID,
+		ReviewID:  reviewIDValue,
 		PDFName:   filepath.Base(req.Path),
 		Pages:     pages,
 		Questions: questions,
@@ -180,7 +204,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		}
 	}
 	progressUnits(progress, "topper copy review ready", totalSteps, totalSteps, "step")
-	s.logInfo("topper copy analysis completed", "path", req.Path, "review_id", reviewID, "pages", len(pages), "questions", len(questions), "elapsed_ms", elapsedMS(workflowStart))
+	s.logInfo("topper copy analysis completed", "path", req.Path, "review_id", reviewIDValue, "pages", len(pages), "questions", len(questions), "elapsed_ms", elapsedMS(workflowStart))
 	return res, nil
 }
 

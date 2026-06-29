@@ -16,6 +16,7 @@ type Service struct {
 	reportProvider   provider.Provider
 	artifactDir      string
 	logger           *slog.Logger
+	ocrCheckpoint    func(Response) error
 }
 
 type Request struct {
@@ -30,6 +31,9 @@ type Request struct {
 	QuestionSplit   bool   `json:"question_split"`
 	QuestionWorkers int    `json:"question_workers"`
 	UnloadModels    bool   `json:"unload_models"`
+	ForceOCR        bool   `json:"force_ocr"`
+	ReviewID        string `json:"-"`
+	OCRPages        []Page `json:"-"`
 }
 
 type ReprocessRequest struct {
@@ -102,5 +106,11 @@ func WithReportProvider(p provider.Provider) Option {
 func WithLogger(logger *slog.Logger) Option {
 	return func(s *Service) {
 		s.logger = logger
+	}
+}
+
+func WithOCRCheckpoint(save func(Response) error) Option {
+	return func(s *Service) {
+		s.ocrCheckpoint = save
 	}
 }

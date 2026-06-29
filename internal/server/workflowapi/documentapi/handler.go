@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/bhickta/aicli/internal/provider"
 	"github.com/bhickta/aicli/internal/server/workflowapi/core"
+	"github.com/bhickta/aicli/internal/storage"
 	"github.com/bhickta/aicli/internal/tool"
 	"github.com/bhickta/aicli/internal/workflow/analyze"
 	"github.com/bhickta/aicli/internal/workflow/ocr"
@@ -103,12 +105,28 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ocrProviderID := firstProviderID(req.OCRProviderID, req.ProviderID)
-	questionProviderID := firstProviderID(req.QuestionProviderID, req.ProviderID, ocrProviderID)
-	reportProviderID := firstProviderID(req.ReportProviderID, req.ProviderID, ocrProviderID)
-	ocrProvider, ok := h.runtime.ProviderOrError(w, ocrProviderID)
-	if !ok {
+	ocrProviderID := strings.TrimSpace(req.OCRProviderID)
+	questionProviderID := strings.TrimSpace(req.QuestionProviderID)
+	reportProviderID := strings.TrimSpace(req.ReportProviderID)
+	ocrModel := strings.TrimSpace(req.OCRModel)
+	questionModel := strings.TrimSpace(req.QuestionModel)
+	reportModel := strings.TrimSpace(req.ReportModel)
+	cachedReview, cachedFound, err := h.findReusableOCRReview(r.Context(), req.Path)
+	if err != nil {
+		core.WriteError(w, http.StatusInternalServerError, err)
 		return
+	}
+	useCachedOCR := cachedFound && !req.ForceOCR
+	if err := requireAnalyzeStageSelections(!useCachedOCR, req.QuestionSplit, ocrProviderID, ocrModel, questionProviderID, questionModel, reportProviderID, reportModel); err != nil {
+		core.WriteError(w, http.StatusBadRequest, err)
+		return
+	}
+	var ocrProvider provider.Provider
+	if !useCachedOCR {
+		ocrProvider, ok = h.runtime.ProviderOrError(w, ocrProviderID)
+		if !ok {
+			return
+		}
 	}
 	questionProvider, ok := h.runtime.ProviderOrError(w, questionProviderID)
 	if !ok {
@@ -122,15 +140,39 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 	h.runtime.StartWorkflow(w, r, job, func(ctx context.Context, progress core.ProgressFunc) (any, error) {
 		if req.UnloadModels {
 			defer h.unloadProviderModels(context.Background(), []providerModelUse{
-				{provider: ocrProvider, model: firstModel(req.OCRModel, req.Model)},
-				{provider: questionProvider, model: firstModel(req.QuestionModel, req.Model)},
-				{provider: reportProvider, model: firstModel(req.ReportModel, req.Model)},
+				{provider: ocrProvider, model: ocrModel},
+				{provider: questionProvider, model: questionModel},
+				{provider: reportProvider, model: reportModel},
 			})
 		}
 		artifactDir := ""
 		if h.runtime.DataDir() != "" {
 			artifactDir = filepath.Join(h.runtime.DataDir(), "artifacts")
 		}
+		request := analyze.Request{
+			OCRModel:        ocrModel,
+			QuestionModel:   questionModel,
+			ReportModel:     reportModel,
+			Path:            req.Path,
+			DPI:             req.DPI,
+			RenderWorkers:   req.RenderWorkers,
+			Workers:         req.Workers,
+			QuestionSplit:   req.QuestionSplit,
+			QuestionWorkers: req.QuestionWorkers,
+			UnloadModels:    req.UnloadModels,
+			ForceOCR:        req.ForceOCR,
+		}
+		createdAt := time.Time{}
+		if useCachedOCR {
+			cached, err := decodeTopperReview(cachedReview)
+			if err != nil {
+				return nil, err
+			}
+			request.ReviewID = cached.ReviewID
+			request.OCRPages = cached.Pages
+			createdAt = cachedReview.CreatedAt
+		}
+		store, storeOK := h.runtime.Store().(topperReviewStore)
 		result, err := analyze.New(
 			h.runtime.Settings().Tools,
 			tool.ExecRunner{},
@@ -139,17 +181,29 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 			analyze.WithReportProvider(reportProvider),
 			analyze.WithArtifactDir(artifactDir),
 			analyze.WithLogger(h.runtime.Logger()),
-		).RunWithProgress(ctx, req.Request, func(stage string, completed int, total int, label string) {
+			analyze.WithOCRCheckpoint(func(review analyze.Response) error {
+				if !storeOK {
+					return nil
+				}
+				return h.saveTopperReviewRecord(ctx, store, review, topperReviewMeta{
+					JobID:      job.ID,
+					SourcePath: req.Path,
+					ProviderID: ocrProviderID,
+					Model:      ocrModel,
+					Status:     "ocr-ready",
+				}, createdAt)
+			}),
+		).RunWithProgress(ctx, request, func(stage string, completed int, total int, label string) {
 			progress(core.Units(stage, completed, total, label))
 		})
-		if err == nil {
-			_ = h.saveTopperReview(ctx, result, topperReviewMeta{
+		if err == nil && storeOK {
+			_ = h.saveTopperReviewRecord(ctx, store, result, topperReviewMeta{
 				JobID:      job.ID,
 				SourcePath: req.Path,
 				ProviderID: ocrProviderID,
-				Model:      firstModel(req.OCRModel, req.Model),
+				Model:      ocrModel,
 				Status:     "ready",
-			})
+			}, createdAt)
 		}
 		return result, err
 	})
@@ -178,6 +232,71 @@ func firstModel(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func (h *Handler) findReusableOCRReview(ctx context.Context, sourcePath string) (storage.TopperReviewRecord, bool, error) {
+	store, ok := h.runtime.Store().(topperReviewStore)
+	if !ok {
+		return storage.TopperReviewRecord{}, false, nil
+	}
+	if err := h.backfillTopperReviews(ctx, store); err != nil {
+		return storage.TopperReviewRecord{}, false, err
+	}
+	filename := strings.ToLower(filepath.Base(sourcePath))
+	records, err := store.ListTopperReviews(ctx, storage.TopperReviewListOptions{Query: filename, Limit: 200})
+	if err != nil {
+		return storage.TopperReviewRecord{}, false, err
+	}
+	sourcePathLower := strings.ToLower(strings.TrimSpace(sourcePath))
+	for _, record := range records {
+		if sourcePathLower != "" && strings.ToLower(strings.TrimSpace(record.SourcePath)) != sourcePathLower && strings.ToLower(record.PDFName) != filename {
+			continue
+		}
+		review, err := decodeTopperReview(record)
+		if err != nil || !reviewHasOCRPages(review) {
+			continue
+		}
+		return record, true, nil
+	}
+	return storage.TopperReviewRecord{}, false, nil
+}
+
+func reviewHasOCRPages(review analyze.Response) bool {
+	if len(review.Pages) == 0 {
+		return false
+	}
+	for _, page := range review.Pages {
+		if strings.TrimSpace(page.Text) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func requireAnalyzeStageSelections(requireOCR bool, questionSplit bool, ocrProviderID string, ocrModel string, questionProviderID string, questionModel string, reportProviderID string, reportModel string) error {
+	if requireOCR {
+		if ocrProviderID == "" {
+			return fmt.Errorf("OCR provider is required")
+		}
+		if ocrModel == "" {
+			return fmt.Errorf("OCR model is required")
+		}
+	}
+	if questionSplit {
+		if questionProviderID == "" {
+			return fmt.Errorf("question split provider is required")
+		}
+		if questionModel == "" {
+			return fmt.Errorf("question split model is required")
+		}
+	}
+	if reportProviderID == "" {
+		return fmt.Errorf("report provider is required")
+	}
+	if reportModel == "" {
+		return fmt.Errorf("report model is required")
+	}
+	return nil
 }
 
 func (h *Handler) unloadProviderModels(ctx context.Context, uses []providerModelUse) {

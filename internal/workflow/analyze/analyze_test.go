@@ -2,6 +2,7 @@ package analyze
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,9 +26,11 @@ type fakeProvider struct {
 	id            string
 	visionContent string
 	visionPrompt  string
+	visionCalls   int
 	chatPrompt    string
 	chatPrompts   []string
 	chatResponses []string
+	chatErr       error
 }
 
 type progressEvent struct {
@@ -54,6 +57,9 @@ func (p *fakeProvider) Chat(_ context.Context, req provider.ChatRequest) (provid
 		p.chatPrompt = req.Messages[0].Content
 		p.chatPrompts = append(p.chatPrompts, req.Messages[0].Content)
 	}
+	if p.chatErr != nil {
+		return provider.ChatResponse{}, p.chatErr
+	}
 	if len(p.chatResponses) > 0 {
 		content := p.chatResponses[0]
 		p.chatResponses = p.chatResponses[1:]
@@ -66,6 +72,7 @@ func (fakeProvider) ChatStream(context.Context, provider.ChatRequest, func(strin
 }
 func (p *fakeProvider) Vision(_ context.Context, req provider.VisionRequest) (provider.ChatResponse, error) {
 	p.visionPrompt = req.Prompt
+	p.visionCalls++
 	if p.visionContent != "" {
 		return provider.ChatResponse{Content: p.visionContent}, nil
 	}
@@ -116,6 +123,66 @@ func TestRunAnalyzePipeline(t *testing.T) {
 		if !strings.Contains(fp.chatPrompt, want) {
 			t.Fatalf("chat prompt missing %q:\n%s", want, fp.chatPrompt)
 		}
+	}
+}
+
+func TestRunAnalyzeSavesOCRCheckpointBeforeQuestionSplitFailure(t *testing.T) {
+	t.Parallel()
+
+	pdf := filepath.Join(t.TempDir(), "answers.pdf")
+	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	splitter := &fakeProvider{id: "splitter", chatErr: errors.New("split unavailable")}
+	var checkpoint Response
+	_, err := New(
+		config.ToolConfig{PDFToPPM: "pdftoppm"},
+		&fakeRunner{},
+		&fakeProvider{visionContent: "saved OCR"},
+		WithQuestionProvider(splitter),
+		WithOCRCheckpoint(func(review Response) error {
+			checkpoint = review
+			return nil
+		}),
+	).Run(context.Background(), Request{
+		Path:          pdf,
+		Model:         "model",
+		QuestionSplit: true,
+	})
+	if err == nil {
+		t.Fatal("Run() error = nil, want question split failure")
+	}
+	if len(checkpoint.Pages) != 1 || checkpoint.Pages[0].Text != "saved OCR" {
+		t.Fatalf("checkpoint = %#v, want saved OCR page", checkpoint)
+	}
+	if !strings.Contains(checkpoint.Report, "OCR checkpoint saved") {
+		t.Fatalf("checkpoint report = %q, want OCR checkpoint marker", checkpoint.Report)
+	}
+}
+
+func TestRunAnalyzeReusesSavedOCRPages(t *testing.T) {
+	t.Parallel()
+
+	runner := &fakeRunner{}
+	ocrProvider := &fakeProvider{}
+	res, err := New(
+		config.ToolConfig{PDFToPPM: "pdftoppm"},
+		runner,
+		ocrProvider,
+	).Run(context.Background(), Request{
+		Path:     "cached.pdf",
+		Model:    "model",
+		ReviewID: "cached-review",
+		OCRPages: []Page{{Number: 1, Name: "page-1", Text: "saved page text"}},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(runner.args) != 0 || ocrProvider.visionCalls != 0 {
+		t.Fatalf("render args = %#v, vision calls = %d; want cached OCR reuse", runner.args, ocrProvider.visionCalls)
+	}
+	if res.ReviewID != "cached-review" || len(res.Pages) != 1 || res.Pages[0].Text != "saved page text" {
+		t.Fatalf("response = %#v, want cached review/pages", res)
 	}
 }
 
