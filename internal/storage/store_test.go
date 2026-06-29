@@ -234,6 +234,92 @@ func TestSQLiteStoreTopperReviewLifecycle(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreStudyLifecycle(t *testing.T) {
+	t.Parallel()
+
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	store := NewSQLiteStore(db)
+	if err := store.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	copy := StudyCopyRecord{
+		ID:             "study-1",
+		SourcePath:     "/tmp/testing.pdf",
+		PDFName:        "testing.pdf",
+		CandidateName:  "Sample Topper",
+		PageCount:      5,
+		QuestionCount:  2,
+		UnclearCount:   1,
+		Status:         "ready",
+		RenderStatus:   "ready",
+		OCRStatus:      "ready",
+		QuestionStatus: "ready",
+		AnalysisStatus: "pending",
+		ReportStatus:   "ready",
+	}
+	if err := store.SaveStudyCopy(context.Background(), copy); err != nil {
+		t.Fatalf("SaveStudyCopy() error = %v", err)
+	}
+	if err := store.SaveStudyPage(context.Background(), StudyPageRecord{
+		CopyID:       copy.ID,
+		PageNumber:   2,
+		Name:         "page-2",
+		ImagePath:    "/tmp/page-2.jpg",
+		OCRText:      "Q.1 answer text [unclear]",
+		Status:       "ready",
+		UnclearCount: 1,
+		Verified:     true,
+	}); err != nil {
+		t.Fatalf("SaveStudyPage() error = %v", err)
+	}
+	if err := store.SaveStudyQuestion(context.Background(), StudyQuestionRecord{
+		ID:          "study-1-q1",
+		CopyID:      copy.ID,
+		QuestionNo:  1,
+		Label:       "Q.1",
+		PromptText:  "Elucidate.",
+		AnswerText:  "answer text",
+		SourcePages: []int{2, 3},
+		Status:      "ready",
+	}); err != nil {
+		t.Fatalf("SaveStudyQuestion() error = %v", err)
+	}
+
+	got, err := store.GetStudyCopy(context.Background(), copy.ID)
+	if err != nil {
+		t.Fatalf("GetStudyCopy() error = %v", err)
+	}
+	if got.PDFName != "testing.pdf" || got.QuestionCount != 2 {
+		t.Fatalf("copy = %#v, want saved metadata", got)
+	}
+	matches, err := store.ListStudyCopies(context.Background(), StudyCopyListOptions{Query: "sample", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListStudyCopies() error = %v", err)
+	}
+	if len(matches) != 1 || matches[0].ID != copy.ID {
+		t.Fatalf("matches = %#v, want saved copy", matches)
+	}
+	pages, err := store.ListStudyPages(context.Background(), copy.ID)
+	if err != nil {
+		t.Fatalf("ListStudyPages() error = %v", err)
+	}
+	if len(pages) != 1 || !pages[0].Verified || pages[0].UnclearCount != 1 {
+		t.Fatalf("pages = %#v, want verified OCR page", pages)
+	}
+	questions, err := store.ListStudyQuestions(context.Background(), copy.ID)
+	if err != nil {
+		t.Fatalf("ListStudyQuestions() error = %v", err)
+	}
+	if len(questions) != 1 || len(questions[0].SourcePages) != 2 || questions[0].SourcePages[1] != 3 {
+		t.Fatalf("questions = %#v, want source pages preserved", questions)
+	}
+}
+
 func TestOpenSQLiteConfiguresLockResistantConnection(t *testing.T) {
 	t.Parallel()
 

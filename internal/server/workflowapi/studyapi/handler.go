@@ -20,6 +20,12 @@ func New(runtime *core.Runtime) *Handler {
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/study/copies", h.listStudyCopies)
+	mux.HandleFunc("POST /api/study/imports", h.importStudyCopies)
+	mux.HandleFunc("GET /api/study/copies/{id}", h.getStudyCopy)
+	mux.HandleFunc("PUT /api/study/copies/{id}", h.updateStudyCopy)
+	mux.HandleFunc("POST /api/study/copies/{id}/stages", h.startStudyStage)
+	mux.HandleFunc("POST /api/study/batches", h.startStudyBatch)
 	mux.HandleFunc("POST /api/workflows/recall/run", h.runRecall)
 	mux.HandleFunc("POST /api/workflows/study/lecture", h.runLecture)
 }

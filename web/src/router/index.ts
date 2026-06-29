@@ -25,7 +25,7 @@ export const routeDefinitions = [
     meta: { label: "Chat", description: "Ask a configured model", group: "Work", nav: true },
   },
   {
-    path: "/study/:section?",
+    path: "/study/:section?/:copyId?",
     name: "study",
     component: StudyView,
     meta: { label: "Study", description: "UPSC copies, recall, lectures", group: "Work", nav: true },
