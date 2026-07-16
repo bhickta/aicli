@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Server) listProviders(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"providers": s.deps.Settings.Providers})
+	writeJSON(w, http.StatusOK, map[string]any{"providers": sanitizedProviders(s.settingsSnapshot().Providers)})
 }
 
 func (s *Server) providerModels(w http.ResponseWriter, r *http.Request) {
@@ -21,7 +21,7 @@ func (s *Server) providerModels(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	p, ok := s.deps.Providers.Get(parts[0])
+	p, ok := s.providerFor(parts[0])
 	if !ok {
 		writeError(w, http.StatusNotFound, errors.New("provider not found"))
 		return
@@ -92,20 +92,23 @@ func (s *Server) chatStream(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) tools(w http.ResponseWriter, r *http.Request) {
 	checker := tool.Checker{}
+	tools := s.settingsSnapshot().Tools
 	statuses := []tool.Status{
-		checker.Check(r.Context(), "ffmpeg", s.deps.Settings.Tools.FFmpeg, "-version"),
-		checker.Check(r.Context(), "ffprobe", s.deps.Settings.Tools.FFprobe, "-version"),
-		checker.Check(r.Context(), "pdftoppm", s.deps.Settings.Tools.PDFToPPM, "-v"),
-		checker.Check(r.Context(), "whisper", s.deps.Settings.Tools.WhisperCLI, "--help"),
-		checker.Check(r.Context(), "codex", s.deps.Settings.Tools.CodexCLI, "--version"),
-		checker.Check(r.Context(), "ots.TTS", s.deps.Settings.Tools.OTSTTS, "--help"),
-		checker.Check(r.Context(), "firefox", s.deps.Settings.Tools.Firefox, "--version"),
-		checker.Check(r.Context(), "xdotool", s.deps.Settings.Tools.XDoTool, "--version"),
+		checker.Check(r.Context(), "ffmpeg", tools.FFmpeg, "-version"),
+		checker.Check(r.Context(), "ffprobe", tools.FFprobe, "-version"),
+		checker.Check(r.Context(), "pdftoppm", tools.PDFToPPM, "-v"),
+		checker.Check(r.Context(), "whisper", tools.WhisperCLI, "--help"),
+		checker.Check(r.Context(), "codex", tools.CodexCLI, "--version"),
+		checker.Check(r.Context(), "ots.TTS", tools.OTSTTS, "--help"),
+		checker.Check(r.Context(), "firefox", tools.Firefox, "--version"),
+		checker.Check(r.Context(), "xdotool", tools.XDoTool, "--version"),
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tools": statuses})
 }
 
 func (s *Server) providerFor(id string) (provider.Provider, bool) {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	if id == "" {
 		id = s.deps.Settings.DefaultProvider
 	}

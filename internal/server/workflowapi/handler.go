@@ -5,9 +5,9 @@ import (
 
 	"github.com/bhickta/aicli/internal/server/workflowapi/audioapi"
 	"github.com/bhickta/aicli/internal/server/workflowapi/codexapi"
-	"github.com/bhickta/aicli/internal/server/workflowapi/geminiapi"
 	"github.com/bhickta/aicli/internal/server/workflowapi/core"
 	"github.com/bhickta/aicli/internal/server/workflowapi/documentapi"
+	"github.com/bhickta/aicli/internal/server/workflowapi/geminiapi"
 	"github.com/bhickta/aicli/internal/server/workflowapi/imageapi"
 	"github.com/bhickta/aicli/internal/server/workflowapi/newsapi"
 	"github.com/bhickta/aicli/internal/server/workflowapi/studyapi"

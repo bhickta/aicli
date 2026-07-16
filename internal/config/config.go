@@ -9,10 +9,11 @@ import (
 )
 
 type Settings struct {
-	DefaultProvider string           `json:"default_provider"`
-	DefaultModel    string           `json:"default_model"`
-	Providers       []ProviderConfig `json:"providers"`
-	Tools           ToolConfig       `json:"tools"`
+	DefaultProvider   string             `json:"default_provider"`
+	DefaultModel      string             `json:"default_model"`
+	Providers         []ProviderConfig   `json:"providers"`
+	ExecutionProfiles []ExecutionProfile `json:"execution_profiles"`
+	Tools             ToolConfig         `json:"tools"`
 }
 
 type ProviderConfig struct {
@@ -118,6 +119,7 @@ func DefaultSettings() Settings {
 				Name: "Gemini CLI",
 			},
 		},
+		ExecutionProfiles: DefaultExecutionProfiles(),
 		Tools: ToolConfig{
 			FFmpeg:     "ffmpeg",
 			FFprobe:    "ffprobe",
@@ -165,7 +167,10 @@ func Save(path string, settings Settings) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o600)
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
 }
 
 func Normalize(settings Settings) Settings {
@@ -182,6 +187,7 @@ func withDefaults(settings Settings) Settings {
 	} else {
 		settings.Providers = mergeDefaultProviders(settings.Providers, defaults.Providers)
 	}
+	settings.ExecutionProfiles = NormalizeExecutionProfiles(settings.ExecutionProfiles)
 	if settings.Tools.FFmpeg == "" {
 		settings.Tools.FFmpeg = defaults.Tools.FFmpeg
 	}

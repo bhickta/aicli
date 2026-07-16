@@ -48,6 +48,29 @@ type EmbeddingResponse struct {
 	Vectors [][]float64 `json:"vectors"`
 }
 
+type EmbeddingProvider interface {
+	Embeddings(context.Context, EmbeddingRequest) (EmbeddingResponse, error)
+}
+
+type RerankRequest struct {
+	Model     string   `json:"model"`
+	Query     string   `json:"query"`
+	Documents []string `json:"documents"`
+}
+
+type RerankResult struct {
+	Index int     `json:"index"`
+	Score float64 `json:"score"`
+}
+
+type RerankResponse struct {
+	Results []RerankResult `json:"results"`
+}
+
+type RerankProvider interface {
+	Rerank(context.Context, RerankRequest) (RerankResponse, error)
+}
+
 type VisionRequest struct {
 	Model       string `json:"model"`
 	Prompt      string `json:"prompt"`

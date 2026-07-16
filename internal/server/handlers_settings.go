@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Server) getSettings(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.deps.Settings)
+	writeJSON(w, http.StatusOK, sanitizedSettings(s.settingsSnapshot()))
 }
 
 func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
@@ -19,11 +19,15 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	settings = config.Normalize(settings)
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	settings.Providers = preserveProviderSecrets(settings.Providers, s.deps.Settings.Providers)
 	if err := config.Save(s.deps.SettingsPath, settings); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	s.deps.Settings = settings
 	s.deps.Providers = registry.New(settings.Providers, settings.Tools)
-	writeJSON(w, http.StatusOK, settings)
+	s.execution.UpdateProfiles(settings.ExecutionProfiles)
+	writeJSON(w, http.StatusOK, sanitizedSettings(settings))
 }

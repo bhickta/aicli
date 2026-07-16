@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bhickta/aicli/internal/config"
+	"github.com/bhickta/aicli/internal/execution"
 	"github.com/bhickta/aicli/internal/provider/registry"
 	"github.com/bhickta/aicli/internal/server/fsapi"
 	"github.com/bhickta/aicli/internal/server/workflowapi"
@@ -17,21 +19,30 @@ import (
 )
 
 type Dependencies struct {
-	Logger       *slog.Logger
-	SettingsPath string
-	DataDir      string
-	Settings     config.Settings
-	Store        storage.Store
-	Providers    *registry.Registry
+	Logger         *slog.Logger
+	SettingsPath   string
+	DataDir        string
+	Settings       config.Settings
+	Store          storage.Store
+	Providers      *registry.Registry
+	ExecutionToken string
+	ProviderFor    execution.ProviderFor
 }
 
 type Server struct {
-	deps Dependencies
-	mux  *http.ServeMux
+	deps      Dependencies
+	mux       *http.ServeMux
+	execution *execution.Service
+	stateMu   sync.RWMutex
 }
 
 func New(deps Dependencies) http.Handler {
 	s := &Server{deps: deps, mux: http.NewServeMux()}
+	providerFor := deps.ProviderFor
+	if providerFor == nil {
+		providerFor = s.providerFor
+	}
+	s.execution = execution.New(deps.Settings.ExecutionProfiles, providerFor)
 	s.routes()
 	return s.withLogging(s.mux)
 }
@@ -57,11 +68,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/tools", s.tools)
 	s.mux.HandleFunc("POST /api/chat", s.chat)
 	s.mux.HandleFunc("POST /api/chat/stream", s.chatStream)
+	s.registerExecutionRoutes()
 	workflowapi.New(workflowapi.Dependencies{
 		Logger:      s.deps.Logger,
 		Store:       s.deps.Store,
 		DataDir:     s.deps.DataDir,
-		Settings:    func() config.Settings { return s.deps.Settings },
+		Settings:    s.settingsSnapshot,
 		ProviderFor: s.providerFor,
 	}).Register(s.mux)
 	s.mux.HandleFunc("GET /api/jobs", s.listJobs)

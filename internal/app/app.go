@@ -58,12 +58,13 @@ func New(opts Options, logger *slog.Logger) (*App, error) {
 
 	providers := registry.New(settings.Providers, settings.Tools)
 	handler := server.New(server.Dependencies{
-		Logger:       logger,
-		SettingsPath: opts.ConfigPath,
-		DataDir:      opts.DataDir,
-		Settings:     settings,
-		Store:        store,
-		Providers:    providers,
+		Logger:         logger,
+		SettingsPath:   opts.ConfigPath,
+		DataDir:        opts.DataDir,
+		Settings:       settings,
+		Store:          store,
+		Providers:      providers,
+		ExecutionToken: os.Getenv("AICLI_SERVICE_TOKEN"),
 	})
 
 	return &App{db: db, handler: handler}, nil

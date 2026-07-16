@@ -18,7 +18,28 @@ export interface Settings {
   default_provider: string;
   default_model: string;
   providers: ProviderConfig[];
+  execution_profiles: ExecutionProfile[];
   tools: Record<string, string>;
+}
+
+export interface ExecutionTarget {
+  provider_id: string;
+  model: string;
+  priority: number;
+  enabled: boolean;
+  input_cost_per_million: number;
+  output_cost_per_million: number;
+}
+
+export interface ExecutionProfile {
+  id: string;
+  name: string;
+  capability: string;
+  enabled: boolean;
+  max_concurrency: number;
+  timeout_seconds: number;
+  cooldown_seconds: number;
+  targets: ExecutionTarget[];
 }
 
 export interface SystemResources {

@@ -1,6 +1,6 @@
 # aicli
 
-`aicli` is a single-binary Go web app for controlling local, Codex, and OpenAI-compatible AI providers from one UI. It is focused on local workflows for LMS, Ollama, OpenRouter, OpenAI Codex, and custom compatible endpoints without Frappe, auth, users, or migrations for an ERP stack.
+`aicli` is a single-binary Go web app for controlling local, Codex, and OpenAI-compatible AI providers from one UI. It is focused on local workflows for LMS, Ollama, OpenRouter, OpenAI Codex, and custom compatible endpoints without ERP user or session dependencies. Its service execution API uses bearer-token authentication when Frappe connects to it.
 
 ## Features
 
@@ -38,6 +38,14 @@
 ```bash
 go run ./cmd/aicli
 ```
+
+Set a service token when Frappe will use the authenticated execution API:
+
+```bash
+AICLI_SERVICE_TOKEN="$(openssl rand -hex 32)" go run ./cmd/aicli
+```
+
+Use the same token in Frappe's `AI Control Settings` or its `AICLI_SERVICE_TOKEN` environment variable. The browser must never call this API or receive the service token.
 
 Then open:
 
@@ -203,6 +211,17 @@ The default settings also include a CLI-backed provider:
 ## Configuration
 
 On first run, a default settings file is created. The UI can edit it from `Settings`.
+
+### Frappe execution API
+
+`AICLI_SERVICE_TOKEN` enables the Bearer-authenticated control and execution endpoints:
+
+- `POST /api/execution/run` executes text, structured, vision, OCR, embedding, or rerank profiles.
+- `GET /api/execution/control` returns sanitized providers and execution profiles.
+- `PUT /api/execution/providers` and `PUT /api/execution/profiles` update execution configuration.
+- `GET /api/execution/models` and `POST /api/execution/health` inspect a provider.
+
+Profiles own model order, fallback, concurrency, timeout, cooldown, and optional per-million-token rates. Frappe owns feature routes, prompts, budgets, audit logs, jobs, permissions, and persistence.
 
 Typical provider entries:
 

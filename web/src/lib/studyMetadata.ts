@@ -22,8 +22,8 @@ interface CopyMetadataPayload {
 export function copyMetadata(copy: StudyCopyRecord): CopyMetadata | null {
   const payload = parseMetadata<CopyMetadataPayload | CopyMetadata>(copy.metadata_json);
   if (!payload) return null;
-  if ("copy" in payload) return payload.copy || null;
-  return payload;
+  const wrapped = (payload as CopyMetadataPayload).copy;
+  return wrapped || payload as CopyMetadata;
 }
 
 export function questionMetadata(question: StudyQuestionRecord): QuestionMetadata | null {
