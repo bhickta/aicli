@@ -70,7 +70,7 @@ func TestOpenAICompatibleListModelsPreservesGeminiOpenAIBase(t *testing.T) {
 		if r.URL.Path != "/v1beta/openai/models" {
 			t.Fatalf("path = %s, want /v1beta/openai/models", r.URL.Path)
 		}
-		w.Write([]byte(`{"data":[{"id":"gemini-2.5-flash"}]}`))
+		w.Write([]byte(`{"data":[{"id":"models/gemini-2.5-flash"}]}`))
 	}))
 	defer srv.Close()
 

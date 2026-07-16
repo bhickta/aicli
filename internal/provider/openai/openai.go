@@ -69,11 +69,20 @@ func (p *OpenAICompatible) ListModels(ctx context.Context) ([]provider.Model, er
 	}
 	models := make([]provider.Model, 0, len(payload.Data))
 	for _, item := range payload.Data {
-		if item.ID != "" && p.allowsModel(item.ID) {
-			models = append(models, provider.Model{ID: item.ID, Name: item.ID})
+		modelID := p.discoveredModelID(item.ID)
+		if modelID != "" && p.allowsModel(modelID) {
+			models = append(models, provider.Model{ID: modelID, Name: modelID})
 		}
 	}
 	return models, nil
+}
+
+func (p *OpenAICompatible) discoveredModelID(model string) string {
+	model = strings.TrimSpace(model)
+	if p.usesGeminiGenerateContent() {
+		return strings.TrimPrefix(model, "models/")
+	}
+	return model
 }
 
 func (p *OpenAICompatible) Chat(ctx context.Context, req provider.ChatRequest) (provider.ChatResponse, error) {
