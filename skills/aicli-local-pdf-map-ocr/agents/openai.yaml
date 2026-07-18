@@ -1,0 +1,4 @@
+interface:
+  display_name: "AICLI Local PDF Map OCR"
+  short_description: "Render, rotate, OCR, and name PDF maps locally"
+  default_prompt: "Use $aicli-local-pdf-map-ocr to render, orient, OCR, and descriptively name maps from this PDF using only local models."
