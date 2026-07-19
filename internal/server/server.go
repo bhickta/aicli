@@ -42,7 +42,8 @@ func New(deps Dependencies) http.Handler {
 	if providerFor == nil {
 		providerFor = s.providerFor
 	}
-	s.execution = execution.New(deps.Settings.ExecutionProfiles, providerFor)
+	usageStore, _ := deps.Store.(execution.UsageStore)
+	s.execution = execution.NewWithUsageStore(deps.Settings.ExecutionProfiles, providerFor, usageStore)
 	s.routes()
 	return s.withLogging(s.mux)
 }

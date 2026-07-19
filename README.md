@@ -221,7 +221,7 @@ On first run, a default settings file is created. The UI can edit it from `Setti
 - `PUT /api/execution/providers` and `PUT /api/execution/profiles` update execution configuration.
 - `GET /api/execution/models` and `POST /api/execution/health` inspect a provider.
 
-Profiles own model order, fallback, concurrency, timeout, cooldown, and optional per-million-token rates. Frappe owns feature routes, prompts, budgets, audit logs, jobs, permissions, and persistence.
+Profiles own model order, fallback, concurrency, timeout, cooldown, and optional per-million-token rates. They can also set `selection_strategy` to `round-robin`; equal-priority targets then rotate fairly while retaining ordered fallback across priority tiers. Per-target `max_concurrency` leases a credential to a bounded number of in-flight calls, and `rate_limit` can reserve conservative `requests_per_minute`, `tokens_per_minute`, and `requests_per_day` budgets before dispatch. Usage reservations persist in AICLI's SQLite database, so free-tier safeguards survive restarts. The default strategy remains `ordered` for backward compatibility. Frappe owns feature routes, prompts, budgets, audit logs, jobs, permissions, and persistence.
 
 Typical provider entries:
 

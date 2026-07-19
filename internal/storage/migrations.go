@@ -162,6 +162,16 @@ CREATE TABLE IF NOT EXISTS study_batch_items (
 	PRIMARY KEY(batch_id, copy_id, stage)
 );
 CREATE INDEX IF NOT EXISTS idx_study_batch_items_batch ON study_batch_items(batch_id, status);
+CREATE TABLE IF NOT EXISTS execution_usage_events (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	profile_id TEXT NOT NULL,
+	provider_id TEXT NOT NULL,
+	model TEXT NOT NULL,
+	occurred_at TIMESTAMP NOT NULL,
+	reserved_tokens INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_execution_usage_target_time
+	ON execution_usage_events(provider_id, model, occurred_at);
 `)
 	if err != nil {
 		return err

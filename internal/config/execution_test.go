@@ -38,3 +38,17 @@ func TestSaveRestrictsExistingConfigPermissions(t *testing.T) {
 		t.Fatalf("config mode = %o, want 600", info.Mode().Perm())
 	}
 }
+
+func TestNormalizeExecutionProfilesDefaultsToOrderedSelection(t *testing.T) {
+	profiles := NormalizeExecutionProfiles([]ExecutionProfile{{
+		ID: "text", Capability: CapabilityText, Enabled: true,
+		Targets: []ExecutionTarget{{ProviderID: "one", Priority: 20}, {ProviderID: "two", Priority: 10}},
+	}})
+
+	if profiles[0].SelectionStrategy != SelectionOrdered {
+		t.Fatalf("selection strategy = %q, want %q", profiles[0].SelectionStrategy, SelectionOrdered)
+	}
+	if profiles[0].Targets[0].ProviderID != "two" {
+		t.Fatalf("first provider = %q, want priority-sorted two", profiles[0].Targets[0].ProviderID)
+	}
+}

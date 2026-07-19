@@ -12,26 +12,37 @@ const (
 	CapabilityEmbedding  = "embedding"
 	CapabilityRerank     = "rerank"
 	CapabilityOCR        = "ocr"
+	SelectionOrdered     = "ordered"
+	SelectionRoundRobin  = "round-robin"
 )
 
 type ExecutionProfile struct {
-	ID              string            `json:"id"`
-	Name            string            `json:"name"`
-	Capability      string            `json:"capability"`
-	Enabled         bool              `json:"enabled"`
-	MaxConcurrency  int               `json:"max_concurrency"`
-	TimeoutSeconds  int               `json:"timeout_seconds"`
-	CooldownSeconds int               `json:"cooldown_seconds"`
-	Targets         []ExecutionTarget `json:"targets"`
+	ID                string            `json:"id"`
+	Name              string            `json:"name"`
+	Capability        string            `json:"capability"`
+	SelectionStrategy string            `json:"selection_strategy,omitempty"`
+	Enabled           bool              `json:"enabled"`
+	MaxConcurrency    int               `json:"max_concurrency"`
+	TimeoutSeconds    int               `json:"timeout_seconds"`
+	CooldownSeconds   int               `json:"cooldown_seconds"`
+	Targets           []ExecutionTarget `json:"targets"`
 }
 
 type ExecutionTarget struct {
-	ProviderID           string  `json:"provider_id"`
-	Model                string  `json:"model"`
-	Priority             int     `json:"priority"`
-	Enabled              bool    `json:"enabled"`
-	InputCostPerMillion  float64 `json:"input_cost_per_million"`
-	OutputCostPerMillion float64 `json:"output_cost_per_million"`
+	ProviderID           string          `json:"provider_id"`
+	Model                string          `json:"model"`
+	Priority             int             `json:"priority"`
+	Enabled              bool            `json:"enabled"`
+	MaxConcurrency       int             `json:"max_concurrency,omitempty"`
+	RateLimit            TargetRateLimit `json:"rate_limit,omitempty"`
+	InputCostPerMillion  float64         `json:"input_cost_per_million"`
+	OutputCostPerMillion float64         `json:"output_cost_per_million"`
+}
+
+type TargetRateLimit struct {
+	RequestsPerMinute int `json:"requests_per_minute,omitempty"`
+	TokensPerMinute   int `json:"tokens_per_minute,omitempty"`
+	RequestsPerDay    int `json:"requests_per_day,omitempty"`
 }
 
 func DefaultExecutionProfiles() []ExecutionProfile {
@@ -54,6 +65,10 @@ func NormalizeExecutionProfiles(profiles []ExecutionProfile) []ExecutionProfile 
 		profile.ID = strings.TrimSpace(profile.ID)
 		profile.Name = strings.TrimSpace(profile.Name)
 		profile.Capability = strings.ToLower(strings.TrimSpace(profile.Capability))
+		profile.SelectionStrategy = strings.ToLower(strings.TrimSpace(profile.SelectionStrategy))
+		if profile.SelectionStrategy == "" {
+			profile.SelectionStrategy = SelectionOrdered
+		}
 		if profile.MaxConcurrency <= 0 {
 			profile.MaxConcurrency = 1
 		}
@@ -72,7 +87,7 @@ func NormalizeExecutionProfiles(profiles []ExecutionProfile) []ExecutionProfile 
 
 func defaultProfile(id, name, capability, providerID, model string) ExecutionProfile {
 	return ExecutionProfile{
-		ID: id, Name: name, Capability: capability, Enabled: true,
+		ID: id, Name: name, Capability: capability, SelectionStrategy: SelectionOrdered, Enabled: true,
 		MaxConcurrency: 1, TimeoutSeconds: 120, CooldownSeconds: 14400,
 		Targets: []ExecutionTarget{{ProviderID: providerID, Model: model, Priority: 10, Enabled: true}},
 	}

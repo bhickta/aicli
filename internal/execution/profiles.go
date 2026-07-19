@@ -17,9 +17,18 @@ func ValidateProfiles(profiles []config.ExecutionProfile, providerIDs map[string
 		if !validCapability(profile.Capability) {
 			return fmt.Errorf("unsupported capability %q for profile %s", profile.Capability, profile.ID)
 		}
+		if profile.SelectionStrategy != config.SelectionOrdered && profile.SelectionStrategy != config.SelectionRoundRobin {
+			return fmt.Errorf("unsupported selection strategy %q for profile %s", profile.SelectionStrategy, profile.ID)
+		}
 		for _, target := range profile.Targets {
 			if target.ProviderID == "" || !providerIDs[target.ProviderID] {
 				return fmt.Errorf("profile %s references unknown provider %q", profile.ID, target.ProviderID)
+			}
+			if target.MaxConcurrency < 0 {
+				return fmt.Errorf("profile %s target %s has a negative max concurrency", profile.ID, target.ProviderID)
+			}
+			if target.RateLimit.RequestsPerMinute < 0 || target.RateLimit.TokensPerMinute < 0 || target.RateLimit.RequestsPerDay < 0 {
+				return fmt.Errorf("profile %s target %s has a negative rate limit", profile.ID, target.ProviderID)
 			}
 		}
 	}
