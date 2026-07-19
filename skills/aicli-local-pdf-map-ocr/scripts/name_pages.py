@@ -78,6 +78,30 @@ def atomic_write_json(path: Path, payload: dict) -> None:
     os.replace(temporary, path)
 
 
+def sync_render_metadata(
+    metadata_path: Path, records: dict[int, dict]
+) -> int:
+    if not metadata_path.is_file():
+        return 0
+
+    payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    filenames = {
+        page_number: record["image_filename"]
+        for page_number, record in records.items()
+    }
+    updated = 0
+    for record in payload.get("pages", []):
+        page_number = record.get("page_number")
+        filename = filenames.get(page_number)
+        if filename is not None and record.get("image_filename") != filename:
+            record["image_filename"] = filename
+            updated += 1
+
+    payload["filenames_synced_at_utc"] = datetime.now(timezone.utc).isoformat()
+    atomic_write_json(metadata_path, payload)
+    return updated
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", required=True, type=Path)
@@ -87,12 +111,23 @@ def main() -> None:
     parser.add_argument(
         "--model-label", default="lmstudio-community/gemma-4-12B-it-QAT-GGUF"
     )
+    parser.add_argument(
+        "--sync-render-metadata-only",
+        action="store_true",
+        help="Synchronize render-metadata.json filenames from the manifest and exit.",
+    )
     args = parser.parse_args()
 
     manifest_path = args.manifest.resolve()
     output_dir = manifest_path.parent
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     records = {record["page_number"]: record for record in payload["pages"]}
+
+    render_metadata_path = output_dir / "render-metadata.json"
+    if args.sync_render_metadata_only:
+        updated = sync_render_metadata(render_metadata_path, records)
+        print(f"Render metadata filenames synchronized: {updated}")
+        return
 
     context = multiprocessing.get_context("spawn")
     futures: dict[concurrent.futures.Future, int] = {}
@@ -168,7 +203,9 @@ def main() -> None:
         "input": "ocr.combined_text",
     }
     atomic_write_json(manifest_path, payload)
+    synchronized = sync_render_metadata(render_metadata_path, records)
     print(f"Renamed images: {len(moves)}")
+    print(f"Render metadata filenames synchronized: {synchronized}")
 
 
 if __name__ == "__main__":

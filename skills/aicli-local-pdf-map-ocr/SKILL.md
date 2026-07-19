@@ -15,7 +15,7 @@ Produce 300-DPI RGB PNGs, preserve raw OCR from three local sources, and name ea
 4. Render the approved range at 300 DPI. Use `--workers 4` for large batches when local CPU, RAM, and storage throughput permit it. Workers render independent pages concurrently; metadata is still written once, atomically, in page-number order. Pass explicit clockwise/counterclockwise page lists and `--orientation-verified` only after visual verification.
 5. Start Gemma vision with four 8K slots on `127.0.0.1:1234` and Unlimited-OCR on `127.0.0.1:1235`. Keep all services bound to localhost.
 6. Run `scripts/ocr_pages.py`. Use one full-page Unlimited-OCR pass and nine overlapping Gemma tiles per page. Retain PDF text, raw model output, parsed blocks, crop coordinates, cleaned lines, and deduplicated combined text.
-7. Restart Gemma without the vision projector, retaining four 8K slots. Run `scripts/name_pages.py`; names must come only from `ocr.combined_text`.
+7. Restart Gemma without the vision projector, retaining four 8K slots. Run `scripts/name_pages.py`; names must come only from `ocr.combined_text`. The naming stage atomically synchronizes renamed filenames into both the OCR manifest and `render-metadata.json`.
 8. Build final contact sheets with `scripts/make_contact_sheets.py`, inspect every page, and correct/re-OCR only affected pages with `--update-existing`.
 9. Mark per-page rotation metadata and run `scripts/verify_output.py`. Require zero failures before handoff.
 10. Stop temporary local model servers and remove only transient work files.
@@ -62,6 +62,8 @@ python3 scripts/verify_output.py --manifest OUTPUT/ocr-manifest.json \
 ```
 
 For a corrected subset, keep the existing manifest and use `ocr_pages.py --first-page N --last-page M --update-existing`. Never rerun hundreds of pages when only a few final PNGs changed.
+
+If naming completed with an older skill version and only `render-metadata.json` is stale, run `name_pages.py --manifest OUTPUT/ocr-manifest.json --sync-render-metadata-only`. This does not call a model or rename images.
 
 Rendering and model inference use separate concurrency controls. `render_pages.py --workers N` runs up to N independent `pdftocairo` page jobs. `ocr_pages.py --workers N` and `name_pages.py --workers N` require at least N local model-server slots. Start with four workers, monitor CPU/RAM/VRAM and storage pressure, and raise the count only after a representative sample completes without errors or resource exhaustion. Parallel completion order may vary, but all JSON page records remain deterministically sorted.
 
