@@ -12,7 +12,7 @@ Produce 300-DPI RGB PNGs, preserve raw OCR from three local sources, and name ea
 1. Confirm `pdftocairo`, `pdftotext`, `pdfinfo`, Pillow, local AICLI, and the required GGUF/mmproj files are available.
 2. Render a deterministic random sample with `scripts/render_pages.py --sample-count ...`. Build a review sheet and inspect the actual map labels. Do not trust PDF rotation metadata alone.
 3. Show the sample to the user and wait for approval before the full batch when the user requests staged approval.
-4. Render the approved range at 300 DPI. Pass explicit clockwise/counterclockwise page lists and `--orientation-verified` only after visual verification.
+4. Render the approved range at 300 DPI. Use `--workers 4` for large batches when local CPU, RAM, and storage throughput permit it. Workers render independent pages concurrently; metadata is still written once, atomically, in page-number order. Pass explicit clockwise/counterclockwise page lists and `--orientation-verified` only after visual verification.
 5. Start Gemma vision with four 8K slots on `127.0.0.1:1234` and Unlimited-OCR on `127.0.0.1:1235`. Keep all services bound to localhost.
 6. Run `scripts/ocr_pages.py`. Use one full-page Unlimited-OCR pass and nine overlapping Gemma tiles per page. Retain PDF text, raw model output, parsed blocks, crop coordinates, cleaned lines, and deduplicated combined text.
 7. Restart Gemma without the vision projector, retaining four 8K slots. Run `scripts/name_pages.py`; names must come only from `ocr.combined_text`.
@@ -48,7 +48,7 @@ Run commands from the skill directory:
 
 ```bash
 python3 scripts/render_pages.py --pdf INPUT.pdf --output-dir OUTPUT \
-  --first-page 1 --last-page 50 --dpi 300 \
+  --first-page 1 --last-page 50 --dpi 300 --workers 4 \
   --rotate-cw-pages 1,2 --mixed-orientation-pages 1,2,40 \
   --orientation-verified
 
@@ -62,6 +62,8 @@ python3 scripts/verify_output.py --manifest OUTPUT/ocr-manifest.json \
 ```
 
 For a corrected subset, keep the existing manifest and use `ocr_pages.py --first-page N --last-page M --update-existing`. Never rerun hundreds of pages when only a few final PNGs changed.
+
+Rendering and model inference use separate concurrency controls. `render_pages.py --workers N` runs up to N independent `pdftocairo` page jobs. `ocr_pages.py --workers N` and `name_pages.py --workers N` require at least N local model-server slots. Start with four workers, monitor CPU/RAM/VRAM and storage pressure, and raise the count only after a representative sample completes without errors or resource exhaustion. Parallel completion order may vary, but all JSON page records remain deterministically sorted.
 
 Read [references/manifest-schema.md](references/manifest-schema.md) when consuming or extending the JSON.
 

@@ -8,6 +8,7 @@ import random
 import re
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -83,6 +84,74 @@ def atomic_json(path: Path, payload: dict) -> None:
     os.replace(temporary, path)
 
 
+def render_page(
+    *,
+    pdf_path: Path,
+    output_dir: Path,
+    work_dir: Path,
+    page_number: int,
+    target_name: str,
+    dpi: int,
+    post_rotation: int,
+    source_rotation: int,
+    orientation_verified: bool,
+    mixed_orientation: bool,
+) -> dict:
+    target = output_dir / target_name
+    prefix = work_dir / f"page-{page_number:04d}"
+    subprocess.run(
+        [
+            "pdftocairo",
+            "-png",
+            "-singlefile",
+            "-r",
+            str(dpi),
+            "-f",
+            str(page_number),
+            "-l",
+            str(page_number),
+            str(pdf_path),
+            str(prefix),
+        ],
+        check=True,
+    )
+    rendered = prefix.with_suffix(".png")
+    with Image.open(rendered) as opened:
+        image = ImageOps.exif_transpose(opened).convert("RGB")
+        image = rotate_clockwise(image, post_rotation)
+        temporary_target = target.with_suffix(target.suffix + ".tmp")
+        image.save(
+            temporary_target,
+            format="PNG",
+            dpi=(dpi, dpi),
+            compress_level=6,
+        )
+        os.replace(temporary_target, target)
+        width, height = image.size
+
+    if mixed_orientation:
+        note = (
+            "Dominant map content is upright; source book margin/header text "
+            "remains sideways by design."
+        )
+    else:
+        note = None
+    return {
+        "page_number": page_number,
+        "image_filename": target.name,
+        "width_pixels": width,
+        "height_pixels": height,
+        "dpi_x": dpi,
+        "dpi_y": dpi,
+        "source_pdf_rotation_degrees": source_rotation,
+        "renderer_applied_pdf_rotation": True,
+        "post_render_rotation_degrees_clockwise": post_rotation,
+        "orientation_policy": "dominant-map-content-upright",
+        "orientation_verified": orientation_verified,
+        "orientation_note": note,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Render selected PDF pages to lossless RGB PNGs with explicit rotation overrides."
@@ -100,6 +169,12 @@ def main() -> None:
     )
     parser.add_argument("--seed", type=int, default=20260718)
     parser.add_argument("--dpi", type=int, default=300)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of pages to render concurrently (default: 1).",
+    )
     parser.add_argument("--rotate-cw-pages", default="")
     parser.add_argument("--rotate-ccw-pages", default="")
     parser.add_argument("--rotate-180-pages", default="")
@@ -111,6 +186,9 @@ def main() -> None:
     parser.add_argument("--orientation-verified", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
+
+    if args.workers < 1:
+        parser.error("--workers must be at least 1")
 
     pdf_path = args.pdf.resolve()
     output_dir = args.output_dir.resolve()
@@ -151,77 +229,53 @@ def main() -> None:
         }
     records = {record["page_number"]: record for record in payload.get("pages", [])}
 
+    requested_pages = sorted(requested)
+    targets: dict[int, str] = {}
+    for page_number in requested_pages:
+        existing = records.get(page_number, {})
+        target_name = existing.get("image_filename", f"page-{page_number:04d}.png")
+        target = output_dir / target_name
+        if target.exists() and not args.overwrite:
+            raise FileExistsError(f"{target} exists; pass --overwrite to replace it")
+        targets[page_number] = target_name
+
     with tempfile.TemporaryDirectory(prefix=".render-work-", dir=output_dir) as work:
         work_dir = Path(work)
-        for index, page_number in enumerate(sorted(requested), start=1):
-            existing = records.get(page_number, {})
-            target_name = existing.get("image_filename", f"page-{page_number:04d}.png")
-            target = output_dir / target_name
-            if target.exists() and not args.overwrite:
-                raise FileExistsError(f"{target} exists; pass --overwrite to replace it")
-
-            prefix = work_dir / f"page-{page_number:04d}"
-            subprocess.run(
-                [
-                    "pdftocairo",
-                    "-png",
-                    "-singlefile",
-                    "-r",
-                    str(args.dpi),
-                    "-f",
-                    str(page_number),
-                    "-l",
-                    str(page_number),
-                    str(pdf_path),
-                    str(prefix),
-                ],
-                check=True,
-            )
-            rendered = prefix.with_suffix(".png")
-            post_rotation = (
-                90
-                if page_number in clockwise
-                else 270
-                if page_number in counterclockwise
-                else 180
-                if page_number in upside_down
-                else 0
-            )
-            with Image.open(rendered) as opened:
-                image = ImageOps.exif_transpose(opened).convert("RGB")
-                image = rotate_clockwise(image, post_rotation)
-                temporary_target = target.with_suffix(target.suffix + ".tmp")
-                image.save(
-                    temporary_target,
-                    format="PNG",
-                    dpi=(args.dpi, args.dpi),
-                    compress_level=6,
+        with ThreadPoolExecutor(max_workers=args.workers) as executor:
+            futures = {}
+            for page_number in requested_pages:
+                post_rotation = (
+                    90
+                    if page_number in clockwise
+                    else 270
+                    if page_number in counterclockwise
+                    else 180
+                    if page_number in upside_down
+                    else 0
                 )
-                os.replace(temporary_target, target)
-                width, height = image.size
-
-            if page_number in mixed_orientation:
-                note = (
-                    "Dominant map content is upright; source book margin/header text "
-                    "remains sideways by design."
+                future = executor.submit(
+                    render_page,
+                    pdf_path=pdf_path,
+                    output_dir=output_dir,
+                    work_dir=work_dir,
+                    page_number=page_number,
+                    target_name=targets[page_number],
+                    dpi=args.dpi,
+                    post_rotation=post_rotation,
+                    source_rotation=rotations.get(page_number, 0),
+                    orientation_verified=args.orientation_verified,
+                    mixed_orientation=page_number in mixed_orientation,
                 )
-            else:
-                note = None
-            records[page_number] = {
-                "page_number": page_number,
-                "image_filename": target.name,
-                "width_pixels": width,
-                "height_pixels": height,
-                "dpi_x": args.dpi,
-                "dpi_y": args.dpi,
-                "source_pdf_rotation_degrees": rotations.get(page_number, 0),
-                "renderer_applied_pdf_rotation": True,
-                "post_render_rotation_degrees_clockwise": post_rotation,
-                "orientation_policy": "dominant-map-content-upright",
-                "orientation_verified": args.orientation_verified,
-                "orientation_note": note,
-            }
-            print(f"Rendered {index}/{len(requested)}: page {page_number}", flush=True)
+                futures[future] = page_number
+
+            for index, future in enumerate(as_completed(futures), start=1):
+                record = future.result()
+                page_number = record["page_number"]
+                records[page_number] = record
+                print(
+                    f"Rendered {index}/{len(requested_pages)}: page {page_number}",
+                    flush=True,
+                )
 
     payload.update(
         {
