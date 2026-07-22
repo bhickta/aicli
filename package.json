@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "vite --config web/vite.config.ts",
     "build:web": "vite build --config web/vite.config.ts && node web/scripts/write-static-index.mjs",
     "check:web": "vue-tsc --project web/tsconfig.json --noEmit"
   },
