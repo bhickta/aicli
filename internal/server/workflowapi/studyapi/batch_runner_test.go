@@ -52,6 +52,36 @@ func TestResolveStudyBatchRunOptionsUsesLoadedLMStudioModel(t *testing.T) {
 	if gotProvider != p || options.ProviderID != "lms" || options.Model != "qwen-vision-loaded" || options.Parallelism != 1 {
 		t.Fatalf("options = %#v, provider = %#v, want local loaded model and conservative parallelism", options, gotProvider)
 	}
+	if options.OCRModel != options.Model || options.QuestionModel != options.Model || options.ReportModel != options.Model {
+		t.Fatalf("stage models = %#v, want discovered fallback applied consistently", options)
+	}
+}
+
+func TestResolveStudyBatchRunOptionsPreservesStageSpecificModels(t *testing.T) {
+	t.Parallel()
+
+	p := &studyModelProvider{}
+	h := &Handler{runtime: core.New(core.Dependencies{
+		Settings: func() config.Settings { return config.Settings{} },
+		ProviderFor: func(id string) (provider.Provider, bool) {
+			return p, id == "lms"
+		},
+	})}
+
+	options, _, err := h.resolveStudyBatchRunOptions(context.Background(), studyBatchRunOptions{
+		OCRModel:      "unlimited-ocr",
+		QuestionModel: "qwen/qwen3.6-27b",
+		ReportModel:   "qwen/qwen3.6-27b",
+	})
+	if err != nil {
+		t.Fatalf("resolveStudyBatchRunOptions() error = %v", err)
+	}
+	if options.OCRModel != "unlimited-ocr" || options.QuestionModel != "qwen/qwen3.6-27b" || options.ReportModel != "qwen/qwen3.6-27b" {
+		t.Fatalf("options = %#v, want stage-specific local models preserved", options)
+	}
+	if options.Model != "qwen/qwen3.6-27b" {
+		t.Fatalf("batch model = %q, want primary analysis model", options.Model)
+	}
 }
 
 func TestResolveStudyBatchRunOptionsExplainsMissingLMStudioModel(t *testing.T) {

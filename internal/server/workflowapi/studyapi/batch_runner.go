@@ -27,11 +27,16 @@ const (
 )
 
 type studyBatchRunOptions struct {
-	ProviderID  string
-	Model       string
-	Parallelism int
-	ForceOCR    bool
+	ProviderID    string
+	Model         string
+	OCRModel      string
+	QuestionModel string
+	ReportModel   string
+	Parallelism   int
+	ForceOCR      bool
 }
+
+var errStudyOCRPhaseComplete = errors.New("study OCR phase complete")
 
 type studyBatchCopyResult struct {
 	CopyID       string `json:"copy_id"`
@@ -213,6 +218,15 @@ func (h *Handler) analyzeStudyBatchCopy(
 	if err != nil {
 		return studyBatchCopyResult{}, err
 	}
+	if stage == "ocr" {
+		if len(ocrPages) > 0 {
+			return studyBatchCopyResult{CopyID: copyRecord.ID, Status: "ready", CacheHit: true}, nil
+		}
+		if _, err := h.runStudyOCRPhase(ctx, topperStore, jobID, copyRecord, vision, options); err != nil {
+			return studyBatchCopyResult{}, err
+		}
+		return studyBatchCopyResult{CopyID: copyRecord.ID, Status: "ready", APICalls: 1}, nil
+	}
 	result, err := h.runImageAnalysisWithRetry(ctx, topperStore, jobID, copyRecord, vision, options, ocrPages)
 	if err != nil {
 		return studyBatchCopyResult{}, err
@@ -251,6 +265,20 @@ func (h *Handler) runImageAnalysisWithRetry(
 	options studyBatchRunOptions,
 	ocrPages []analyze.Page,
 ) (analyze.Response, error) {
+	if len(ocrPages) == 0 && !sameStudyModel(options.OCRModel, options.QuestionModel) {
+		var err error
+		ocrPages, err = h.runStudyOCRPhase(ctx, topperStore, jobID, copyRecord, vision, options)
+		if err != nil {
+			return analyze.Response{}, err
+		}
+	}
+	if len(ocrPages) > 0 && !sameStudyModel(options.OCRModel, options.QuestionModel) {
+		if unloader, ok := vision.(provider.ModelUnloader); ok {
+			if err := unloader.UnloadModel(ctx, options.OCRModel); err != nil {
+				return analyze.Response{}, fmt.Errorf("unload OCR model %q before analysis: %w", options.OCRModel, err)
+			}
+		}
+	}
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		service := analyze.New(
@@ -266,9 +294,9 @@ func (h *Handler) runImageAnalysisWithRetry(
 		)
 		result, err := service.RunWithProgress(ctx, analyze.Request{
 			Model:           options.Model,
-			OCRModel:        options.Model,
-			QuestionModel:   options.Model,
-			ReportModel:     options.Model,
+			OCRModel:        options.OCRModel,
+			QuestionModel:   options.QuestionModel,
+			ReportModel:     options.ReportModel,
 			Path:            copyRecord.SourcePath,
 			DPI:             defaultStudyBatchDPI,
 			RenderWorkers:   1,
@@ -297,6 +325,49 @@ func (h *Handler) runImageAnalysisWithRetry(
 		}
 	}
 	return analyze.Response{}, lastErr
+}
+
+func (h *Handler) runStudyOCRPhase(
+	ctx context.Context,
+	topperStore studyTopperStore,
+	jobID string,
+	copyRecord storage.StudyCopyRecord,
+	vision provider.Provider,
+	options studyBatchRunOptions,
+) ([]analyze.Page, error) {
+	var pages []analyze.Page
+	service := analyze.New(
+		h.runtime.Settings().Tools,
+		tool.ExecRunner{},
+		vision,
+		analyze.WithArtifactDir(studyBatchArtifactDir(h.runtime.DataDir())),
+		analyze.WithLogger(h.runtime.Logger()),
+		analyze.WithOCRCheckpoint(func(checkpoint analyze.Response) error {
+			if err := h.saveStudyOCRCheckpoint(ctx, topperStore, jobID, copyRecord, options, checkpoint); err != nil {
+				return err
+			}
+			pages = append([]analyze.Page(nil), checkpoint.Pages...)
+			return errStudyOCRPhaseComplete
+		}),
+	)
+	_, err := service.RunWithProgress(ctx, analyze.Request{
+		Model:           options.OCRModel,
+		OCRModel:        options.OCRModel,
+		Path:            copyRecord.SourcePath,
+		DPI:             defaultStudyBatchDPI,
+		RenderWorkers:   1,
+		Workers:         1,
+		OCRBatchSize:    1,
+		OCRInputMode:    analyze.OCRInputModeImages,
+		QuestionSplit:   true,
+		QuestionWorkers: 1,
+		ReviewID:        copyRecord.ID,
+		ForceOCR:        options.ForceOCR,
+	}, nil)
+	if !errors.Is(err, errStudyOCRPhaseComplete) {
+		return nil, err
+	}
+	return pages, nil
 }
 
 func (h *Handler) saveStudyOCRCheckpoint(
@@ -516,6 +587,9 @@ func shouldSkipStudyBatchCopy(copyRecord storage.StudyCopyRecord) bool {
 func normalizedStudyBatchRunOptions(options studyBatchRunOptions) studyBatchRunOptions {
 	options.ProviderID = firstString(options.ProviderID, defaultStudyBatchProviderID)
 	options.Model = strings.TrimSpace(options.Model)
+	options.OCRModel = strings.TrimSpace(options.OCRModel)
+	options.QuestionModel = strings.TrimSpace(options.QuestionModel)
+	options.ReportModel = strings.TrimSpace(options.ReportModel)
 	if options.Parallelism <= 0 {
 		options.Parallelism = defaultStudyBatchParallelism
 	}
@@ -535,6 +609,11 @@ func (h *Handler) resolveStudyBatchRunOptions(
 		return options, nil, core.ErrProviderNotFound
 	}
 	if options.Model != "" {
+		options = fillStudyBatchModels(options, options.Model)
+		return options, p, nil
+	}
+	if model := firstString(options.QuestionModel, options.ReportModel, options.OCRModel); model != "" {
+		options = fillStudyBatchModels(options, model)
 		return options, p, nil
 	}
 	models, err := p.ListModels(ctx)
@@ -546,7 +625,7 @@ func (h *Handler) resolveStudyBatchRunOptions(
 	}
 	for _, model := range models {
 		if modelID := strings.TrimSpace(model.ID); modelID != "" {
-			options.Model = modelID
+			options = fillStudyBatchModels(options, modelID)
 			return options, p, nil
 		}
 	}
@@ -554,6 +633,18 @@ func (h *Handler) resolveStudyBatchRunOptions(
 		return options, nil, errors.New("LM Studio returned no loaded models; load a vision-capable model in LM Studio and retry")
 	}
 	return options, nil, fmt.Errorf("provider %q returned no models; load or select a model and retry", options.ProviderID)
+}
+
+func fillStudyBatchModels(options studyBatchRunOptions, fallback string) studyBatchRunOptions {
+	options.OCRModel = firstString(options.OCRModel, fallback)
+	options.QuestionModel = firstString(options.QuestionModel, fallback)
+	options.ReportModel = firstString(options.ReportModel, options.QuestionModel, fallback)
+	options.Model = firstString(options.Model, options.QuestionModel, options.ReportModel, options.OCRModel, fallback)
+	return options
+}
+
+func sameStudyModel(a string, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
 
 func studyBatchProgressLabel(stage string) string {

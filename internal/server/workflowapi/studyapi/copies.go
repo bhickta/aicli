@@ -309,9 +309,12 @@ func (h *Handler) runStudyCopy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req, ok := core.DecodeJSON[struct {
-		ProviderID string `json:"provider_id"`
-		Model      string `json:"model"`
-		ForceOCR   bool   `json:"force_ocr"`
+		ProviderID    string `json:"provider_id"`
+		Model         string `json:"model"`
+		OCRModel      string `json:"ocr_model"`
+		QuestionModel string `json:"question_model"`
+		ReportModel   string `json:"report_model"`
+		ForceOCR      bool   `json:"force_ocr"`
 	}](w, r)
 	if !ok {
 		return
@@ -322,10 +325,13 @@ func (h *Handler) runStudyCopy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	options := normalizedStudyBatchRunOptions(studyBatchRunOptions{
-		ProviderID:  req.ProviderID,
-		Model:       req.Model,
-		Parallelism: 1,
-		ForceOCR:    req.ForceOCR,
+		ProviderID:    req.ProviderID,
+		Model:         req.Model,
+		OCRModel:      req.OCRModel,
+		QuestionModel: req.QuestionModel,
+		ReportModel:   req.ReportModel,
+		Parallelism:   1,
+		ForceOCR:      req.ForceOCR,
 	})
 	options, _, err := h.resolveStudyBatchRunOptions(r.Context(), options)
 	if err != nil {
@@ -417,12 +423,15 @@ func (h *Handler) startStudyBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req, ok := core.DecodeJSON[struct {
-		CopyIDs     []string `json:"copy_ids"`
-		Stage       string   `json:"stage"`
-		ProviderID  string   `json:"provider_id"`
-		Model       string   `json:"model"`
-		Parallelism int      `json:"parallelism"`
-		ForceOCR    bool     `json:"force_ocr"`
+		CopyIDs       []string `json:"copy_ids"`
+		Stage         string   `json:"stage"`
+		ProviderID    string   `json:"provider_id"`
+		Model         string   `json:"model"`
+		OCRModel      string   `json:"ocr_model"`
+		QuestionModel string   `json:"question_model"`
+		ReportModel   string   `json:"report_model"`
+		Parallelism   int      `json:"parallelism"`
+		ForceOCR      bool     `json:"force_ocr"`
 	}](w, r)
 	if !ok {
 		return
@@ -432,10 +441,13 @@ func (h *Handler) startStudyBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	options := normalizedStudyBatchRunOptions(studyBatchRunOptions{
-		ProviderID:  req.ProviderID,
-		Model:       req.Model,
-		Parallelism: req.Parallelism,
-		ForceOCR:    req.ForceOCR,
+		ProviderID:    req.ProviderID,
+		Model:         req.Model,
+		OCRModel:      req.OCRModel,
+		QuestionModel: req.QuestionModel,
+		ReportModel:   req.ReportModel,
+		Parallelism:   req.Parallelism,
+		ForceOCR:      req.ForceOCR,
 	})
 	options, _, err := h.resolveStudyBatchRunOptions(r.Context(), options)
 	if err != nil {
