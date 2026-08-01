@@ -9,19 +9,27 @@ const props = defineProps<{
 const metrics = computed(() => {
   const quality = props.quality;
   if (!quality) return [];
-  return [
+  const values = [
     { label: "Page classification", value: boundedPercent(quality.classification_coverage_percent) },
     { label: "Classification confidence", value: boundedPercent(quality.average_classification_confidence * 100) },
     { label: "OCR reliability assessed", value: boundedPercent(quality.ocr_assessment_coverage_percent) },
-    { label: "OCR model confidence", value: boundedPercent(quality.average_ocr_confidence * 100) },
+    { label: "Average OCR confidence", value: boundedPercent(quality.average_ocr_confidence * 100) },
     { label: "Exact prompt matching", value: boundedPercent(quality.prompt_match_percent) },
     { label: "Structured analysis", value: boundedPercent(quality.analysis_coverage_percent) },
     { label: "Evidence-backed analysis", value: boundedPercent(quality.evidence_coverage_percent) },
   ];
+  if (typeof quality.minimum_ocr_confidence === "number") {
+    values.splice(4, 0, {
+      label: "Lowest page OCR confidence",
+      value: boundedPercent(quality.minimum_ocr_confidence * 100),
+    });
+  }
+  return values;
 });
 
 const overallCoverage = computed(() => boundedPercent(props.quality?.overall_coverage_percent || 0));
 const unclearPercent = computed(() => Math.max(0, Number(props.quality?.ocr_unclear_percent) || 0).toFixed(2));
+const ocrReviewPages = computed(() => props.quality?.ocr_review_pages || []);
 
 function boundedPercent(value: number) {
   return Math.round(Math.min(100, Math.max(0, Number(value) || 0)));
@@ -50,6 +58,10 @@ function boundedPercent(value: number) {
         <p>Share of extracted words marked unclear</p>
       </div>
     </div>
+
+    <p v-if="ocrReviewPages.length" class="quality-review-pages">
+      <strong>Verify OCR pages:</strong> {{ ocrReviewPages.join(", ") }}
+    </p>
 
     <ul v-if="quality.warnings?.length" class="quality-warnings">
       <li v-for="warning in quality.warnings" :key="warning">{{ warning }}</li>
@@ -100,6 +112,12 @@ function boundedPercent(value: number) {
 .quality-header > strong {
   color: #7dd3fc;
   font-size: 1.2rem;
+}
+
+.quality-review-pages {
+  color: #fbbf24;
+  font-size: 0.75rem;
+  margin: 0;
 }
 
 .quality-grid {

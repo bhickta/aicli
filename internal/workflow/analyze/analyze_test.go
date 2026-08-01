@@ -906,11 +906,75 @@ func TestAnalysisQualityReportsCoverageWithoutClaimingAccuracy(t *testing.T) {
 	if quality.OCRAssessmentCoveragePercent != 100 || quality.AverageOCRConfidence != 0.7 {
 		t.Fatalf("OCR quality = %#v, want independently assessed semantic confidence", quality)
 	}
+	if quality.MinimumOCRConfidence != 0.5 || !slices.Equal(quality.OCRReviewPages, []int{2}) {
+		t.Fatalf("OCR review details = %#v, want the weakest page identified", quality)
+	}
 	if quality.PromptMatchPercent != 50 || quality.AnalysisCoveragePercent != 100 || quality.EvidenceCoveragePercent != 50 {
 		t.Fatalf("analysis quality = %#v, want independently reported coverage metrics", quality)
 	}
 	if !quality.RequiresReview || len(quality.Warnings) == 0 {
 		t.Fatalf("quality = %#v, want review warning for incomplete prompt/evidence coverage", quality)
+	}
+}
+
+func TestAnalysisQualityDoesNotLetAverageHideUnreliableOCRPages(t *testing.T) {
+	t.Parallel()
+
+	highConfidence := 0.98
+	lowConfidence := 0.1
+	tests := []struct {
+		name               string
+		pages              []Page
+		want               []int
+		averageAppearsSafe bool
+	}{
+		{
+			name: "one low confidence page",
+			pages: []Page{
+				{Number: 1, Kind: "answer", KindConfidence: 0.95, OCRConfidence: &highConfidence, Text: "clear"},
+				{Number: 2, Kind: "answer", KindConfidence: 0.95, OCRConfidence: &lowConfidence, Text: "damaged"},
+				{Number: 3, Kind: "answer", KindConfidence: 0.95, OCRConfidence: &highConfidence, Text: "clear"},
+				{Number: 4, Kind: "answer", KindConfidence: 0.95, OCRConfidence: &highConfidence, Text: "clear"},
+			},
+			want:               []int{2},
+			averageAppearsSafe: true,
+		},
+		{
+			name: "reported issue despite high confidence",
+			pages: []Page{
+				{
+					Number:         4,
+					Kind:           "answer",
+					KindConfidence: 0.95,
+					OCRConfidence:  &highConfidence,
+					OCRIssues:      []string{"A portion of the answer is unreadable"},
+					Text:           "partially reliable",
+				},
+			},
+			want: []int{4},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			quality := analysisQuality(tt.pages, []Question{{
+				Title: "Exact prompt",
+				Dimensions: &QuestionDimensions{
+					Strengths: []AnalysisPoint{{Point: "Relevant", Evidence: "Direct answer"}},
+				},
+			}})
+			if !quality.RequiresReview || !slices.Equal(quality.OCRReviewPages, tt.want) {
+				t.Fatalf("quality = %#v, want OCR review pages %v", quality, tt.want)
+			}
+			if tt.averageAppearsSafe && quality.AverageOCRConfidence < 0.7 {
+				t.Fatalf("average OCR confidence = %v, test must exercise a deceptively safe average", quality.AverageOCRConfidence)
+			}
+			if !strings.Contains(strings.Join(quality.Warnings, " "), "model-reported OCR issues") {
+				t.Fatalf("warnings = %#v, want explicit OCR reliability warning", quality.Warnings)
+			}
+		})
 	}
 }
 

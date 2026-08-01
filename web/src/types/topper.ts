@@ -66,6 +66,8 @@ export interface AnalysisQuality {
   average_classification_confidence: number;
   ocr_assessment_coverage_percent: number;
   average_ocr_confidence: number;
+  minimum_ocr_confidence?: number;
+  ocr_review_pages?: number[];
   prompt_match_percent: number;
   analysis_coverage_percent: number;
   evidence_coverage_percent: number;

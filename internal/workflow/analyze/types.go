@@ -122,6 +122,8 @@ type AnalysisQuality struct {
 	AverageClassificationConfidence float64  `json:"average_classification_confidence"`
 	OCRAssessmentCoveragePercent    int      `json:"ocr_assessment_coverage_percent"`
 	AverageOCRConfidence            float64  `json:"average_ocr_confidence"`
+	MinimumOCRConfidence            float64  `json:"minimum_ocr_confidence"`
+	OCRReviewPages                  []int    `json:"ocr_review_pages"`
 	PromptMatchPercent              int      `json:"prompt_match_percent"`
 	AnalysisCoveragePercent         int      `json:"analysis_coverage_percent"`
 	EvidenceCoveragePercent         int      `json:"evidence_coverage_percent"`
