@@ -569,12 +569,18 @@ func TestOpenAICompatibleDocumentUsesGeminiGenerateContent(t *testing.T) {
 			Contents []struct {
 				Parts []map[string]any `json:"parts"`
 			} `json:"contents"`
+			GenerationConfig struct {
+				ResponseMIMEType string `json:"responseMimeType"`
+			} `json:"generationConfig"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
 		if len(body.Contents) != 1 || len(body.Contents[0].Parts) != 2 {
 			t.Fatalf("body = %#v, want prompt and PDF parts", body)
+		}
+		if body.GenerationConfig.ResponseMIMEType != "application/json" {
+			t.Fatalf("responseMimeType = %q, want application/json", body.GenerationConfig.ResponseMIMEType)
 		}
 		w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}`))
 	}))
@@ -586,10 +592,11 @@ func TestOpenAICompatibleDocumentUsesGeminiGenerateContent(t *testing.T) {
 		APIKey:  "key",
 	}, srv.Client())
 	res, err := p.Document(context.Background(), provider.DocumentRequest{
-		Model:    "gemini-2.5-flash",
-		Prompt:   "analyze",
-		Data:     []byte("%PDF"),
-		MIMEType: "application/pdf",
+		Model:            "gemini-2.5-flash",
+		Prompt:           "analyze",
+		Data:             []byte("%PDF"),
+		MIMEType:         "application/pdf",
+		ResponseMIMEType: "application/json",
 	})
 	if err != nil {
 		t.Fatalf("Document() error = %v", err)

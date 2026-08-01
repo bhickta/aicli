@@ -49,12 +49,13 @@ func (s *Service) directPDFReview(ctx context.Context, req Request, reviewID str
 	var lastErr error
 	for attempt, prompt := range prompts {
 		res, err := processor.Document(ctx, provider.DocumentRequest{
-			Model:       model,
-			Prompt:      prompt,
-			Data:        data,
-			MIMEType:    "application/pdf",
-			Temperature: 0,
-			MaxTokens:   geminiLiteDirectPDFMaxTokens,
+			Model:            model,
+			Prompt:           prompt,
+			Data:             data,
+			MIMEType:         "application/pdf",
+			ResponseMIMEType: "application/json",
+			Temperature:      0,
+			MaxTokens:        geminiLiteDirectPDFMaxTokens,
 		})
 		usage = addTokenUsage(usage, res.Usage)
 		if err != nil {

@@ -96,12 +96,13 @@ type VisionImage struct {
 }
 
 type DocumentRequest struct {
-	Model       string  `json:"model"`
-	Prompt      string  `json:"prompt"`
-	Data        []byte  `json:"-"`
-	MIMEType    string  `json:"mime_type"`
-	Temperature float64 `json:"temperature"`
-	MaxTokens   int     `json:"max_tokens"`
+	Model            string  `json:"model"`
+	Prompt           string  `json:"prompt"`
+	Data             []byte  `json:"-"`
+	MIMEType         string  `json:"mime_type"`
+	ResponseMIMEType string  `json:"response_mime_type,omitempty"`
+	Temperature      float64 `json:"temperature"`
+	MaxTokens        int     `json:"max_tokens"`
 }
 
 type DocumentResponse struct {

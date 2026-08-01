@@ -31,6 +31,7 @@ type fakeProvider struct {
 	documentContent   string
 	documentResponses []string
 	documentPrompt    string
+	documentRequest   provider.DocumentRequest
 	documentCalls     int
 	documentReason    string
 	chatPrompt        string
@@ -90,6 +91,7 @@ func (p *fakeProvider) Vision(_ context.Context, req provider.VisionRequest) (pr
 }
 func (p *fakeProvider) Document(_ context.Context, req provider.DocumentRequest) (provider.DocumentResponse, error) {
 	p.documentPrompt = req.Prompt
+	p.documentRequest = req
 	p.documentCalls++
 	if len(p.documentResponses) > 0 {
 		content := p.documentResponses[0]
@@ -238,6 +240,9 @@ func TestRunAnalyzeDirectPDFUsesGeminiDocumentOnly(t *testing.T) {
 	}
 	if provider.documentCalls != 1 || provider.visionCalls != 0 || len(provider.chatPrompts) != 0 {
 		t.Fatalf("calls: document=%d vision=%d chat=%d, want document only", provider.documentCalls, provider.visionCalls, len(provider.chatPrompts))
+	}
+	if provider.documentRequest.ResponseMIMEType != "application/json" {
+		t.Fatalf("response MIME type = %q, want application/json", provider.documentRequest.ResponseMIMEType)
 	}
 	if res.SourceMode != OCRInputModePDFDirect || res.Report != "final report" || len(res.Questions) != 1 {
 		t.Fatalf("response = %#v, want direct PDF review", res)

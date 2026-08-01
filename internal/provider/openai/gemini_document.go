@@ -50,6 +50,9 @@ func (p *OpenAICompatible) Document(ctx context.Context, req provider.DocumentRe
 	if req.MaxTokens > 0 {
 		body["generationConfig"].(map[string]any)["maxOutputTokens"] = req.MaxTokens
 	}
+	if responseMIMEType := strings.TrimSpace(req.ResponseMIMEType); responseMIMEType != "" {
+		body["generationConfig"].(map[string]any)["responseMimeType"] = responseMIMEType
+	}
 	data, err := json.Marshal(body)
 	if err != nil {
 		return provider.DocumentResponse{}, err

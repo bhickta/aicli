@@ -105,12 +105,13 @@ func runStudyMetadataModel(
 ) (string, *provider.TokenUsage, error) {
 	if doc, ok := llm.(provider.DocumentProcessor); ok && strings.EqualFold(strings.TrimSpace(llm.ID()), "gemini") {
 		response, err := doc.Document(ctx, provider.DocumentRequest{
-			Model:       options.Model,
-			Prompt:      studyMetadataInstruction() + "\n\nInput JSON is attached as text/plain.",
-			Data:        []byte(studyMetadataInputJSON(input)),
-			MIMEType:    "text/plain",
-			Temperature: 0,
-			MaxTokens:   6000,
+			Model:            options.Model,
+			Prompt:           studyMetadataInstruction() + "\n\nInput JSON is attached as text/plain.",
+			Data:             []byte(studyMetadataInputJSON(input)),
+			MIMEType:         "text/plain",
+			ResponseMIMEType: "application/json",
+			Temperature:      0,
+			MaxTokens:        6000,
 		})
 		if err != nil {
 			return "", nil, err
