@@ -3,6 +3,7 @@ package document
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -10,7 +11,7 @@ import (
 	"github.com/bhickta/aicli/internal/tool"
 )
 
-func pdfPageCount(ctx context.Context, runner tool.Runner, pdfToPPM string, pdfPath string) (int, error) {
+func PDFPageCount(ctx context.Context, runner tool.Runner, pdfToPPM string, pdfPath string) (int, error) {
 	out, err := runner.CombinedOutput(ctx, pdfInfoCommand(pdfToPPM), pdfPath)
 	if err != nil {
 		return 0, err
@@ -29,6 +30,30 @@ func pdfPageCount(ctx context.Context, runner tool.Runner, pdfToPPM string, pdfP
 		}
 	}
 	return 0, errors.New("pdf page count not found")
+}
+
+func SplitPDFRange(ctx context.Context, runner tool.Runner, qpdf string, sourcePath string, outputPath string, firstPage int, lastPage int) error {
+	if firstPage <= 0 || lastPage < firstPage {
+		return fmt.Errorf("invalid PDF page range %d-%d", firstPage, lastPage)
+	}
+	qpdf = strings.TrimSpace(qpdf)
+	if qpdf == "" {
+		qpdf = "qpdf"
+	}
+	out, err := runner.CombinedOutput(
+		ctx,
+		qpdf,
+		sourcePath,
+		"--pages",
+		".",
+		fmt.Sprintf("%d-%d", firstPage, lastPage),
+		"--",
+		outputPath,
+	)
+	if err != nil {
+		return fmt.Errorf("split PDF pages %d-%d: %w: %s", firstPage, lastPage, err, tool.LimitedOutput(out, 2000))
+	}
+	return nil
 }
 
 func pdfInfoCommand(pdfToPPM string) string {

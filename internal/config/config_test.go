@@ -26,6 +26,9 @@ func TestLoadCreatesDefaultSettings(t *testing.T) {
 	if !hasProvider(settings.Providers, "vllm") {
 		t.Fatalf("default settings missing vllm provider: %#v", settings.Providers)
 	}
+	if settings.Tools.QPDF != "qpdf" {
+		t.Fatalf("QPDF = %q, want qpdf", settings.Tools.QPDF)
+	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("settings file was not created: %v", err)
 	}

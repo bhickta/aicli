@@ -34,7 +34,7 @@ func RenderPDFToImages(ctx context.Context, tools config.ToolConfig, runner tool
 	}
 
 	prefix := filepath.Join(workDir, "page")
-	pages, countErr := pdfPageCount(ctx, runner, tools.PDFToPPM, pdfPath)
+	pages, countErr := PDFPageCount(ctx, runner, tools.PDFToPPM, pdfPath)
 	if countErr == nil && pages > 1 && workers != 1 {
 		images, err := renderPDFPagesParallel(ctx, tools, runner, pdfPath, prefix, dpi, pages, workers)
 		if err != nil {

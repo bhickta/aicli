@@ -36,6 +36,7 @@ type ToolConfig struct {
 	FFmpeg     string `json:"ffmpeg"`
 	FFprobe    string `json:"ffprobe"`
 	PDFToPPM   string `json:"pdftoppm"`
+	QPDF       string `json:"qpdf"`
 	WhisperCLI string `json:"whisper_cli"`
 	CodexCLI   string `json:"codex_cli"`
 	GeminiCLI  string `json:"gemini_cli"`
@@ -124,6 +125,7 @@ func DefaultSettings() Settings {
 			FFmpeg:     "ffmpeg",
 			FFprobe:    "ffprobe",
 			PDFToPPM:   "pdftoppm",
+			QPDF:       "qpdf",
 			WhisperCLI: "whisper",
 			CodexCLI:   "codex",
 			GeminiCLI:  "gemini",
@@ -196,6 +198,9 @@ func withDefaults(settings Settings) Settings {
 	}
 	if settings.Tools.PDFToPPM == "" {
 		settings.Tools.PDFToPPM = defaults.Tools.PDFToPPM
+	}
+	if settings.Tools.QPDF == "" {
+		settings.Tools.QPDF = defaults.Tools.QPDF
 	}
 	if settings.Tools.WhisperCLI == "" {
 		settings.Tools.WhisperCLI = defaults.Tools.WhisperCLI
