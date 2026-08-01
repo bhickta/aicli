@@ -38,6 +38,15 @@ type answerBoundaryDecisionPayload struct {
 	Reason             *string  `json:"reason"`
 }
 
+type answerBoundaryRequestError struct {
+	err error
+}
+
+func (e *answerBoundaryRequestError) Error() string {
+	return fmt.Sprintf("request answer-boundary ledger: %v", e.err)
+}
+func (e *answerBoundaryRequestError) Unwrap() error { return e.err }
+
 func (s *Service) groupAnswerPages(
 	ctx context.Context,
 	model string,
@@ -46,6 +55,18 @@ func (s *Service) groupAnswerPages(
 	if len(pages) == 0 {
 		return []Question{}, nil
 	}
+	ledger, err := s.requestAnswerBoundaryLedger(ctx, model, pages)
+	if err != nil {
+		return nil, err
+	}
+	return questionsFromBoundaryLedger(pages, ledger)
+}
+
+func (s *Service) requestAnswerBoundaryLedger(
+	ctx context.Context,
+	model string,
+	pages []Page,
+) (answerBoundaryLedger, error) {
 	res, err := s.questionProvider.Chat(ctx, provider.ChatRequest{
 		Model: model,
 		Messages: []provider.Message{
@@ -59,13 +80,13 @@ func (s *Service) groupAnswerPages(
 		ResponseSchema: answerBoundaryLedgerJSONSchema(),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("request answer-boundary ledger: %w", err)
+		return answerBoundaryLedger{}, &answerBoundaryRequestError{err: err}
 	}
 	ledger, err := parseAnswerBoundaryLedger(res.Content)
 	if err != nil {
-		return nil, err
+		return answerBoundaryLedger{}, err
 	}
-	return questionsFromBoundaryLedger(pages, ledger)
+	return ledger, nil
 }
 
 func parseAnswerBoundaryLedger(content string) (answerBoundaryLedger, error) {
