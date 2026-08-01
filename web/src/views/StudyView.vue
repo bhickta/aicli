@@ -16,6 +16,8 @@ const {
   copies,
   selected,
   selectedIds,
+  batchProviderId,
+  batchModel,
   batchParallelism,
   forceRerun,
   running,
@@ -67,6 +69,8 @@ async function refreshActiveCopy() {
     <main class="study-workspace">
       <StudySidebar
         v-model:query="query"
+        v-model:provider-id="batchProviderId"
+        v-model:model="batchModel"
         v-model:parallelism="batchParallelism"
         v-model:force-rerun="forceRerun"
         :summary="summary"

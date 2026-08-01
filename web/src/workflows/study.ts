@@ -2,7 +2,9 @@ import type { WorkflowDefinition } from "../types";
 import { providerModelField, providerModelPayload } from "./builders";
 
 const topperCopyFields: WorkflowDefinition["fields"] = [
-  { type: "stepProviderModel", id: "ocr", label: "Gemini-Lite PDF model" },
+  { type: "stepProviderModel", id: "ocr", label: "LM Studio vision / OCR model", providerIds: ["lms"] },
+  { type: "stepProviderModel", id: "question", label: "LM Studio answer-analysis model", providerIds: ["lms"] },
+  { type: "stepProviderModel", id: "report", label: "LM Studio final-report model", providerIds: ["lms"] },
   { type: "path", id: "path", label: "Topper copy PDF" },
   { type: "checkbox", id: "force_ocr", label: "Bypass cache", checked: false },
 ];
@@ -14,14 +16,19 @@ function topperCopyPayload(values: Record<string, unknown>) {
     model: values.ocr_model,
     ocr_provider_id: values.ocr_provider_id,
     ocr_model: values.ocr_model,
-    question_provider_id: values.ocr_provider_id,
-    question_model: values.ocr_model,
-    report_provider_id: values.ocr_provider_id,
-    report_model: values.ocr_model,
+    question_provider_id: values.question_provider_id,
+    question_model: values.question_model,
+    report_provider_id: values.report_provider_id,
+    report_model: values.report_model,
     path: values.path,
-    ocr_input_mode: "pdf_direct",
+    dpi: 220,
+    render_workers: 1,
+    workers: 1,
+    ocr_batch_size: 1,
+    ocr_input_mode: "images",
     force_ocr: values.force_ocr === true,
-    question_split: false,
+    question_split: true,
+    question_workers: 1,
     unload_models: false,
   };
 }
@@ -84,8 +91,7 @@ export const studyWorkflowDefinitions: WorkflowDefinition[] = [
     category: "Study",
     label: "Topper copy analysis",
     endpoint: "/api/workflows/analyze/run",
-    preferredProviderId: "gemini",
-    preferredModel: "models/gemini-flash-lite-latest",
+    preferredProviderId: "lms",
     fields: topperCopyFields,
     buildPayload: topperCopyPayload,
   },

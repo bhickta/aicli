@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import ProviderModelControl from "../ProviderModelControl.vue";
 import type { ProviderModelSelection } from "../../composables/useWorkflowForm";
+import { providers } from "../../stores/appState";
 import type { WorkflowField as WorkflowFieldType } from "../../types";
 import WorkflowField from "./WorkflowField.vue";
 
@@ -37,6 +38,12 @@ function updateStepProviderModel(field: WorkflowFieldType, value: ProviderModelS
   if (!field.id) return;
   emit("updateField", field.id + "_provider_id", value.provider_id);
   emit("updateField", field.id + "_model", value.model);
+}
+
+function stepProviderOptions(field: WorkflowFieldType) {
+  if (!field.providerIds) return undefined;
+  const allowed = new Set(field.providerIds);
+  return providers.value.filter((provider) => allowed.has(provider.id));
 }
 
 function isFieldVisible(field: WorkflowFieldType) {
@@ -81,6 +88,7 @@ function isFieldVisible(field: WorkflowFieldType) {
         <ProviderModelControl
           :provider-id="stepProviderID(field)"
           :model="stepModel(field)"
+          :provider-options="stepProviderOptions(field)"
           @change="updateStepProviderModel(field, $event)"
         />
       </div>

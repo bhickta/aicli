@@ -10,6 +10,8 @@ defineProps<{
   copies: StudyCopyRecord[];
   activeId: string;
   selectedIds: string[];
+  providerId: string;
+  model: string;
   parallelism: number;
   forceRerun: boolean;
   running: boolean;
@@ -17,6 +19,8 @@ defineProps<{
 
 const emit = defineEmits<{
   "update:query": [value: string];
+  "update:providerId": [value: string];
+  "update:model": [value: string];
   "update:parallelism": [value: number];
   "update:forceRerun": [value: boolean];
   search: [];
@@ -43,9 +47,13 @@ const emit = defineEmits<{
     <p class="study-summary">{{ summary }} · {{ status }}</p>
     <StudyBatchControls
       :selected-count="selectedIds.length"
+      :provider-id="providerId"
+      :model="model"
       :parallelism="parallelism"
       :force-rerun="forceRerun"
       :running="running"
+      @update:provider-id="emit('update:providerId', $event)"
+      @update:model="emit('update:model', $event)"
       @update:parallelism="emit('update:parallelism', $event)"
       @update:force-rerun="emit('update:forceRerun', $event)"
       @run-selected="emit('runSelected')"

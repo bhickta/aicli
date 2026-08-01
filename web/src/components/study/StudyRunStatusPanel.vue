@@ -62,7 +62,7 @@ async function copyText(text: string) {
       <span :style="{ width: `${progressPercent}%` }"></span>
     </div>
     <p v-if="batch" class="study-run-meta">
-      {{ batch.model || "Gemini Flash-Lite" }} · {{ batch.parallelism || 1 }} parallel ·
+      {{ batch.model || "LM Studio loaded model" }} · {{ batch.parallelism || 1 }} parallel ·
       {{ batch.force_rerun ? "rerun" : "cache-aware" }}
     </p>
     <div v-if="failedItems.length" class="study-run-failure">

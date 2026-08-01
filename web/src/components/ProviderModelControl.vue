@@ -20,9 +20,11 @@ const emit = defineEmits<{
 }>();
 
 const selectedProvider = shallowRef(props.providerId || defaultProviderId.value);
-const availableProviders = computed(() => props.providerOptions?.length ? props.providerOptions : providers.value);
+const availableProviders = computed(() => props.providerOptions !== undefined ? props.providerOptions : providers.value);
 const selectedProviderConfig = computed(() => availableProviders.value.find((provider) => provider.id === selectedProvider.value));
-const providerDefaultModel = computed(() => selectedProviderConfig.value?.model || defaultModel.value || "");
+const providerDefaultModel = computed(() => selectedProviderConfig.value?.model
+  || (selectedProvider.value === defaultProviderId.value ? defaultModel.value : "")
+  || "");
 const selectedModel = shallowRef(props.model || providerDefaultModel.value);
 const status = shallowRef("");
 const loading = shallowRef(false);

@@ -14,6 +14,8 @@ interface StudyState {
   selectedIds: string[];
   importPath: string;
   importFolder: string;
+  batchProviderId: string;
+  batchModel: string;
   batchParallelism: number;
   forceRerun: boolean;
   running: boolean;
@@ -33,7 +35,9 @@ export const useStudyStore = defineStore("study", {
     selectedIds: [],
     importPath: "",
     importFolder: "",
-    batchParallelism: 2,
+    batchProviderId: "lms",
+    batchModel: "",
+    batchParallelism: 1,
     forceRerun: false,
     running: false,
     runStatus: "",
@@ -111,6 +115,8 @@ export const useStudyStore = defineStore("study", {
       await this.startRun("/api/study/batches", {
         copy_ids: this.selectedIds,
         stage,
+        provider_id: this.batchProviderId,
+        model: this.batchModel,
         parallelism: this.batchParallelism,
         force_ocr: this.forceRerun,
       }, `Starting ${this.selectedIds.length} ${action}...`);
@@ -118,6 +124,8 @@ export const useStudyStore = defineStore("study", {
 
     async runCopy(copyId: string) {
       await this.startRun(`/api/study/copies/${encodeURIComponent(copyId)}/run`, {
+        provider_id: this.batchProviderId,
+        model: this.batchModel,
         force_ocr: this.forceRerun,
       }, "Starting PDF analysis...");
     },

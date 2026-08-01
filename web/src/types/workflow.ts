@@ -10,6 +10,7 @@ export interface WorkflowField {
   max?: number;
   checked?: boolean;
   picker?: "directory";
+  providerIds?: string[];
   options?: Array<{ value: string; label: string }>;
 }
 
