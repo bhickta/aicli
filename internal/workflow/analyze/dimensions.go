@@ -71,8 +71,9 @@ func (s *Service) extractDimensions(
 						Content: questionDimensionsPrompt(question),
 					},
 				},
-				Temperature: 0,
-				MaxTokens:   3200,
+				Temperature:    0,
+				MaxTokens:      3200,
+				ResponseSchema: questionDimensionsJSONSchema(),
 			})
 			if err != nil {
 				s.logWarn("failed to extract question analysis", "question", question.Label, "error", err)

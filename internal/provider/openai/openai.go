@@ -101,6 +101,12 @@ func (p *OpenAICompatible) Chat(ctx context.Context, req provider.ChatRequest) (
 	if req.MaxTokens > 0 {
 		body["max_tokens"] = req.MaxTokens
 	}
+	if req.ResponseSchema != nil {
+		body["response_format"] = map[string]any{
+			"type":        "json_schema",
+			"json_schema": req.ResponseSchema,
+		}
+	}
 	applyPromptCacheOptions(body, req, p.cfg, false, model)
 	return p.chatRaw(ctx, body)
 }

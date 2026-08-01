@@ -15,14 +15,22 @@ type Message struct {
 }
 
 type ChatRequest struct {
-	Model                string    `json:"model"`
-	Messages             []Message `json:"messages"`
-	Temperature          float64   `json:"temperature"`
-	MaxTokens            int       `json:"max_tokens"`
-	ReasoningEffort      string    `json:"reasoning_effort,omitempty"`
-	TextVerbosity        string    `json:"text_verbosity,omitempty"`
-	PromptCacheKey       string    `json:"prompt_cache_key,omitempty"`
-	PromptCacheRetention string    `json:"prompt_cache_retention,omitempty"`
+	Model                string      `json:"model"`
+	Messages             []Message   `json:"messages"`
+	Temperature          float64     `json:"temperature"`
+	MaxTokens            int         `json:"max_tokens"`
+	ReasoningEffort      string      `json:"reasoning_effort,omitempty"`
+	TextVerbosity        string      `json:"text_verbosity,omitempty"`
+	PromptCacheKey       string      `json:"prompt_cache_key,omitempty"`
+	PromptCacheRetention string      `json:"prompt_cache_retention,omitempty"`
+	ResponseSchema       *JSONSchema `json:"-"`
+}
+
+type JSONSchema struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Strict      bool           `json:"strict"`
+	Schema      map[string]any `json:"schema"`
 }
 
 type ChatResponse struct {

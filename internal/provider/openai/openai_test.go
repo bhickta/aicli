@@ -373,6 +373,55 @@ func TestOpenAICompatibleChatPreservesFinishReason(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleChatSendsJSONSchemaResponseFormat(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ResponseFormat struct {
+				Type       string              `json:"type"`
+				JSONSchema provider.JSONSchema `json:"json_schema"`
+			} `json:"response_format"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.ResponseFormat.Type != "json_schema" {
+			t.Fatalf("response format type = %q, want json_schema", body.ResponseFormat.Type)
+		}
+		if body.ResponseFormat.JSONSchema.Name != "answer" || !body.ResponseFormat.JSONSchema.Strict {
+			t.Fatalf("json schema = %#v, want named strict schema", body.ResponseFormat.JSONSchema)
+		}
+		properties, ok := body.ResponseFormat.JSONSchema.Schema["properties"].(map[string]any)
+		if !ok || properties["label"] == nil {
+			t.Fatalf("schema properties = %#v, want label", body.ResponseFormat.JSONSchema.Schema)
+		}
+		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{\"label\":\"Q1\"}"}}]}`))
+	}))
+	defer srv.Close()
+
+	p := NewCompatible(config.ProviderConfig{ID: "lms", BaseURL: srv.URL + "/v1", Model: "model"}, srv.Client())
+	res, err := p.Chat(context.Background(), provider.ChatRequest{
+		Messages: []provider.Message{{Role: "user", Content: "classify"}},
+		ResponseSchema: &provider.JSONSchema{
+			Name:   "answer",
+			Strict: true,
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"label": map[string]any{"type": "string"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if res.Content != `{"label":"Q1"}` {
+		t.Fatalf("content = %q, want constrained JSON", res.Content)
+	}
+}
+
 func TestOpenAICompatibleVisionSendsMultipleImages(t *testing.T) {
 	t.Parallel()
 

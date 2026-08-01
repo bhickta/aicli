@@ -157,7 +157,7 @@ func (p *Ollama) chatRequest(ctx context.Context, data []byte) (*http.Request, e
 }
 
 func ollamaChatBody(model string, req provider.ChatRequest, stream bool) map[string]any {
-	return map[string]any{
+	body := map[string]any{
 		"model":    model,
 		"messages": req.Messages,
 		"stream":   stream,
@@ -165,4 +165,8 @@ func ollamaChatBody(model string, req provider.ChatRequest, stream bool) map[str
 			"temperature": req.Temperature,
 		},
 	}
+	if req.ResponseSchema != nil {
+		body["format"] = req.ResponseSchema.Schema
+	}
+	return body
 }

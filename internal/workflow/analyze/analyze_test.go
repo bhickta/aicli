@@ -35,6 +35,7 @@ type fakeProvider struct {
 	chatPrompt        string
 	chatPrompts       []string
 	chatResponses     []string
+	chatSchemas       []*provider.JSONSchema
 	chatErr           error
 }
 
@@ -62,6 +63,7 @@ func (p *fakeProvider) Chat(_ context.Context, req provider.ChatRequest) (provid
 		p.chatPrompt = req.Messages[0].Content
 		p.chatPrompts = append(p.chatPrompts, req.Messages[0].Content)
 	}
+	p.chatSchemas = append(p.chatSchemas, req.ResponseSchema)
 	if p.chatErr != nil {
 		return provider.ChatResponse{}, p.chatErr
 	}
@@ -591,6 +593,11 @@ func TestSplitPageQuestionsRetriesMalformedSemanticResponse(t *testing.T) {
 	}
 	if len(provider.chatPrompts) != 2 || !strings.Contains(provider.chatPrompts[1], "Retry the semantic classification") {
 		t.Fatalf("prompts = %#v, want one focused model retry", provider.chatPrompts)
+	}
+	for index, schema := range provider.chatSchemas {
+		if schema == nil || schema.Name != "topper_copy_page" || !schema.Strict {
+			t.Fatalf("schema %d = %#v, want strict page output contract", index, schema)
+		}
 	}
 	if result.Classification.Kind != "question_paper" || len(result.PrintedQuestions) != 1 {
 		t.Fatalf("result = %#v, want recovered question-paper ledger", result)

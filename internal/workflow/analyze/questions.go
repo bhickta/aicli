@@ -301,8 +301,9 @@ func (s *Service) requestPageQuestionSplit(
 				Content: prompt,
 			},
 		},
-		Temperature: 0,
-		MaxTokens:   3000,
+		Temperature:    0,
+		MaxTokens:      3000,
+		ResponseSchema: pageQuestionSplitJSONSchema(),
 	})
 	if err != nil {
 		return pageQuestionSplit{}, &questionSplitRequestError{err: err}

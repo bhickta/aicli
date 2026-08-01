@@ -70,8 +70,21 @@ func (p *OpenAICompatible) responsesBody(model string, req provider.ChatRequest)
 	if effort := textutil.FirstNonBlank(req.ReasoningEffort, p.cfg.ReasoningEffort); effort != "" {
 		body["reasoning"] = map[string]any{"effort": effort}
 	}
+	textOptions := map[string]any{}
 	if verbosity := textutil.FirstNonBlank(req.TextVerbosity, p.cfg.TextVerbosity); verbosity != "" {
-		body["text"] = map[string]any{"verbosity": verbosity}
+		textOptions["verbosity"] = verbosity
+	}
+	if schema := req.ResponseSchema; schema != nil {
+		textOptions["format"] = map[string]any{
+			"type":        "json_schema",
+			"name":        schema.Name,
+			"description": schema.Description,
+			"strict":      schema.Strict,
+			"schema":      schema.Schema,
+		}
+	}
+	if len(textOptions) > 0 {
+		body["text"] = textOptions
 	}
 	if cacheKey := textutil.FirstNonBlank(req.PromptCacheKey, p.cfg.PromptCacheKey, defaultPromptCacheKey(p.cfg.ID, model)); cacheKey != "" {
 		body["prompt_cache_key"] = cacheKey
