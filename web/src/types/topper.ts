@@ -9,6 +9,8 @@ export interface TopperCopyPage {
   kind?: "answer" | "question_paper" | "cover" | "index" | "evaluation" | "blank" | "other" | "unknown" | string;
   kind_confidence?: number;
   classification_reason?: string;
+  ocr_confidence?: number;
+  ocr_issues?: string[];
 }
 
 export interface QuestionDimensions {
@@ -62,6 +64,8 @@ export interface QuestionScorecard {
 export interface AnalysisQuality {
   classification_coverage_percent: number;
   average_classification_confidence: number;
+  ocr_assessment_coverage_percent: number;
+  average_ocr_confidence: number;
   prompt_match_percent: number;
   analysis_coverage_percent: number;
   evidence_coverage_percent: number;

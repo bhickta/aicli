@@ -12,6 +12,8 @@ const metrics = computed(() => {
   return [
     { label: "Page classification", value: boundedPercent(quality.classification_coverage_percent) },
     { label: "Classification confidence", value: boundedPercent(quality.average_classification_confidence * 100) },
+    { label: "OCR reliability assessed", value: boundedPercent(quality.ocr_assessment_coverage_percent) },
+    { label: "OCR model confidence", value: boundedPercent(quality.average_ocr_confidence * 100) },
     { label: "Exact prompt matching", value: boundedPercent(quality.prompt_match_percent) },
     { label: "Structured analysis", value: boundedPercent(quality.analysis_coverage_percent) },
     { label: "Evidence-backed analysis", value: boundedPercent(quality.evidence_coverage_percent) },

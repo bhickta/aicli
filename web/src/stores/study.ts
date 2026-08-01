@@ -3,7 +3,7 @@ import { api, pollJob, sleep } from "../lib/api";
 import type { Job, StudyBatchItemRecord, StudyBatchRecord, StudyBatchResponse, StudyCopyDetail, StudyCopyRecord } from "../types";
 
 const terminalBatchStatuses = ["completed", "failed", "partial_failed", "cancelled"];
-const terminalItemStatuses = ["ready", "failed"];
+const terminalItemStatuses = ["ready", "needs_review", "failed"];
 
 interface StudyState {
   status: string;
@@ -233,6 +233,7 @@ export const useStudyStore = defineStore("study", {
 
 function copyWithRunState(copy: StudyCopyRecord, item: StudyBatchItemRecord): StudyCopyRecord {
   if (item.status === "ready") return { ...copy, status: "ready", last_error: "" };
+  if (item.status === "needs_review") return { ...copy, status: "needs_review", last_error: "" };
   if (item.status === "failed") return { ...copy, status: "failed", last_error: item.error || "Analysis failed" };
   return { ...copy, status: "running", analysis_status: "running", last_error: "" };
 }
