@@ -38,6 +38,35 @@ func TestOpenAICompatibleListModels(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleListsOnlyLoadedLMStudioModels(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/models" {
+			t.Fatalf("path = %s, want /api/v1/models", r.URL.Path)
+		}
+		w.Write([]byte(`{
+			"models":[
+				{"key":"qwen/qwen3.6-27b","display_name":"Qwen 27B","loaded_instances":[{"id":"qwen/qwen3.6-27b"}]},
+				{"key":"google/gemma-4-e2b","display_name":"Gemma 4","loaded_instances":[]}
+			]
+		}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	p := NewCompatible(config.ProviderConfig{
+		ID:      "lms",
+		BaseURL: srv.URL + "/v1",
+	}, srv.Client())
+	models, err := p.ListLoadedModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListLoadedModels() error = %v", err)
+	}
+	if len(models) != 1 || models[0].ID != "qwen/qwen3.6-27b" || models[0].Name != "Qwen 27B" {
+		t.Fatalf("models = %#v, want only loaded Qwen instance", models)
+	}
+}
+
 func TestOpenAICompatibleListModelsAddsV1WhenMissing(t *testing.T) {
 	t.Parallel()
 

@@ -19,6 +19,15 @@ type studyModelProvider struct {
 	err    error
 }
 
+type studyLoadedModelProvider struct {
+	*studyModelProvider
+	loaded []provider.Model
+}
+
+func (p *studyLoadedModelProvider) ListLoadedModels(context.Context) ([]provider.Model, error) {
+	return p.loaded, p.err
+}
+
 func (p *studyModelProvider) ID() string                   { return "lms" }
 func (p *studyModelProvider) Health(context.Context) error { return p.err }
 func (p *studyModelProvider) ListModels(context.Context) ([]provider.Model, error) {
@@ -88,6 +97,55 @@ func TestResolveStudyBatchRunOptionsPreservesStageSpecificModels(t *testing.T) {
 	}
 	if options.Model != "qwen/qwen3.6-27b" {
 		t.Fatalf("batch model = %q, want primary analysis model", options.Model)
+	}
+}
+
+func TestResolveStudyBatchRunOptionsRejectsUnloadedAnalysisModel(t *testing.T) {
+	t.Parallel()
+
+	p := &studyLoadedModelProvider{
+		studyModelProvider: &studyModelProvider{},
+		loaded:             []provider.Model{{ID: "google/gemma-4-e2b"}},
+	}
+	h := &Handler{runtime: core.New(core.Dependencies{
+		Settings: func() config.Settings { return config.Settings{} },
+		ProviderFor: func(id string) (provider.Provider, bool) {
+			return p, id == "lms"
+		},
+	})}
+
+	_, _, err := h.resolveStudyBatchRunOptions(context.Background(), studyBatchRunOptions{
+		QuestionModel: "google/gemma-4-e2b",
+		BoundaryModel: "qwen/qwen3.6-27b",
+		ReportModel:   "google/gemma-4-e2b",
+	})
+	if err == nil || !strings.Contains(err.Error(), "not loaded or unavailable") || !strings.Contains(err.Error(), "qwen/qwen3.6-27b") {
+		t.Fatalf("error = %v, want actionable unloaded boundary-model error", err)
+	}
+}
+
+func TestResolveStudyBatchRunOptionsDiscoversActuallyLoadedModel(t *testing.T) {
+	t.Parallel()
+
+	p := &studyLoadedModelProvider{
+		studyModelProvider: &studyModelProvider{
+			models: []provider.Model{{ID: "downloaded-but-unloaded"}, {ID: "qwen/qwen3.6-27b"}},
+		},
+		loaded: []provider.Model{{ID: "qwen/qwen3.6-27b"}},
+	}
+	h := &Handler{runtime: core.New(core.Dependencies{
+		Settings: func() config.Settings { return config.Settings{} },
+		ProviderFor: func(id string) (provider.Provider, bool) {
+			return p, id == "lms"
+		},
+	})}
+
+	options, _, err := h.resolveStudyBatchRunOptions(context.Background(), studyBatchRunOptions{})
+	if err != nil {
+		t.Fatalf("resolveStudyBatchRunOptions() error = %v", err)
+	}
+	if options.Model != "qwen/qwen3.6-27b" || options.QuestionModel != "qwen/qwen3.6-27b" {
+		t.Fatalf("options = %#v, want actually loaded model selected", options)
 	}
 }
 

@@ -621,7 +621,7 @@ func (h *Handler) resolveStudyBatchRunOptions(
 	}
 	if options.Model != "" {
 		options = fillStudyBatchModels(options, options.Model)
-		return options, p, nil
+		return validateStudyBatchModelsLoaded(ctx, options, p)
 	}
 	if model := firstString(
 		options.QuestionModel,
@@ -630,9 +630,9 @@ func (h *Handler) resolveStudyBatchRunOptions(
 		options.OCRModel,
 	); model != "" {
 		options = fillStudyBatchModels(options, model)
-		return options, p, nil
+		return validateStudyBatchModelsLoaded(ctx, options, p)
 	}
-	models, err := p.ListModels(ctx)
+	models, err := listLoadedStudyModels(ctx, p)
 	if err != nil {
 		if options.ProviderID == defaultStudyBatchProviderID {
 			return options, nil, fmt.Errorf("LM Studio is unavailable: start its local server, load a vision-capable model, and retry: %w", err)
@@ -642,13 +642,66 @@ func (h *Handler) resolveStudyBatchRunOptions(
 	for _, model := range models {
 		if modelID := strings.TrimSpace(model.ID); modelID != "" {
 			options = fillStudyBatchModels(options, modelID)
-			return options, p, nil
+			return validateStudyBatchModelsLoaded(ctx, options, p)
 		}
 	}
 	if options.ProviderID == defaultStudyBatchProviderID {
 		return options, nil, errors.New("LM Studio returned no loaded models; load a vision-capable model in LM Studio and retry")
 	}
 	return options, nil, fmt.Errorf("provider %q returned no models; load or select a model and retry", options.ProviderID)
+}
+
+func listLoadedStudyModels(ctx context.Context, p provider.Provider) ([]provider.Model, error) {
+	if lister, ok := p.(provider.LoadedModelLister); ok {
+		return lister.ListLoadedModels(ctx)
+	}
+	return p.ListModels(ctx)
+}
+
+func validateStudyBatchModelsLoaded(
+	ctx context.Context,
+	options studyBatchRunOptions,
+	p provider.Provider,
+) (studyBatchRunOptions, provider.Provider, error) {
+	lister, ok := p.(provider.LoadedModelLister)
+	if !ok {
+		return options, p, nil
+	}
+	models, err := lister.ListLoadedModels(ctx)
+	if err != nil {
+		return options, p, fmt.Errorf("check loaded models for provider %q: %w", options.ProviderID, err)
+	}
+	loaded := make(map[string]bool, len(models))
+	for _, model := range models {
+		if modelID := strings.ToLower(strings.TrimSpace(model.ID)); modelID != "" {
+			loaded[modelID] = true
+		}
+	}
+	required := dedupeStrings([]string{
+		options.QuestionModel,
+		options.BoundaryModel,
+		options.ReportModel,
+	})
+	missing := make([]string, 0, len(required))
+	for _, model := range required {
+		if !loaded[strings.ToLower(model)] {
+			missing = append(missing, model)
+		}
+	}
+	if len(missing) == 0 {
+		return options, p, nil
+	}
+	if options.ProviderID == defaultStudyBatchProviderID {
+		return options, p, fmt.Errorf(
+			"LM Studio model(s) are not loaded or unavailable: %s; load them in LM Studio and retry",
+			strings.Join(missing, ", "),
+		)
+	}
+	return options, p, fmt.Errorf(
+		"provider %q model(s) are unavailable: %s",
+		options.ProviderID,
+		strings.Join(missing, ", "),
+	)
 }
 
 func fillStudyBatchModels(options studyBatchRunOptions, fallback string) studyBatchRunOptions {

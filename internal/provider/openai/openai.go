@@ -36,6 +36,17 @@ func (p *OpenAICompatible) LocalModelServer() bool {
 		strings.Contains(baseURL, "127.0.0.1:1234")
 }
 
+func (p *OpenAICompatible) isLMStudio() bool {
+	baseURL := strings.ToLower(p.cfg.BaseURL)
+	return p.cfg.ID == "lms" ||
+		strings.Contains(baseURL, "localhost:1234") ||
+		strings.Contains(baseURL, "127.0.0.1:1234")
+}
+
+func (p *OpenAICompatible) lmStudioBaseURL() string {
+	return strings.TrimSuffix(strings.TrimRight(p.cfg.BaseURL, "/"), "/v1")
+}
+
 func (p *OpenAICompatible) Health(ctx context.Context) error {
 	_, err := p.ListModels(ctx)
 	return err
@@ -77,6 +88,52 @@ func (p *OpenAICompatible) ListModels(ctx context.Context) ([]provider.Model, er
 	return models, nil
 }
 
+func (p *OpenAICompatible) ListLoadedModels(ctx context.Context) ([]provider.Model, error) {
+	if !p.isLMStudio() {
+		return p.ListModels(ctx)
+	}
+	modelsURL := p.lmStudioBaseURL() + "/api/v1/models"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	p.authorize(req)
+	res, err := p.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("list loaded models %s: %w", modelsURL, err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		msg, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return nil, p.apiStatusError("list loaded models "+modelsURL, res.Status, msg)
+	}
+	var payload struct {
+		Models []struct {
+			Key             string `json:"key"`
+			DisplayName     string `json:"display_name"`
+			LoadedInstances []struct {
+				ID string `json:"id"`
+			} `json:"loaded_instances"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode loaded LM Studio models: %w", err)
+	}
+	models := make([]provider.Model, 0, len(payload.Models))
+	for _, item := range payload.Models {
+		modelID := strings.TrimSpace(item.Key)
+		if modelID == "" || len(item.LoadedInstances) == 0 || !p.allowsModel(modelID) {
+			continue
+		}
+		name := strings.TrimSpace(item.DisplayName)
+		if name == "" {
+			name = modelID
+		}
+		models = append(models, provider.Model{ID: modelID, Name: name})
+	}
+	return models, nil
+}
+
 func (p *OpenAICompatible) discoveredModelID(model string) string {
 	model = strings.TrimSpace(model)
 	if p.usesGeminiGenerateContent() {
@@ -112,7 +169,7 @@ func (p *OpenAICompatible) Chat(ctx context.Context, req provider.ChatRequest) (
 }
 
 func (p *OpenAICompatible) UnloadModel(ctx context.Context, model string) error {
-	if p.cfg.ID != "lms" && !strings.Contains(strings.ToLower(p.cfg.BaseURL), "localhost:1234") && !strings.Contains(strings.ToLower(p.cfg.BaseURL), "127.0.0.1:1234") {
+	if !p.isLMStudio() {
 		return nil
 	}
 	model = strings.TrimSpace(model)
@@ -129,11 +186,12 @@ func (p *OpenAICompatible) UnloadModel(ctx context.Context, model string) error 
 	if err != nil {
 		return err
 	}
-	baseURL := strings.TrimRight(p.cfg.BaseURL, "/")
-	if strings.HasSuffix(baseURL, "/v1") {
-		baseURL = strings.TrimSuffix(baseURL, "/v1")
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/v1/models/unload", bytes.NewReader(data))
+	httpReq, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		p.lmStudioBaseURL()+"/api/v1/models/unload",
+		bytes.NewReader(data),
+	)
 	if err != nil {
 		return err
 	}

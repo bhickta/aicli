@@ -127,6 +127,10 @@ type ModelUnloader interface {
 	UnloadModel(ctx context.Context, model string) error
 }
 
+type LoadedModelLister interface {
+	ListLoadedModels(ctx context.Context) ([]Model, error)
+}
+
 type LocalModelServer interface {
 	LocalModelServer() bool
 }
