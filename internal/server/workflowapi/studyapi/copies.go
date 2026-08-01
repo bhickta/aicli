@@ -476,6 +476,10 @@ func (h *Handler) prepareStudyBatch(
 		return storage.StudyBatchRecord{}, nil, false
 	}
 	copyIDs := dedupeStrings(requestedCopyIDs)
+	if len(copyIDs) == 0 {
+		core.WriteError(w, http.StatusBadRequest, fmt.Errorf("select at least one valid copy id"))
+		return storage.StudyBatchRecord{}, nil, false
+	}
 	now := time.Now().UTC()
 	batch := storage.StudyBatchRecord{
 		ID:          "study-batch-" + now.Format("20060102150405.000000000"),
