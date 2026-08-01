@@ -183,8 +183,11 @@ func (p *OpenAICompatible) chatRaw(ctx context.Context, body map[string]any) (pr
 
 	var payload struct {
 		Choices []struct {
-			Message      provider.Message `json:"message"`
-			FinishReason string           `json:"finish_reason"`
+			Message struct {
+				Content          string `json:"content"`
+				ReasoningContent string `json:"reasoning_content"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 		Usage chatCompletionUsage `json:"usage"`
 	}
@@ -194,8 +197,16 @@ func (p *OpenAICompatible) chatRaw(ctx context.Context, body map[string]any) (pr
 	if len(payload.Choices) == 0 {
 		return provider.ChatResponse{}, errors.New("chat response has no choices")
 	}
+	message := payload.Choices[0].Message
+	content := message.Content
+	_, structuredRequest := body["response_format"]
+	reasoningJSON := strings.TrimSpace(message.ReasoningContent)
+	validStructuredReasoning := structuredRequest && json.Valid([]byte(reasoningJSON))
+	if strings.TrimSpace(content) == "" && validStructuredReasoning {
+		content = reasoningJSON
+	}
 	return provider.ChatResponse{
-		Content:      payload.Choices[0].Message.Content,
+		Content:      content,
 		FinishReason: payload.Choices[0].FinishReason,
 		Usage:        payload.Usage.providerUsage(),
 	}, nil

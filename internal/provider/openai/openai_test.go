@@ -422,6 +422,60 @@ func TestOpenAICompatibleChatSendsJSONSchemaResponseFormat(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleChatUsesValidStructuredReasoningFallback(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		structured bool
+		want       string
+	}{
+		{
+			name:       "structured request",
+			structured: true,
+			want:       `{"label":"Q1"}`,
+		},
+		{
+			name:       "unstructured request",
+			structured: false,
+			want:       "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"","reasoning_content":"{\"label\":\"Q1\"}"},"finish_reason":"stop"}]}`))
+			}))
+			t.Cleanup(srv.Close)
+
+			p := NewCompatible(
+				config.ProviderConfig{ID: "lms", BaseURL: srv.URL + "/v1", Model: "model"},
+				srv.Client(),
+			)
+			req := provider.ChatRequest{
+				Messages: []provider.Message{{Role: "user", Content: "classify"}},
+			}
+			if tt.structured {
+				req.ResponseSchema = &provider.JSONSchema{
+					Name:   "answer",
+					Strict: true,
+					Schema: map[string]any{"type": "object"},
+				}
+			}
+			res, err := p.Chat(context.Background(), req)
+			if err != nil {
+				t.Fatalf("Chat() error = %v", err)
+			}
+			if res.Content != tt.want {
+				t.Fatalf("content = %q, want %q", res.Content, tt.want)
+			}
+		})
+	}
+}
+
 func TestOpenAICompatibleVisionSendsMultipleImages(t *testing.T) {
 	t.Parallel()
 
