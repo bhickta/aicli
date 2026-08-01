@@ -418,7 +418,7 @@ func TestRunAnalyzeQuestionSplitFallsBackOnEmptyPageResponse(t *testing.T) {
 	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fp := &fakeProvider{chatResponses: []string{"", "final report"}}
+	fp := &fakeProvider{chatResponses: []string{"", "", "final report"}}
 	res, err := New(config.ToolConfig{PDFToPPM: "pdftoppm"}, &fakeRunner{}, fp).Run(
 		context.Background(),
 		Request{Path: pdf, Model: "model", QuestionSplit: true},
@@ -568,6 +568,38 @@ func TestParsePageQuestionSplitClassifiesQuestionPaperWithoutAnswerBlocks(t *tes
 	}
 }
 
+func TestSplitPageQuestionsRetriesMalformedSemanticResponse(t *testing.T) {
+	t.Parallel()
+
+	ocrConfidence := 0.62
+	provider := &fakeProvider{chatResponses: []string{
+		"not valid JSON",
+		`{
+			"page_kind":"question_paper",
+			"page_kind_confidence":0.98,
+			"classification_reason":"Printed questions without candidate answers.",
+			"ocr_confidence":0.62,
+			"ocr_issues":["One directive word is uncertain"],
+			"printed_questions":[{"label":"Q1(a)","prompt":"What is attitude? Explain with examples."}],
+			"questions":[]
+		}`,
+	}}
+	service := New(config.ToolConfig{}, &fakeRunner{}, provider)
+	result, err := service.splitPageQuestions(context.Background(), "local-model", Page{Number: 1, Text: "printed OCR"})
+	if err != nil {
+		t.Fatalf("splitPageQuestions() error = %v", err)
+	}
+	if len(provider.chatPrompts) != 2 || !strings.Contains(provider.chatPrompts[1], "Retry the semantic classification") {
+		t.Fatalf("prompts = %#v, want one focused model retry", provider.chatPrompts)
+	}
+	if result.Classification.Kind != "question_paper" || len(result.PrintedQuestions) != 1 {
+		t.Fatalf("result = %#v, want recovered question-paper ledger", result)
+	}
+	if result.Classification.OCRConfidence == nil || *result.Classification.OCRConfidence != ocrConfidence || len(result.Classification.OCRIssues) != 1 {
+		t.Fatalf("classification = %#v, want semantic OCR reliability", result.Classification)
+	}
+}
+
 func TestParseQuestionDimensionsNormalizesRichAnalysis(t *testing.T) {
 	t.Parallel()
 
@@ -664,10 +696,12 @@ func TestAttachPrintedQuestionPromptsMapsSubpartVariants(t *testing.T) {
 func TestAnalysisQualityReportsCoverageWithoutClaimingAccuracy(t *testing.T) {
 	t.Parallel()
 
+	highOCRConfidence := 0.9
+	lowOCRConfidence := 0.5
 	quality := analysisQuality(
 		[]Page{
-			{Number: 1, Kind: "answer", KindConfidence: 0.9, Text: "clear answer text"},
-			{Number: 2, Kind: "question_paper", KindConfidence: 0.7, Text: "printed prompt [unclear]"},
+			{Number: 1, Kind: "answer", KindConfidence: 0.9, OCRConfidence: &highOCRConfidence, Text: "clear answer text"},
+			{Number: 2, Kind: "question_paper", KindConfidence: 0.7, OCRConfidence: &lowOCRConfidence, Text: "printed prompt [unclear]"},
 		},
 		[]Question{
 			{
@@ -683,6 +717,9 @@ func TestAnalysisQualityReportsCoverageWithoutClaimingAccuracy(t *testing.T) {
 
 	if quality.ClassificationCoveragePercent != 100 || quality.AverageClassificationConfidence != 0.8 {
 		t.Fatalf("classification quality = %#v, want full coverage at 0.8 average confidence", quality)
+	}
+	if quality.OCRAssessmentCoveragePercent != 100 || quality.AverageOCRConfidence != 0.7 {
+		t.Fatalf("OCR quality = %#v, want independently assessed semantic confidence", quality)
 	}
 	if quality.PromptMatchPercent != 50 || quality.AnalysisCoveragePercent != 100 || quality.EvidenceCoveragePercent != 50 {
 		t.Fatalf("analysis quality = %#v, want independently reported coverage metrics", quality)

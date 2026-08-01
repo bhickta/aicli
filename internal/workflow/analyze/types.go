@@ -53,16 +53,18 @@ type ReprocessRequest struct {
 }
 
 type Page struct {
-	Number               int     `json:"number"`
-	Name                 string  `json:"name"`
-	Path                 string  `json:"path"`
-	ImageURL             string  `json:"image_url"`
-	Text                 string  `json:"text"`
-	UnclearCount         int     `json:"unclear_count"`
-	Verified             bool    `json:"verified"`
-	Kind                 string  `json:"kind,omitempty"`
-	KindConfidence       float64 `json:"kind_confidence,omitempty"`
-	ClassificationReason string  `json:"classification_reason,omitempty"`
+	Number               int      `json:"number"`
+	Name                 string   `json:"name"`
+	Path                 string   `json:"path"`
+	ImageURL             string   `json:"image_url"`
+	Text                 string   `json:"text"`
+	UnclearCount         int      `json:"unclear_count"`
+	Verified             bool     `json:"verified"`
+	Kind                 string   `json:"kind,omitempty"`
+	KindConfidence       float64  `json:"kind_confidence,omitempty"`
+	ClassificationReason string   `json:"classification_reason,omitempty"`
+	OCRConfidence        *float64 `json:"ocr_confidence,omitempty"`
+	OCRIssues            []string `json:"ocr_issues,omitempty"`
 }
 
 type QuestionDimensions struct {
@@ -116,6 +118,8 @@ type QuestionScorecard struct {
 type AnalysisQuality struct {
 	ClassificationCoveragePercent   int      `json:"classification_coverage_percent"`
 	AverageClassificationConfidence float64  `json:"average_classification_confidence"`
+	OCRAssessmentCoveragePercent    int      `json:"ocr_assessment_coverage_percent"`
+	AverageOCRConfidence            float64  `json:"average_ocr_confidence"`
 	PromptMatchPercent              int      `json:"prompt_match_percent"`
 	AnalysisCoveragePercent         int      `json:"analysis_coverage_percent"`
 	EvidenceCoveragePercent         int      `json:"evidence_coverage_percent"`

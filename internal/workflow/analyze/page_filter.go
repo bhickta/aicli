@@ -27,6 +27,8 @@ func applyPageClassifications(pages []Page, classifications []PageClassification
 		pages[index].Kind = classification.Kind
 		pages[index].KindConfidence = classification.Confidence
 		pages[index].ClassificationReason = classification.Reason
+		pages[index].OCRConfidence = classification.OCRConfidence
+		pages[index].OCRIssues = append([]string(nil), classification.OCRIssues...)
 	}
 	return pages
 }

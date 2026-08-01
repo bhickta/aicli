@@ -20,10 +20,12 @@ type questionSplitResult struct {
 }
 
 type PageClassification struct {
-	PageNumber int
-	Kind       string
-	Confidence float64
-	Reason     string
+	PageNumber    int
+	Kind          string
+	Confidence    float64
+	Reason        string
+	OCRConfidence *float64
+	OCRIssues     []string
 }
 
 type pageQuestionSplit struct {
@@ -31,6 +33,13 @@ type pageQuestionSplit struct {
 	PrintedQuestions []PrintedQuestion
 	Questions        []Question
 }
+
+type questionSplitRequestError struct {
+	err error
+}
+
+func (e *questionSplitRequestError) Error() string { return e.err.Error() }
+func (e *questionSplitRequestError) Unwrap() error { return e.err }
 
 func (s *Service) splitQuestions(
 	ctx context.Context,
@@ -233,28 +242,33 @@ func (s *Service) splitPageQuestions(ctx context.Context, model string, page Pag
 			Questions:        []Question{},
 		}, nil
 	}
-	res, err := s.questionProvider.Chat(ctx, provider.ChatRequest{
-		Model: model,
-		Messages: []provider.Message{
-			{
-				Role:    "user",
-				Content: topperCopyQuestionPrompt(page),
-			},
-		},
-		Temperature: 0,
-		MaxTokens:   3000,
-	})
-	if err != nil {
-		return pageQuestionSplit{}, err
+	result, parseErr := s.requestPageQuestionSplit(ctx, model, page, topperCopyQuestionPrompt(page))
+	needsRetry := parseErr != nil || (result.Classification.Kind == "question_paper" && len(result.PrintedQuestions) == 0)
+	if needsRetry {
+		retryResult, retryErr := s.requestPageQuestionSplit(
+			ctx,
+			model,
+			page,
+			topperCopyQuestionRetryPrompt(page, pageSplitRetryReason(parseErr, result)),
+		)
+		if retryErr == nil {
+			result = retryResult
+			parseErr = nil
+		} else if parseErr != nil {
+			parseErr = retryErr
+		}
 	}
-	result, err := parsePageQuestionSplit(res.Content, page.Number)
-	if err != nil {
+	if parseErr != nil {
+		var requestErr *questionSplitRequestError
+		if errors.As(parseErr, &requestErr) {
+			return pageQuestionSplit{}, parseErr
+		}
 		return pageQuestionSplit{
 			Classification: PageClassification{
 				PageNumber: page.Number,
 				Kind:       "unknown",
 				Confidence: 0,
-				Reason:     "model response could not be parsed",
+				Reason:     "model response could not be parsed after a focused retry",
 			},
 			PrintedQuestions: []PrintedQuestion{},
 			Questions:        pageFallbackQuestions([]Page{page}),
@@ -273,6 +287,39 @@ func (s *Service) splitPageQuestions(ctx context.Context, model string, page Pag
 	return result, nil
 }
 
+func (s *Service) requestPageQuestionSplit(
+	ctx context.Context,
+	model string,
+	page Page,
+	prompt string,
+) (pageQuestionSplit, error) {
+	res, err := s.questionProvider.Chat(ctx, provider.ChatRequest{
+		Model: model,
+		Messages: []provider.Message{
+			{
+				Role:    "user",
+				Content: prompt,
+			},
+		},
+		Temperature: 0,
+		MaxTokens:   3000,
+	})
+	if err != nil {
+		return pageQuestionSplit{}, &questionSplitRequestError{err: err}
+	}
+	return parsePageQuestionSplit(res.Content, page.Number)
+}
+
+func pageSplitRetryReason(err error, result pageQuestionSplit) string {
+	if err != nil {
+		return "The previous response was not valid schema-compliant JSON."
+	}
+	if result.Classification.Kind == "question_paper" && len(result.PrintedQuestions) == 0 {
+		return "The page was identified as a question paper, but its visible printed questions were omitted."
+	}
+	return "The previous response was incomplete."
+}
+
 func isOCRFailureText(text string) bool {
 	return strings.HasPrefix(strings.TrimSpace(text), "> OCR failed for this page:")
 }
@@ -281,6 +328,8 @@ type questionSplitPayload struct {
 	PageKind             string              `json:"page_kind"`
 	PageKindConfidence   float64             `json:"page_kind_confidence"`
 	ClassificationReason string              `json:"classification_reason"`
+	OCRConfidence        *float64            `json:"ocr_confidence"`
+	OCRIssues            []string            `json:"ocr_issues"`
 	PrintedQuestions     []PrintedQuestion   `json:"printed_questions"`
 	Questions            []questionSplitItem `json:"questions"`
 }
@@ -349,14 +398,24 @@ func parsePageQuestionSplit(content string, pageNumber int) (pageQuestionSplit, 
 	}
 	return pageQuestionSplit{
 		Classification: PageClassification{
-			PageNumber: pageNumber,
-			Kind:       kind,
-			Confidence: clampFloat(payload.PageKindConfidence, 0, 1),
-			Reason:     strings.TrimSpace(payload.ClassificationReason),
+			PageNumber:    pageNumber,
+			Kind:          kind,
+			Confidence:    clampFloat(payload.PageKindConfidence, 0, 1),
+			Reason:        strings.TrimSpace(payload.ClassificationReason),
+			OCRConfidence: clampedOptionalConfidence(payload.OCRConfidence),
+			OCRIssues:     cleanStringList(payload.OCRIssues),
 		},
 		PrintedQuestions: cleanPrintedQuestions(payload.PrintedQuestions),
 		Questions:        questions,
 	}, nil
+}
+
+func clampedOptionalConfidence(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	clamped := clampFloat(*value, 0, 1)
+	return &clamped
 }
 
 func normalizePageKind(kind string) string {

@@ -35,6 +35,8 @@ Schema:
   "page_kind": "answer|question_paper|cover|index|evaluation|blank|other",
   "page_kind_confidence": 0.0,
   "classification_reason": "short reason grounded in visible page content",
+  "ocr_confidence": 0.0,
+  "ocr_issues": ["specific transcription uncertainty such as truncation, unreadable handwriting, or likely word confusion"],
   "printed_questions": [
     {
       "label": "Q1(a)",
@@ -56,6 +58,7 @@ Rules:
 - Use "question_paper" only for a page primarily listing printed questions without candidate answers.
 - Use "cover", "index", "evaluation", "blank", or "other" for non-answer pages as appropriate.
 - page_kind_confidence must be between 0 and 1. Use a lower value when evidence is ambiguous.
+- ocr_confidence must be between 0 and 1 and assess the reliability of the supplied OCR text, independently of page_kind. Lower it for truncation, unreadable markers, implausible word substitutions, or broken sentences; list concrete issues in ocr_issues without correcting the answer.
 - For a question_paper page, return every visible numbered and lettered sub-question separately in printed_questions. Preserve directive words, marks, and word limits. Leave questions empty.
 - For an answer page, split candidate writing into question-wise answer blocks in questions. Include printed_questions only when a complete printed prompt is actually visible.
 - Do not summarize, rewrite, improve, or remove OCR text.
@@ -66,6 +69,30 @@ Rules:
 
 OCR:
 %s`, page.Number, page.Number, page.Text)
+}
+
+func topperCopyQuestionRetryPrompt(page Page, reason string) string {
+	return fmt.Sprintf(`Retry the semantic classification and extraction for UPSC answer-copy page %d.
+
+%s
+
+Return exactly one valid JSON object and no prose. Required keys:
+{
+  "page_kind": "answer|question_paper|cover|index|evaluation|blank|other",
+  "page_kind_confidence": 0.0,
+  "classification_reason": "visible reason",
+  "ocr_confidence": 0.0,
+  "ocr_issues": [],
+  "printed_questions": [{"label":"Q1(a)","prompt":"complete exact visible printed prompt"}],
+  "questions": [{"label":"Q1(a)","title":"optional visible heading","answer_markdown":"complete candidate answer text","status":"detected"}]
+}
+
+For a question-paper page, extract every visible numbered/lettered sub-question into printed_questions and leave questions empty.
+For an answer page, preserve visible labels and full answer text. For an unlabeled continuation, use "Page %d continuation" rather than guessing.
+Assess OCR reliability semantically in ocr_confidence and ocr_issues. Do not rewrite or correct the OCR.
+
+OCR:
+%s`, page.Number, reason, page.Number, page.Text)
 }
 
 func topperCopyReportPrompt(pagesMarkdown string) string {

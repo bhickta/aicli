@@ -34,13 +34,15 @@ type oneShotPDFManifest struct {
 }
 
 type oneShotPDFPage struct {
-	Number               int     `json:"number"`
-	Name                 string  `json:"name"`
-	Text                 string  `json:"text"`
-	UnclearCount         int     `json:"unclear_count"`
-	Kind                 string  `json:"kind"`
-	KindConfidence       float64 `json:"kind_confidence"`
-	ClassificationReason string  `json:"classification_reason"`
+	Number               int      `json:"number"`
+	Name                 string   `json:"name"`
+	Text                 string   `json:"text"`
+	UnclearCount         int      `json:"unclear_count"`
+	Kind                 string   `json:"kind"`
+	KindConfidence       float64  `json:"kind_confidence"`
+	ClassificationReason string   `json:"classification_reason"`
+	OCRConfidence        *float64 `json:"ocr_confidence"`
+	OCRIssues            []string `json:"ocr_issues"`
 }
 
 type oneShotPDFQuestion struct {
@@ -100,7 +102,7 @@ Schema:
   },
   "detected_questions": ["visible label for answer block 1", "visible label for answer block 2"],
   "pages": [
-    {"number": 1, "name": "page-1", "text": "brief source notes for inspection", "unclear_count": 0, "kind": "answer|question_paper|cover|index|evaluation|blank|other", "kind_confidence": 0.0, "classification_reason": "brief visible reason"}
+    {"number": 1, "name": "page-1", "text": "brief source notes for inspection", "unclear_count": 0, "kind": "answer|question_paper|cover|index|evaluation|blank|other", "kind_confidence": 0.0, "classification_reason": "brief visible reason", "ocr_confidence": 0.0, "ocr_issues": ["specific extraction uncertainty"]}
   ],
   "questions": [
     {
@@ -233,6 +235,8 @@ func normalizeManifestPages(in []oneShotPDFPage) []Page {
 			Kind:                 normalizePageKind(page.Kind),
 			KindConfidence:       clampFloat(page.KindConfidence, 0, 1),
 			ClassificationReason: strings.TrimSpace(page.ClassificationReason),
+			OCRConfidence:        clampedOptionalConfidence(page.OCRConfidence),
+			OCRIssues:            cleanStringList(page.OCRIssues),
 		})
 	}
 	sort.Slice(pages, func(i, j int) bool { return pages[i].Number < pages[j].Number })

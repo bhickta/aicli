@@ -11,6 +11,8 @@ func analysisQuality(pages []Page, questions []Question) *AnalysisQuality {
 	classificationConfidence := 0.0
 	unclearCount := 0
 	wordCount := 0
+	ocrAssessedPages := 0
+	ocrConfidence := 0.0
 	for _, page := range pages {
 		kind := normalizePageKind(page.Kind)
 		if kind != "unknown" {
@@ -19,6 +21,14 @@ func analysisQuality(pages []Page, questions []Question) *AnalysisQuality {
 		}
 		unclearCount += max(0, page.UnclearCount)
 		wordCount += len(strings.Fields(page.Text))
+		if page.OCRConfidence != nil {
+			ocrAssessedPages++
+			ocrConfidence += clampFloat(*page.OCRConfidence, 0, 1)
+		}
+	}
+	quality.OCRAssessmentCoveragePercent = percent(ocrAssessedPages, len(pages))
+	if ocrAssessedPages > 0 {
+		quality.AverageOCRConfidence = roundTo(ocrConfidence/float64(ocrAssessedPages), 2)
 	}
 	quality.ClassificationCoveragePercent = percent(classifiedPages, len(pages))
 	if classifiedPages > 0 {
@@ -72,9 +82,13 @@ func weightedQualityCoverage(quality *AnalysisQuality) int {
 	classificationQuality := int(math.Round(
 		float64(quality.ClassificationCoveragePercent) * quality.AverageClassificationConfidence,
 	))
-	weighted := classificationQuality*15 +
+	ocrQuality := int(math.Round(
+		float64(quality.OCRAssessmentCoveragePercent) * quality.AverageOCRConfidence,
+	))
+	weighted := classificationQuality*10 +
+		ocrQuality*10 +
 		quality.PromptMatchPercent*25 +
-		quality.AnalysisCoveragePercent*35 +
+		quality.AnalysisCoveragePercent*30 +
 		quality.EvidenceCoveragePercent*25
 	return clamp(int(math.Round(float64(weighted)/100)), 0, 100)
 }
@@ -87,6 +101,11 @@ func qualityWarnings(quality *AnalysisQuality, pageCount, questionCount int) []s
 		warnings = append(warnings, "Some pages could not be classified confidently.")
 	} else if quality.AverageClassificationConfidence < 0.7 {
 		warnings = append(warnings, "Page classifications have low model confidence and should be reviewed.")
+	}
+	if pageCount > 0 && quality.OCRAssessmentCoveragePercent < 90 {
+		warnings = append(warnings, "Some pages are missing a semantic OCR reliability assessment.")
+	} else if quality.AverageOCRConfidence < 0.7 {
+		warnings = append(warnings, "OCR reliability is low; verify the affected pages against the copy image.")
 	}
 	if questionCount == 0 {
 		warnings = append(warnings, "No answer blocks were detected.")
