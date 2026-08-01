@@ -261,14 +261,16 @@ func normalizeManifestQuestions(in []oneShotPDFQuestion) []Question {
 			id = fmt.Sprintf("%s-%d", id, seenIDs[id])
 		}
 		question := Question{
-			ID:             id,
-			Label:          label,
-			Title:          strings.TrimSpace(item.Title),
-			SourcePages:    positiveUniqueInts(item.SourcePages),
-			AnswerMarkdown: answer,
-			Status:         "detected",
-			Dimensions:     nonEmptyDimensions(item.Dimensions),
-			Metadata:       nonEmptyQuestionMetadata(item.Metadata),
+			ID:                 id,
+			Label:              label,
+			Title:              strings.TrimSpace(item.Title),
+			SourcePages:        positiveUniqueInts(item.SourcePages),
+			AnswerMarkdown:     answer,
+			Status:             "detected",
+			Boundary:           questionBoundaryNew,
+			BoundaryConfidence: 1,
+			Dimensions:         nonEmptyDimensions(item.Dimensions),
+			Metadata:           nonEmptyQuestionMetadata(item.Metadata),
 		}
 		questions = append(questions, question)
 	}

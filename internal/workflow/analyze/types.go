@@ -164,14 +164,16 @@ type QuestionMetadata struct {
 }
 
 type Question struct {
-	ID             string              `json:"id"`
-	Label          string              `json:"label"`
-	Title          string              `json:"title,omitempty"`
-	AnswerMarkdown string              `json:"answer_markdown"`
-	SourcePages    []int               `json:"source_pages"`
-	Status         string              `json:"status"`
-	Dimensions     *QuestionDimensions `json:"dimensions,omitempty"`
-	Metadata       *QuestionMetadata   `json:"metadata,omitempty"`
+	ID                 string              `json:"id"`
+	Label              string              `json:"label"`
+	Title              string              `json:"title,omitempty"`
+	AnswerMarkdown     string              `json:"answer_markdown"`
+	SourcePages        []int               `json:"source_pages"`
+	Status             string              `json:"status"`
+	Boundary           string              `json:"boundary,omitempty"`
+	BoundaryConfidence float64             `json:"boundary_confidence,omitempty"`
+	Dimensions         *QuestionDimensions `json:"dimensions,omitempty"`
+	Metadata           *QuestionMetadata   `json:"metadata,omitempty"`
 }
 
 type Response struct {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -260,19 +261,23 @@ func TestMergeQuestionBlocksAttachesContinuationToPreviousQuestion(t *testing.T)
 
 	questions := mergeQuestionBlocks([]Question{
 		{
-			ID:             "page-3-continuation",
-			Label:          "Page 3 continuation",
-			AnswerMarkdown: "continued answer",
-			SourcePages:    []int{3},
-			Status:         "detected",
+			ID:                 "page-3-continuation",
+			Label:              "Page 3 continuation",
+			AnswerMarkdown:     "continued answer",
+			SourcePages:        []int{3},
+			Status:             "detected",
+			Boundary:           questionBoundaryContinuation,
+			BoundaryConfidence: 0.95,
 		},
 		{
-			ID:             "q.1",
-			Label:          "Q.1",
-			Title:          "Question one",
-			AnswerMarkdown: "main answer",
-			SourcePages:    []int{2},
-			Status:         "detected",
+			ID:                 "q.1",
+			Label:              "Q.1",
+			Title:              "Question one",
+			AnswerMarkdown:     "main answer",
+			SourcePages:        []int{2},
+			Status:             "detected",
+			Boundary:           questionBoundaryNew,
+			BoundaryConfidence: 0.98,
 		},
 	})
 	if len(questions) != 1 {
@@ -292,25 +297,31 @@ func TestMergeQuestionBlocksAttachesGenericAdjacentLabelToSubpart(t *testing.T) 
 
 	questions := mergeQuestionBlocks([]Question{
 		{
-			ID:             "q1(a)",
-			Label:          "Q1(a)",
-			AnswerMarkdown: "answer starts",
-			SourcePages:    []int{2},
-			Status:         "detected",
+			ID:                 "q1(a)",
+			Label:              "Q1(a)",
+			AnswerMarkdown:     "answer starts",
+			SourcePages:        []int{2},
+			Status:             "detected",
+			Boundary:           questionBoundaryNew,
+			BoundaryConfidence: 0.98,
 		},
 		{
-			ID:             "q1",
-			Label:          "Q1",
-			AnswerMarkdown: "answer continues without a visible subpart label",
-			SourcePages:    []int{3},
-			Status:         "detected",
+			ID:                 "q1",
+			Label:              "Q1",
+			AnswerMarkdown:     "answer continues without a visible subpart label",
+			SourcePages:        []int{3},
+			Status:             "detected",
+			Boundary:           questionBoundaryContinuation,
+			BoundaryConfidence: 0.95,
 		},
 		{
-			ID:             "1(b)",
-			Label:          "1(b)",
-			AnswerMarkdown: "next subpart starts",
-			SourcePages:    []int{4},
-			Status:         "detected",
+			ID:                 "1(b)",
+			Label:              "1(b)",
+			AnswerMarkdown:     "next subpart starts",
+			SourcePages:        []int{4},
+			Status:             "detected",
+			Boundary:           questionBoundaryNew,
+			BoundaryConfidence: 0.98,
 		},
 	})
 	if len(questions) != 2 {
@@ -321,6 +332,95 @@ func TestMergeQuestionBlocksAttachesGenericAdjacentLabelToSubpart(t *testing.T) 
 	}
 	if questions[1].Label != "1(b)" {
 		t.Fatalf("second question = %#v, want distinct subpart", questions[1])
+	}
+}
+
+func TestSemanticBoundariesKeepAdjacentSubpartsSeparate(t *testing.T) {
+	t.Parallel()
+
+	pagePayloads := []string{
+		`{"page_kind":"answer","page_kind_confidence":0.98,"classification_reason":"candidate answer","ocr_confidence":0.95,"ocr_issues":[],"printed_questions":[],"questions":[{"boundary":"new_answer","boundary_confidence":0.99,"visible_label":"1(a)","title":"","answer_markdown":"attitude answer starts","status":"detected"}]}`,
+		`{"page_kind":"answer","page_kind_confidence":0.96,"classification_reason":"candidate answer continuation","ocr_confidence":0.94,"ocr_issues":[],"printed_questions":[],"questions":[{"boundary":"continuation","boundary_confidence":0.97,"visible_label":"","title":"","answer_markdown":"attitude answer continues","status":"detected"}]}`,
+		`{"page_kind":"answer","page_kind_confidence":0.98,"classification_reason":"new labelled candidate answer","ocr_confidence":0.95,"ocr_issues":[],"printed_questions":[],"questions":[{"boundary":"new_answer","boundary_confidence":0.99,"visible_label":"1(b)","title":"","answer_markdown":"CRISPR answer starts","status":"detected"}]}`,
+		`{"page_kind":"answer","page_kind_confidence":0.96,"classification_reason":"candidate answer continuation","ocr_confidence":0.94,"ocr_issues":[],"printed_questions":[],"questions":[{"boundary":"continuation","boundary_confidence":0.97,"visible_label":"","title":"","answer_markdown":"CRISPR answer continues","status":"detected"}]}`,
+	}
+
+	blocks := []Question{}
+	for index, payload := range pagePayloads {
+		result, err := parsePageQuestionSplit(payload, index+2)
+		if err != nil {
+			t.Fatalf("parse page %d: %v", index+2, err)
+		}
+		blocks = append(blocks, result.Questions...)
+	}
+	questions := mergeQuestionBlocks(blocks)
+	if len(questions) != 2 {
+		t.Fatalf("questions = %#v, want exactly 1(a) and 1(b)", questions)
+	}
+	if questions[0].Label != "1(a)" || !slices.Equal(questions[0].SourcePages, []int{2, 3}) {
+		t.Fatalf("first question = %#v, want 1(a) on pages 2-3", questions[0])
+	}
+	if questions[1].Label != "1(b)" || !slices.Equal(questions[1].SourcePages, []int{4, 5}) {
+		t.Fatalf("second question = %#v, want 1(b) on pages 4-5", questions[1])
+	}
+}
+
+func TestSemanticNewAnswersDoNotMergeOnMatchingLabels(t *testing.T) {
+	t.Parallel()
+
+	questions := mergeQuestionBlocks([]Question{
+		{
+			Label:              "Q1",
+			AnswerMarkdown:     "first answer",
+			SourcePages:        []int{2},
+			Status:             "detected",
+			Boundary:           questionBoundaryNew,
+			BoundaryConfidence: 0.98,
+		},
+		{
+			Label:              "Q1",
+			AnswerMarkdown:     "second answer",
+			SourcePages:        []int{4},
+			Status:             "detected",
+			Boundary:           questionBoundaryNew,
+			BoundaryConfidence: 0.98,
+		},
+	})
+	if len(questions) != 2 {
+		t.Fatalf("questions = %#v, want two semantic new-answer blocks", questions)
+	}
+	if questions[0].ID == questions[1].ID {
+		t.Fatalf("question IDs = %q and %q, want stable unique IDs", questions[0].ID, questions[1].ID)
+	}
+}
+
+func TestSplitQuestionsSuppliesPreviousPageBoundaryContext(t *testing.T) {
+	t.Parallel()
+
+	provider := &fakeProvider{chatResponses: []string{
+		`{"page_kind":"answer","page_kind_confidence":0.98,"classification_reason":"new answer","ocr_confidence":0.95,"ocr_issues":[],"printed_questions":[],"questions":[{"boundary":"new_answer","boundary_confidence":0.98,"visible_label":"1(a)","title":"","answer_markdown":"answer starts","status":"detected"}]}`,
+		`{"page_kind":"answer","page_kind_confidence":0.97,"classification_reason":"continuation","ocr_confidence":0.94,"ocr_issues":[],"printed_questions":[],"questions":[{"boundary":"continuation","boundary_confidence":0.96,"visible_label":"","title":"","answer_markdown":"answer continues","status":"detected"}]}`,
+	}}
+	service := New(config.ToolConfig{}, &fakeRunner{}, provider)
+	_, err := service.splitQuestions(
+		context.Background(),
+		"local-model",
+		[]Page{
+			{Number: 2, Text: "previous answer text"},
+			{Number: 3, Text: "current continuation text"},
+		},
+		1,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("splitQuestions() error = %v", err)
+	}
+	if len(provider.chatPrompts) != 2 {
+		t.Fatalf("chat prompts = %d, want two page classifications", len(provider.chatPrompts))
+	}
+	secondPrompt := provider.chatPrompts[1]
+	if !strings.Contains(secondPrompt, "previous answer text") || !strings.Contains(secondPrompt, "current continuation text") {
+		t.Fatalf("second prompt missing adjacent-page boundary context:\n%s", secondPrompt)
 	}
 }
 
@@ -375,7 +475,7 @@ func TestRunAnalyzeSplitsQuestionsAndWritesArtifacts(t *testing.T) {
 	}
 	runner := &fakeRunner{}
 	fp := &fakeProvider{chatResponses: []string{
-		`{"questions":[{"label":"Q1","title":"Polity","answer_markdown":"answer block","status":"detected"}]}`,
+		`{"page_kind":"answer","page_kind_confidence":0.98,"ocr_confidence":0.95,"questions":[{"boundary":"new_answer","boundary_confidence":0.98,"visible_label":"Q1","title":"Polity","answer_markdown":"answer block","status":"detected"}]}`,
 		`{"introduction":"good","outro":"fine","transition":"ok","diagram":"none"}`,
 		"final report",
 	}}
@@ -475,7 +575,7 @@ func TestRunAnalyzeUsesSeparateStepProviders(t *testing.T) {
 	}
 	ocrProvider := &fakeProvider{id: "ocr", visionContent: "ocr page text"}
 	questionProvider := &fakeProvider{id: "question", chatResponses: []string{
-		`{"questions":[{"label":"Q1","answer_markdown":"question answer","status":"detected"}]}`,
+		`{"page_kind":"answer","page_kind_confidence":0.98,"ocr_confidence":0.95,"questions":[{"boundary":"new_answer","boundary_confidence":0.98,"visible_label":"Q1","answer_markdown":"question answer","status":"detected"}]}`,
 		`{"introduction":"good"}`,
 	}}
 	reportProvider := &fakeProvider{id: "report", chatResponses: []string{"report text"}}

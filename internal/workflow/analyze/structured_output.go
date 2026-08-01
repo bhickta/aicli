@@ -12,12 +12,14 @@ func pageQuestionSplitJSONSchema() *provider.JSONSchema {
 	)
 	question := strictObjectSchema(
 		map[string]any{
-			"label":           stringSchema(),
-			"title":           stringSchema(),
-			"answer_markdown": stringSchema(),
-			"status":          enumStringSchema("detected", "needs review"),
+			"boundary":            enumStringSchema("new_answer", "continuation", "uncertain"),
+			"boundary_confidence": numberSchema(0, 1),
+			"visible_label":       stringSchema(),
+			"title":               stringSchema(),
+			"answer_markdown":     stringSchema(),
+			"status":              enumStringSchema("detected", "needs review"),
 		},
-		"label", "title", "answer_markdown", "status",
+		"boundary", "boundary_confidence", "visible_label", "title", "answer_markdown", "status",
 	)
 	return &provider.JSONSchema{
 		Name:        "topper_copy_page",

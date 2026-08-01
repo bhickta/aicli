@@ -19,6 +19,12 @@ type questionSplitResult struct {
 	PrintedQuestions []PrintedQuestion
 }
 
+const (
+	questionBoundaryNew          = "new_answer"
+	questionBoundaryContinuation = "continuation"
+	questionBoundaryUncertain    = "uncertain"
+)
+
 type PageClassification struct {
 	PageNumber    int
 	Kind          string
@@ -32,6 +38,11 @@ type pageQuestionSplit struct {
 	Classification   PageClassification
 	PrintedQuestions []PrintedQuestion
 	Questions        []Question
+}
+
+type pageQuestionJob struct {
+	Page     Page
+	Previous *Page
 }
 
 type questionSplitRequestError struct {
@@ -56,7 +67,7 @@ func (s *Service) splitQuestions(
 		}, nil
 	}
 	workers = EffectiveQuestionWorkers(workers, len(pages))
-	jobs := make(chan Page)
+	jobs := make(chan pageQuestionJob)
 	results := make(chan pageQuestionSplit, len(pages))
 	errCh := make(chan error, 1)
 	ctx, cancel := context.WithCancel(ctx)
@@ -69,11 +80,11 @@ func (s *Service) splitQuestions(
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for page := range jobs {
+			for job := range jobs {
 				start := time.Now()
-				pageResult, err := s.splitPageQuestions(ctx, model, page)
+				pageResult, err := s.splitPageQuestionsWithPrevious(ctx, model, job.Page, job.Previous)
 				if err != nil {
-					s.logWarn("topper copy question split page failed", "page", page.Number, "name", page.Name, "elapsed_ms", elapsedMS(start), "error", err)
+					s.logWarn("topper copy question split page failed", "page", job.Page.Number, "name", job.Page.Name, "elapsed_ms", elapsedMS(start), "error", err)
 					select {
 					case errCh <- err:
 						cancel()
@@ -84,9 +95,9 @@ func (s *Service) splitQuestions(
 				s.logInfo(
 					"topper copy question split page completed",
 					"page",
-					page.Number,
+					job.Page.Number,
 					"name",
-					page.Name,
+					job.Page.Name,
 					"page_kind",
 					pageResult.Classification.Kind,
 					"questions",
@@ -100,11 +111,16 @@ func (s *Service) splitQuestions(
 		}()
 	}
 sendPages:
-	for _, page := range pages {
+	for index, page := range pages {
+		var previous *Page
+		if index > 0 {
+			previousPage := pages[index-1]
+			previous = &previousPage
+		}
 		select {
 		case <-ctx.Done():
 			break sendPages
-		case jobs <- page:
+		case jobs <- pageQuestionJob{Page: page, Previous: previous}:
 		}
 	}
 	close(jobs)
@@ -143,22 +159,33 @@ sendPages:
 func mergeQuestionBlocks(questions []Question) []Question {
 	sortQuestions(questions)
 	merged := []Question{}
-	seen := map[string]int{}
+	usedIDs := map[string]int{}
 	for _, question := range questions {
-		key := normalizedQuestionKey(question)
-		if len(merged) > 0 && (isContinuationQuestion(question) || isLikelyGenericContinuation(merged[len(merged)-1], question)) {
+		question.Boundary = normalizeQuestionBoundary(question.Boundary)
+		question.BoundaryConfidence = clampFloat(question.BoundaryConfidence, 0, 1)
+		if question.Boundary == questionBoundaryContinuation && len(merged) > 0 {
 			appendQuestionBlock(&merged[len(merged)-1], question)
 			continue
 		}
-		if idx, ok := seen[key]; ok {
-			appendQuestionBlock(&merged[idx], question)
-			continue
+		if question.Boundary == questionBoundaryContinuation {
+			question.Boundary = questionBoundaryUncertain
 		}
-		question.ID = key
-		seen[key] = len(merged)
+		if question.Boundary == questionBoundaryUncertain || question.BoundaryConfidence < 0.7 {
+			question.Status = "needs review"
+		}
+		question.ID = uniqueQuestionID(question, usedIDs)
 		merged = append(merged, question)
 	}
 	return merged
+}
+
+func uniqueQuestionID(question Question, used map[string]int) string {
+	base := normalizedQuestionKey(question)
+	used[base]++
+	if used[base] == 1 {
+		return base
+	}
+	return fmt.Sprintf("%s-%d", base, used[base])
 }
 
 func normalizedQuestionKey(question Question) string {
@@ -172,49 +199,28 @@ func normalizedQuestionKey(question Question) string {
 	return key
 }
 
-func isContinuationQuestion(question Question) bool {
-	label := strings.ToLower(strings.TrimSpace(question.Label + " " + question.ID))
-	return strings.Contains(label, "continuation")
-}
-
-func isLikelyGenericContinuation(previous, current Question) bool {
-	previousPage := lastInt(previous.SourcePages)
-	currentPage := firstInt(current.SourcePages)
-	if previousPage <= 0 || currentPage != previousPage+1 {
-		return false
-	}
-	if !hasQuestionSubpart(previous.Label) || hasQuestionSubpart(current.Label) {
-		return false
-	}
-	previousNumber := questionNumber(previous.Label)
-	return previousNumber != "" && previousNumber == questionNumber(current.Label)
-}
-
-func hasQuestionSubpart(label string) bool {
-	return strings.ContainsAny(label, "()")
-}
-
-func questionNumber(label string) string {
-	var number strings.Builder
-	foundDigit := false
-	for _, char := range label {
-		if char >= '0' && char <= '9' {
-			foundDigit = true
-			number.WriteRune(char)
-			continue
-		}
-		if foundDigit {
-			break
-		}
-	}
-	return number.String()
-}
-
 func appendQuestionBlock(dst *Question, src Question) {
 	dst.AnswerMarkdown = strings.TrimSpace(dst.AnswerMarkdown + "\n\n" + src.AnswerMarkdown)
 	dst.SourcePages = appendUniqueInts(dst.SourcePages, src.SourcePages...)
 	if dst.Title == "" {
 		dst.Title = src.Title
+	}
+	if src.Status == "needs review" || src.BoundaryConfidence < 0.7 {
+		dst.Status = "needs review"
+	}
+	if src.BoundaryConfidence < dst.BoundaryConfidence {
+		dst.BoundaryConfidence = src.BoundaryConfidence
+	}
+}
+
+func normalizeQuestionBoundary(boundary string) string {
+	switch strings.ToLower(strings.TrimSpace(boundary)) {
+	case questionBoundaryNew:
+		return questionBoundaryNew
+	case questionBoundaryContinuation:
+		return questionBoundaryContinuation
+	default:
+		return questionBoundaryUncertain
 	}
 }
 
@@ -230,6 +236,15 @@ func reportQuestionProgress(progress func(completed int, total int), completed *
 }
 
 func (s *Service) splitPageQuestions(ctx context.Context, model string, page Page) (pageQuestionSplit, error) {
+	return s.splitPageQuestionsWithPrevious(ctx, model, page, nil)
+}
+
+func (s *Service) splitPageQuestionsWithPrevious(
+	ctx context.Context,
+	model string,
+	page Page,
+	previous *Page,
+) (pageQuestionSplit, error) {
 	if isOCRFailureText(page.Text) {
 		return pageQuestionSplit{
 			Classification: PageClassification{
@@ -242,14 +257,14 @@ func (s *Service) splitPageQuestions(ctx context.Context, model string, page Pag
 			Questions:        []Question{},
 		}, nil
 	}
-	result, parseErr := s.requestPageQuestionSplit(ctx, model, page, topperCopyQuestionPrompt(page))
+	result, parseErr := s.requestPageQuestionSplit(ctx, model, page, topperCopyQuestionPrompt(page, previous))
 	needsRetry := parseErr != nil || (result.Classification.Kind == "question_paper" && len(result.PrintedQuestions) == 0)
 	if needsRetry {
 		retryResult, retryErr := s.requestPageQuestionSplit(
 			ctx,
 			model,
 			page,
-			topperCopyQuestionRetryPrompt(page, pageSplitRetryReason(parseErr, result)),
+			topperCopyQuestionRetryPrompt(page, previous, pageSplitRetryReason(parseErr, result)),
 		)
 		if retryErr == nil {
 			result = retryResult
@@ -336,12 +351,15 @@ type questionSplitPayload struct {
 }
 
 type questionSplitItem struct {
-	Label          string `json:"label"`
-	Question       string `json:"question"`
-	Title          string `json:"title"`
-	AnswerMarkdown string `json:"answer_markdown"`
-	Answer         string `json:"answer"`
-	Status         string `json:"status"`
+	Boundary           string  `json:"boundary"`
+	BoundaryConfidence float64 `json:"boundary_confidence"`
+	VisibleLabel       string  `json:"visible_label"`
+	Label              string  `json:"label"`
+	Question           string  `json:"question"`
+	Title              string  `json:"title"`
+	AnswerMarkdown     string  `json:"answer_markdown"`
+	Answer             string  `json:"answer"`
+	Status             string  `json:"status"`
 }
 
 func parseQuestionSplit(content string, pageNumber int) ([]Question, error) {
@@ -373,24 +391,38 @@ func parsePageQuestionSplit(content string, pageNumber int) (pageQuestionSplit, 
 		if answer == "" {
 			continue
 		}
-		label := strings.TrimSpace(item.Label)
+		boundary := normalizeQuestionBoundary(item.Boundary)
+		boundaryConfidence := clampFloat(item.BoundaryConfidence, 0, 1)
+		label := strings.TrimSpace(item.VisibleLabel)
+		if label == "" {
+			label = strings.TrimSpace(item.Label)
+		}
 		if label == "" {
 			label = strings.TrimSpace(item.Question)
 		}
 		if label == "" {
-			label = fmt.Sprintf("Page %d block %d", pageNumber, i+1)
+			if boundary == questionBoundaryContinuation {
+				label = fmt.Sprintf("Page %d continuation", pageNumber)
+			} else {
+				label = fmt.Sprintf("Page %d block %d", pageNumber, i+1)
+			}
 		}
 		status := strings.TrimSpace(item.Status)
 		if status == "" {
 			status = "detected"
 		}
+		if boundary == questionBoundaryUncertain || boundaryConfidence < 0.7 {
+			status = "needs review"
+		}
 		questions = append(questions, Question{
-			ID:             normalizeQuestionLabel(label),
-			Label:          label,
-			Title:          strings.TrimSpace(item.Title),
-			AnswerMarkdown: answer,
-			SourcePages:    []int{pageNumber},
-			Status:         status,
+			ID:                 normalizeQuestionLabel(label),
+			Label:              label,
+			Title:              strings.TrimSpace(item.Title),
+			AnswerMarkdown:     answer,
+			SourcePages:        []int{pageNumber},
+			Status:             status,
+			Boundary:           boundary,
+			BoundaryConfidence: boundaryConfidence,
 		})
 	}
 	kind := normalizePageKind(payload.PageKind)
@@ -486,11 +518,13 @@ func pageFallbackQuestions(pages []Page) []Question {
 	questions := make([]Question, 0, len(pages))
 	for _, page := range pages {
 		questions = append(questions, Question{
-			ID:             fmt.Sprintf("page-%d", page.Number),
-			Label:          fmt.Sprintf("Page %d", page.Number),
-			AnswerMarkdown: page.Text,
-			SourcePages:    []int{page.Number},
-			Status:         "needs review",
+			ID:                 fmt.Sprintf("page-%d", page.Number),
+			Label:              fmt.Sprintf("Page %d", page.Number),
+			AnswerMarkdown:     page.Text,
+			SourcePages:        []int{page.Number},
+			Status:             "needs review",
+			Boundary:           questionBoundaryUncertain,
+			BoundaryConfidence: 0,
 		})
 	}
 	return questions
@@ -531,13 +565,6 @@ func firstInt(values []int) int {
 		return 0
 	}
 	return values[0]
-}
-
-func lastInt(values []int) int {
-	if len(values) == 0 {
-		return 0
-	}
-	return values[len(values)-1]
 }
 
 func normalizeQuestionLabel(label string) string {
