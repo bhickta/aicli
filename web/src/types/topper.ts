@@ -6,6 +6,9 @@ export interface TopperCopyPage {
   text: string;
   unclear_count: number;
   verified: boolean;
+  kind?: "answer" | "question_paper" | "cover" | "index" | "evaluation" | "blank" | "other" | "unknown" | string;
+  kind_confidence?: number;
+  classification_reason?: string;
 }
 
 export interface QuestionDimensions {
@@ -16,6 +19,56 @@ export interface QuestionDimensions {
   fact: string;
   fact_usage: string;
   custom: string;
+  demand_alignment?: string;
+  body_structure?: string;
+  content_depth?: string;
+  multidimensionality?: string;
+  presentation?: string;
+  strengths?: AnalysisPoint[];
+  gaps?: AnalysisPoint[];
+  missing_dimensions?: string[];
+  examiner_signals?: string[];
+  improvements?: AnalysisImprovement[];
+  reusable_techniques?: string[];
+  scorecard?: QuestionScorecard;
+}
+
+export interface AnalysisPoint {
+  point: string;
+  evidence?: string;
+  why_it_matters?: string;
+}
+
+export interface AnalysisImprovement {
+  priority: "high" | "medium" | "low" | string;
+  change: string;
+  example?: string;
+}
+
+export interface QuestionScorecard {
+  demand_fulfilment: number;
+  structure: number;
+  content_depth: number;
+  evidence: number;
+  multidimensionality: number;
+  presentation: number;
+  conclusion: number;
+  overall_percent: number;
+  estimated_band: string;
+  confidence: string;
+  rationale: string;
+}
+
+export interface AnalysisQuality {
+  classification_coverage_percent: number;
+  average_classification_confidence: number;
+  prompt_match_percent: number;
+  analysis_coverage_percent: number;
+  evidence_coverage_percent: number;
+  ocr_unclear_percent: number;
+  overall_coverage_percent: number;
+  requires_review: boolean;
+  warnings: string[];
 }
 
 export interface CopyMetadata {
@@ -72,6 +125,7 @@ export interface TopperCopyReview {
   pages: TopperCopyPage[];
   questions: TopperCopyQuestion[];
   report: string;
+  quality?: AnalysisQuality;
 }
 
 export interface TopperReviewRecord {

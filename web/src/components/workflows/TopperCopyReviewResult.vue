@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import "../../styles/topper-copy-review.css";
 import { useTopperCopyReview, type TopperRerunAction } from "../../composables/useTopperCopyReview";
-import type { TopperCopyReview } from "../../types";
+import type { TopperCopyQuestion, TopperCopyReview } from "../../types";
 import TopperOcrViewer from "./TopperOcrViewer.vue";
 import TopperQuestionDimensions from "./TopperQuestionDimensions.vue";
+import TopperAnalysisQuality from "./topper-analysis/TopperAnalysisQuality.vue";
 
 const props = defineProps<{
   review: TopperCopyReview;
@@ -51,6 +52,13 @@ const {
   (review) => emit("update:review", review),
   (action, pageNumber) => emit("rerunPage", action, pageNumber),
 );
+
+function questionScoreLabel(question: TopperCopyQuestion) {
+  const scorecard = question.dimensions?.scorecard;
+  if (!scorecard) return "";
+  const score = Math.min(100, Math.max(0, Number(scorecard.overall_percent) || 0));
+  return ` · rubric ${score}%`;
+}
 </script>
 
 <template>
@@ -66,6 +74,8 @@ const {
         <button type="button" @click="fullscreen = !fullscreen">{{ fullscreen ? "Exit full screen" : "Full screen" }}</button>
       </div>
     </header>
+
+    <TopperAnalysisQuality :quality="review.quality" />
 
     <nav class="topper-review-tabs" aria-label="Topper review views">
       <button type="button" :class="{ active: activeTab === 'pages' }" @click="activeTab = 'pages'">{{ pageTabLabel }}</button>
@@ -83,7 +93,7 @@ const {
           @click="selectPage(page.number)"
         >
           <strong>Page {{ page.number }}</strong>
-          <span>{{ page.unclear_count }} unclear · {{ pageEdits[page.number]?.verified ? "verified" : "unchecked" }}</span>
+          <span>{{ page.kind || "unclassified" }} · {{ page.unclear_count }} unclear · {{ pageEdits[page.number]?.verified ? "verified" : "unchecked" }}</span>
         </button>
       </aside>
 
@@ -123,7 +133,7 @@ const {
           @click="selectQuestion(question)"
         >
           <strong>{{ question.label }}</strong>
-          <span>{{ question.status }} · pages {{ question.source_pages.join(", ") }}</span>
+          <span>{{ question.status }} · pages {{ question.source_pages.join(", ") }}{{ questionScoreLabel(question) }}</span>
         </button>
       </aside>
       <main v-if="activeQuestion" class="topper-question-workspace">
