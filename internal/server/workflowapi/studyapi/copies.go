@@ -55,7 +55,7 @@ func (h *Handler) RegisterRoutes(r *http.ServeMux) {
 	r.HandleFunc("POST /api/study/batches", h.startStudyBatch)
 	r.HandleFunc("GET /api/study/batches", h.listStudyBatches)
 	r.HandleFunc("GET /api/study/batches/{id}", h.getStudyBatch)
-	r.HandleFunc("POST /api/study/stages", h.startStudyStage)
+	r.HandleFunc("POST /api/study/copies/{id}/stages", h.startStudyStage)
 }
 
 func (h *Handler) listStudyCopies(w http.ResponseWriter, r *http.Request) {
