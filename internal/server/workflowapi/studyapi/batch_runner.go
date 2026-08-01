@@ -34,6 +34,7 @@ type studyBatchRunOptions struct {
 	BoundaryModel string
 	ReportModel   string
 	Parallelism   int
+	ModelWorkers  int
 	ForceOCR      bool
 }
 
@@ -92,16 +93,24 @@ func (h *Handler) runStudyBatch(
 	if err != nil {
 		return studyBatchRunResult{Batch: batch}, err
 	}
-	workers := minInt(options.Parallelism, len(copies))
-	if workers < 1 {
-		workers = 1
-	}
-	progress(core.Units(fmt.Sprintf("%s with %d worker(s)", studyBatchProgressLabel(batch.Stage), workers), 0, len(copies), "copy"))
+	copyWorkers, modelWorkers := studyBatchWorkerAllocation(options.Parallelism, len(copies))
+	options.ModelWorkers = modelWorkers
+	progress(core.Units(
+		fmt.Sprintf(
+			"%s with %d copy worker(s), %d model worker(s) per copy",
+			studyBatchProgressLabel(batch.Stage),
+			copyWorkers,
+			modelWorkers,
+		),
+		0,
+		len(copies),
+		"copy",
+	))
 
 	jobs := make(chan storage.StudyCopyRecord)
 	results := make(chan studyBatchCopyResult, len(copies))
 	var wg sync.WaitGroup
-	for range workers {
+	for range copyWorkers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -300,24 +309,7 @@ func (h *Handler) runImageAnalysisWithRetry(
 				return h.saveStudyOCRCheckpoint(ctx, topperStore, jobID, copyRecord, options, checkpoint)
 			}),
 		)
-		result, err := service.RunWithProgress(ctx, analyze.Request{
-			Model:           options.Model,
-			OCRModel:        options.OCRModel,
-			QuestionModel:   options.QuestionModel,
-			BoundaryModel:   options.BoundaryModel,
-			ReportModel:     options.ReportModel,
-			Path:            copyRecord.SourcePath,
-			DPI:             defaultStudyBatchDPI,
-			RenderWorkers:   1,
-			Workers:         1,
-			OCRBatchSize:    1,
-			OCRInputMode:    analyze.OCRInputModeImages,
-			QuestionSplit:   true,
-			QuestionWorkers: 1,
-			ReviewID:        copyRecord.ID,
-			ForceOCR:        options.ForceOCR && len(ocrPages) == 0,
-			OCRPages:        ocrPages,
-		}, nil)
+		result, err := service.RunWithProgress(ctx, newStudyAnalysisRequest(copyRecord, options, ocrPages), nil)
 		if err == nil {
 			return result, nil
 		}
@@ -359,20 +351,7 @@ func (h *Handler) runStudyOCRPhase(
 			return errStudyOCRPhaseComplete
 		}),
 	)
-	_, err := service.RunWithProgress(ctx, analyze.Request{
-		Model:           options.OCRModel,
-		OCRModel:        options.OCRModel,
-		Path:            copyRecord.SourcePath,
-		DPI:             defaultStudyBatchDPI,
-		RenderWorkers:   1,
-		Workers:         1,
-		OCRBatchSize:    1,
-		OCRInputMode:    analyze.OCRInputModeImages,
-		QuestionSplit:   true,
-		QuestionWorkers: 1,
-		ReviewID:        copyRecord.ID,
-		ForceOCR:        options.ForceOCR,
-	}, nil)
+	_, err := service.RunWithProgress(ctx, newStudyOCRRequest(copyRecord, options), nil)
 	if !errors.Is(err, errStudyOCRPhaseComplete) {
 		return nil, err
 	}
@@ -608,6 +587,60 @@ func normalizedStudyBatchRunOptions(options studyBatchRunOptions) studyBatchRunO
 		options.Parallelism = maxStudyBatchParallelism
 	}
 	return options
+}
+
+func studyBatchWorkerAllocation(parallelism int, copies int) (copyWorkers int, modelWorkers int) {
+	if parallelism < 1 {
+		parallelism = defaultStudyBatchParallelism
+	}
+	if copies < 1 {
+		return 1, 1
+	}
+	copyWorkers = minInt(parallelism, copies)
+	modelWorkers = parallelism / copyWorkers
+	if modelWorkers < 1 {
+		modelWorkers = 1
+	}
+	return copyWorkers, modelWorkers
+}
+
+func newStudyAnalysisRequest(
+	copyRecord storage.StudyCopyRecord,
+	options studyBatchRunOptions,
+	ocrPages []analyze.Page,
+) analyze.Request {
+	workers := options.ModelWorkers
+	if workers < 1 {
+		workers = 1
+	}
+	return analyze.Request{
+		Model:           options.Model,
+		OCRModel:        options.OCRModel,
+		QuestionModel:   options.QuestionModel,
+		BoundaryModel:   options.BoundaryModel,
+		ReportModel:     options.ReportModel,
+		Path:            copyRecord.SourcePath,
+		DPI:             defaultStudyBatchDPI,
+		RenderWorkers:   workers,
+		Workers:         workers,
+		OCRBatchSize:    1,
+		OCRInputMode:    analyze.OCRInputModeImages,
+		QuestionSplit:   true,
+		QuestionWorkers: workers,
+		ReviewID:        copyRecord.ID,
+		ForceOCR:        options.ForceOCR && len(ocrPages) == 0,
+		OCRPages:        ocrPages,
+	}
+}
+
+func newStudyOCRRequest(copyRecord storage.StudyCopyRecord, options studyBatchRunOptions) analyze.Request {
+	req := newStudyAnalysisRequest(copyRecord, options, nil)
+	req.Model = options.OCRModel
+	req.QuestionModel = ""
+	req.BoundaryModel = ""
+	req.ReportModel = ""
+	req.ForceOCR = options.ForceOCR
+	return req
 }
 
 func (h *Handler) resolveStudyBatchRunOptions(

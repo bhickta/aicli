@@ -92,7 +92,7 @@ function updateModel(stage: "ocr" | "question" | "boundary" | "report", value: {
     </div>
     <div class="study-batch-row">
       <label class="study-parallel-control">
-        <span>Parallel</span>
+        <span>Parallel model calls</span>
         <input
           :value="parallelism"
           :disabled="running"
@@ -112,6 +112,9 @@ function updateModel(stage: "ocr" | "question" | "boundary" | "report", value: {
         <span>Bypass cache</span>
       </label>
     </div>
+    <p class="study-parallel-help">
+      This is one shared budget: a single copy uses it across pages and questions; batches divide it across copies.
+    </p>
   </section>
 </template>
 
@@ -146,5 +149,12 @@ function updateModel(stage: "ocr" | "question" | "boundary" | "report", value: {
   color: #aebdd0;
   font-size: 0.7rem;
   font-weight: 600;
+}
+
+.study-parallel-help {
+  color: #8b949e;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  margin: 0;
 }
 </style>

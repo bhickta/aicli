@@ -232,3 +232,79 @@ func TestStudyTopperReviewStatusRequiresReviewWhenQualityWarns(t *testing.T) {
 		t.Fatalf("review status = %q, want needs_review for failed quality gates", got)
 	}
 }
+
+func TestStudyBatchWorkerAllocationSharesOneBudget(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		parallelism      int
+		copies           int
+		wantCopyWorkers  int
+		wantModelWorkers int
+	}{
+		{name: "defaults invalid input", parallelism: 0, copies: 0, wantCopyWorkers: 1, wantModelWorkers: 1},
+		{name: "single copy gets every slot", parallelism: 4, copies: 1, wantCopyWorkers: 1, wantModelWorkers: 4},
+		{name: "copies consume the budget first", parallelism: 4, copies: 4, wantCopyWorkers: 4, wantModelWorkers: 1},
+		{name: "remaining capacity is divided safely", parallelism: 5, copies: 2, wantCopyWorkers: 2, wantModelWorkers: 2},
+		{name: "copy workers are capped by selected copies", parallelism: 5, copies: 3, wantCopyWorkers: 3, wantModelWorkers: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			copyWorkers, modelWorkers := studyBatchWorkerAllocation(tt.parallelism, tt.copies)
+			if copyWorkers != tt.wantCopyWorkers || modelWorkers != tt.wantModelWorkers {
+				t.Fatalf(
+					"studyBatchWorkerAllocation(%d, %d) = (%d, %d), want (%d, %d)",
+					tt.parallelism,
+					tt.copies,
+					copyWorkers,
+					modelWorkers,
+					tt.wantCopyWorkers,
+					tt.wantModelWorkers,
+				)
+			}
+			budget := tt.parallelism
+			if budget < 1 {
+				budget = 1
+			}
+			if tt.copies > 0 && copyWorkers*modelWorkers > budget {
+				t.Fatalf("allocation exceeds shared parallelism budget")
+			}
+		})
+	}
+}
+
+func TestStudyAnalyzeRequestsUseAssignedModelWorkers(t *testing.T) {
+	t.Parallel()
+
+	copyRecord := storage.StudyCopyRecord{ID: "copy-1", SourcePath: "/tmp/copy.pdf"}
+	options := studyBatchRunOptions{
+		Model:         "analysis-model",
+		OCRModel:      "ocr-model",
+		QuestionModel: "question-model",
+		BoundaryModel: "boundary-model",
+		ReportModel:   "report-model",
+		ModelWorkers:  3,
+		ForceOCR:      true,
+	}
+	ocrPages := []analyze.Page{{Number: 1, Text: "saved OCR"}}
+
+	analysisReq := newStudyAnalysisRequest(copyRecord, options, ocrPages)
+	if analysisReq.RenderWorkers != 3 || analysisReq.Workers != 3 || analysisReq.QuestionWorkers != 3 {
+		t.Fatalf("analysis workers = render:%d OCR:%d question:%d, want 3 for each", analysisReq.RenderWorkers, analysisReq.Workers, analysisReq.QuestionWorkers)
+	}
+	if analysisReq.ForceOCR {
+		t.Fatal("analysis request forced OCR despite supplied checkpoint")
+	}
+	if len(analysisReq.OCRPages) != 1 || analysisReq.OCRPages[0].Text != "saved OCR" {
+		t.Fatalf("analysis OCR pages = %#v, want supplied checkpoint", analysisReq.OCRPages)
+	}
+
+	ocrReq := newStudyOCRRequest(copyRecord, options)
+	if ocrReq.Model != "ocr-model" || ocrReq.Workers != 3 || ocrReq.RenderWorkers != 3 {
+		t.Fatalf("OCR request = %#v, want OCR model with three workers", ocrReq)
+	}
+	if !ocrReq.ForceOCR {
+		t.Fatal("OCR-only request did not preserve force OCR")
+	}
+}
