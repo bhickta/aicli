@@ -327,6 +327,11 @@ func (h *Handler) runStudyCopy(w http.ResponseWriter, r *http.Request) {
 		Parallelism: 1,
 		ForceOCR:    req.ForceOCR,
 	})
+	options, _, err := h.resolveStudyBatchRunOptions(r.Context(), options)
+	if err != nil {
+		core.WriteError(w, http.StatusBadRequest, err)
+		return
+	}
 	batch, copies, ok := h.prepareStudyBatch(w, r, store, []string{copyID}, "all", options)
 	if !ok {
 		return
@@ -432,6 +437,11 @@ func (h *Handler) startStudyBatch(w http.ResponseWriter, r *http.Request) {
 		Parallelism: req.Parallelism,
 		ForceOCR:    req.ForceOCR,
 	})
+	options, _, err := h.resolveStudyBatchRunOptions(r.Context(), options)
+	if err != nil {
+		core.WriteError(w, http.StatusBadRequest, err)
+		return
+	}
 	batch, copies, ok := h.prepareStudyBatch(w, r, store, req.CopyIDs, req.Stage, options)
 	if !ok {
 		return
@@ -451,10 +461,6 @@ func (h *Handler) prepareStudyBatch(
 	stage := normalizedStudyStage(requestedStage)
 	if _, ok := h.runtime.ProviderFor(options.ProviderID); !ok {
 		core.WriteError(w, http.StatusNotFound, core.ErrProviderNotFound)
-		return storage.StudyBatchRecord{}, nil, false
-	}
-	if stage != "metadata" && !h.studyBatchProviderSupportsDirectPDF(options.ProviderID) {
-		core.WriteError(w, http.StatusBadRequest, fmt.Errorf("provider %q does not support direct PDF input", options.ProviderID))
 		return storage.StudyBatchRecord{}, nil, false
 	}
 	copyIDs := dedupeStrings(requestedCopyIDs)

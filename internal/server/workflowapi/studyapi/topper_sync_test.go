@@ -115,6 +115,33 @@ func TestSaveStudyFromTopperRecordAsCopyReplacesStaleQuestions(t *testing.T) {
 	}
 }
 
+func TestOCRReadyTopperReviewIsNotACompleteCacheHit(t *testing.T) {
+	t.Parallel()
+
+	record := topperReviewRecordForStudySyncTest(t)
+	record.Status = "ocr_ready"
+	if isCompleteTopperReview(record) {
+		t.Fatal("isCompleteTopperReview() = true, want OCR-only record to remain resumable but incomplete")
+	}
+
+	record.Status = "ready"
+	if !isCompleteTopperReview(record) {
+		t.Fatal("isCompleteTopperReview() = false, want analyzed review to be cacheable")
+	}
+}
+
+func TestStudyCopyMetadataIncludesAnalysisQuality(t *testing.T) {
+	t.Parallel()
+
+	metadata := studyCopyMetadataJSON(analyze.Response{Quality: &analyze.AnalysisQuality{
+		OverallCoveragePercent: 88,
+		RequiresReview:         true,
+	}})
+	if !strings.Contains(metadata, "analysis_quality") || !strings.Contains(metadata, "88") {
+		t.Fatalf("metadata = %q, want persisted analysis quality signals", metadata)
+	}
+}
+
 func newStudySyncTestStore(t *testing.T) *storage.SQLiteStore {
 	t.Helper()
 
@@ -159,6 +186,7 @@ func topperReviewRecordForStudySyncTest(t *testing.T) storage.TopperReviewRecord
 			AnswerMarkdown: "Answer text",
 			SourcePages:    []int{1},
 			Status:         "ready",
+			Dimensions:     &analyze.QuestionDimensions{Introduction: "Direct contextual opening"},
 			Metadata: &analyze.QuestionMetadata{
 				Subject:   "Polity",
 				Topic:     "Federalism",

@@ -20,10 +20,10 @@ import (
 )
 
 const (
-	defaultStudyBatchProviderID  = "gemini"
-	defaultStudyBatchModel       = "models/gemini-flash-lite-latest"
-	defaultStudyBatchParallelism = 2
+	defaultStudyBatchProviderID  = "lms"
+	defaultStudyBatchParallelism = 1
 	maxStudyBatchParallelism     = 5
+	defaultStudyBatchDPI         = 220
 )
 
 type studyBatchRunOptions struct {
@@ -81,10 +81,10 @@ func (h *Handler) runStudyBatch(
 	copies []storage.StudyCopyRecord,
 	options studyBatchRunOptions,
 ) (studyBatchRunResult, error) {
-	options = normalizedStudyBatchRunOptions(options)
-	vision, ok := h.runtime.ProviderFor(options.ProviderID)
-	if !ok {
-		return studyBatchRunResult{Batch: batch}, core.ErrProviderNotFound
+	var err error
+	options, vision, err := h.resolveStudyBatchRunOptions(ctx, options)
+	if err != nil {
+		return studyBatchRunResult{Batch: batch}, err
 	}
 	workers := minInt(options.Parallelism, len(copies))
 	if workers < 1 {
@@ -205,13 +205,17 @@ func (h *Handler) analyzeStudyBatchCopy(
 			return studyBatchCopyResult{CopyID: copyRecord.ID, Status: "ready", CacheHit: true}, nil
 		}
 	}
-	result, err := h.runDirectPDFAnalysisWithRetry(ctx, copyRecord, vision, options)
-	if err != nil {
-		return studyBatchCopyResult{}, err
-	}
 	topperStore, ok := h.runtime.Store().(studyTopperStore)
 	if !ok {
 		return studyBatchCopyResult{}, fmt.Errorf("topper review archive is not supported by this store")
+	}
+	ocrPages, err := loadStudyOCRCheckpoint(ctx, topperStore, copyRecord, options.ForceOCR)
+	if err != nil {
+		return studyBatchCopyResult{}, err
+	}
+	result, err := h.runImageAnalysisWithRetry(ctx, topperStore, jobID, copyRecord, vision, options, ocrPages)
+	if err != nil {
+		return studyBatchCopyResult{}, err
 	}
 	record := studyTopperReviewRecord(result, studyTopperReviewMeta{
 		JobID:      jobID,
@@ -238,27 +242,44 @@ func (h *Handler) analyzeStudyBatchCopy(
 	return out, nil
 }
 
-func (h *Handler) runDirectPDFAnalysisWithRetry(
+func (h *Handler) runImageAnalysisWithRetry(
 	ctx context.Context,
+	topperStore studyTopperStore,
+	jobID string,
 	copyRecord storage.StudyCopyRecord,
 	vision provider.Provider,
 	options studyBatchRunOptions,
+	ocrPages []analyze.Page,
 ) (analyze.Response, error) {
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
-		result, err := analyze.New(
+		service := analyze.New(
 			h.runtime.Settings().Tools,
 			tool.ExecRunner{},
 			vision,
 			analyze.WithArtifactDir(studyBatchArtifactDir(h.runtime.DataDir())),
 			analyze.WithLogger(h.runtime.Logger()),
-		).RunWithProgress(ctx, analyze.Request{
-			Model:        options.Model,
-			OCRModel:     options.Model,
-			Path:         copyRecord.SourcePath,
-			OCRInputMode: analyze.OCRInputModePDFDirect,
-			ReviewID:     copyRecord.ID,
-			ForceOCR:     options.ForceOCR,
+			analyze.WithOCRCheckpoint(func(checkpoint analyze.Response) error {
+				ocrPages = append([]analyze.Page(nil), checkpoint.Pages...)
+				return h.saveStudyOCRCheckpoint(ctx, topperStore, jobID, copyRecord, options, checkpoint)
+			}),
+		)
+		result, err := service.RunWithProgress(ctx, analyze.Request{
+			Model:           options.Model,
+			OCRModel:        options.Model,
+			QuestionModel:   options.Model,
+			ReportModel:     options.Model,
+			Path:            copyRecord.SourcePath,
+			DPI:             defaultStudyBatchDPI,
+			RenderWorkers:   1,
+			Workers:         1,
+			OCRBatchSize:    1,
+			OCRInputMode:    analyze.OCRInputModeImages,
+			QuestionSplit:   true,
+			QuestionWorkers: 1,
+			ReviewID:        copyRecord.ID,
+			ForceOCR:        options.ForceOCR && len(ocrPages) == 0,
+			OCRPages:        ocrPages,
 		}, nil)
 		if err == nil {
 			return result, nil
@@ -276,6 +297,59 @@ func (h *Handler) runDirectPDFAnalysisWithRetry(
 		}
 	}
 	return analyze.Response{}, lastErr
+}
+
+func (h *Handler) saveStudyOCRCheckpoint(
+	ctx context.Context,
+	topperStore studyTopperStore,
+	jobID string,
+	copyRecord storage.StudyCopyRecord,
+	options studyBatchRunOptions,
+	checkpoint analyze.Response,
+) error {
+	record := studyTopperReviewRecord(checkpoint, studyTopperReviewMeta{
+		JobID:      jobID,
+		SourcePath: copyRecord.SourcePath,
+		ProviderID: options.ProviderID,
+		Model:      options.Model,
+		Status:     "ocr_ready",
+	})
+	if err := topperStore.SaveTopperReview(ctx, record); err != nil {
+		return err
+	}
+	return h.syncStudyTopperReviewArtifact(checkpoint)
+}
+
+func loadStudyOCRCheckpoint(
+	ctx context.Context,
+	topperStore studyTopperStore,
+	copyRecord storage.StudyCopyRecord,
+	forceOCR bool,
+) ([]analyze.Page, error) {
+	if forceOCR {
+		return nil, nil
+	}
+	record, err := topperStore.GetTopperReview(ctx, copyRecord.ID)
+	if errors.Is(err, storage.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(strings.TrimSpace(record.Status), "ocr_ready") {
+		return nil, nil
+	}
+	if record.SourcePath != "" && copyRecord.SourcePath != "" && filepath.Clean(record.SourcePath) != filepath.Clean(copyRecord.SourcePath) {
+		return nil, nil
+	}
+	var review analyze.Response
+	if err := json.Unmarshal([]byte(record.ReviewJSON), &review); err != nil {
+		return nil, fmt.Errorf("parse OCR checkpoint %s: %w", record.ID, err)
+	}
+	if len(review.Pages) == 0 {
+		return nil, nil
+	}
+	return review.Pages, nil
 }
 
 func (h *Handler) collectStudyBatchResults(
@@ -441,7 +515,7 @@ func shouldSkipStudyBatchCopy(copyRecord storage.StudyCopyRecord) bool {
 
 func normalizedStudyBatchRunOptions(options studyBatchRunOptions) studyBatchRunOptions {
 	options.ProviderID = firstString(options.ProviderID, defaultStudyBatchProviderID)
-	options.Model = firstString(options.Model, defaultStudyBatchModel)
+	options.Model = strings.TrimSpace(options.Model)
 	if options.Parallelism <= 0 {
 		options.Parallelism = defaultStudyBatchParallelism
 	}
@@ -451,20 +525,42 @@ func normalizedStudyBatchRunOptions(options studyBatchRunOptions) studyBatchRunO
 	return options
 }
 
+func (h *Handler) resolveStudyBatchRunOptions(
+	ctx context.Context,
+	options studyBatchRunOptions,
+) (studyBatchRunOptions, provider.Provider, error) {
+	options = normalizedStudyBatchRunOptions(options)
+	p, ok := h.runtime.ProviderFor(options.ProviderID)
+	if !ok {
+		return options, nil, core.ErrProviderNotFound
+	}
+	if options.Model != "" {
+		return options, p, nil
+	}
+	models, err := p.ListModels(ctx)
+	if err != nil {
+		if options.ProviderID == defaultStudyBatchProviderID {
+			return options, nil, fmt.Errorf("LM Studio is unavailable: start its local server, load a vision-capable model, and retry: %w", err)
+		}
+		return options, nil, fmt.Errorf("list models from provider %q: %w", options.ProviderID, err)
+	}
+	for _, model := range models {
+		if modelID := strings.TrimSpace(model.ID); modelID != "" {
+			options.Model = modelID
+			return options, p, nil
+		}
+	}
+	if options.ProviderID == defaultStudyBatchProviderID {
+		return options, nil, errors.New("LM Studio returned no loaded models; load a vision-capable model in LM Studio and retry")
+	}
+	return options, nil, fmt.Errorf("provider %q returned no models; load or select a model and retry", options.ProviderID)
+}
+
 func studyBatchProgressLabel(stage string) string {
 	if stage == "metadata" {
 		return "generating metadata"
 	}
 	return "analyzing topper PDFs"
-}
-
-func (h *Handler) studyBatchProviderSupportsDirectPDF(providerID string) bool {
-	p, ok := h.runtime.ProviderFor(providerID)
-	if !ok {
-		return false
-	}
-	_, ok = p.(provider.DocumentProcessor)
-	return ok
 }
 
 func studyBatchArtifactDir(dataDir string) string {

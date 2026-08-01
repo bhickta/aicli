@@ -57,6 +57,9 @@ func (h *Handler) syncStudyCopyFromMatchingTopper(
 	if err != nil || !found {
 		return false, err
 	}
+	if !isCompleteTopperReview(record) {
+		return false, nil
+	}
 	if !force && !shouldSyncStudyCopy(copyRecord, record) {
 		return false, nil
 	}
@@ -319,10 +322,32 @@ func studyCopyMetadataJSON(review analyze.Response) string {
 	if len(questionMetadata) > 0 {
 		payload["questions"] = questionMetadata
 	}
+	if review.Quality != nil {
+		payload["analysis_quality"] = review.Quality
+	}
 	if len(payload) == 0 {
 		return ""
 	}
 	return jsonString(payload)
+}
+
+func isCompleteTopperReview(record storage.TopperReviewRecord) bool {
+	if !strings.EqualFold(strings.TrimSpace(record.Status), "ready") {
+		return false
+	}
+	var review analyze.Response
+	if err := json.Unmarshal([]byte(record.ReviewJSON), &review); err != nil {
+		return false
+	}
+	if len(review.Pages) == 0 || len(review.Questions) == 0 || strings.TrimSpace(review.Report) == "" {
+		return false
+	}
+	for _, question := range review.Questions {
+		if question.Dimensions != nil {
+			return true
+		}
+	}
+	return false
 }
 
 type studyQuestionMetadataSummary struct {
