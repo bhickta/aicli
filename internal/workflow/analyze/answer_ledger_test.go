@@ -29,6 +29,63 @@ func TestParseAnswerBoundaryLedgerRejectsNonSchemaOutput(t *testing.T) {
 	}
 }
 
+func TestParseAnswerBoundaryLedgerRejectsSemanticSchemaViolations(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			name:    "missing required reason",
+			content: `{"decisions":[{"page_number":1,"boundary":"new_answer","boundary_confidence":0.9,"visible_label":"Q1","label_evidence":"Q1"}]}`,
+		},
+		{
+			name:    "invalid boundary enum",
+			content: `{"decisions":[{"page_number":1,"boundary":"new","boundary_confidence":0.9,"visible_label":"Q1","label_evidence":"Q1","reason":"visible"}]}`,
+		},
+		{
+			name:    "page number below schema minimum",
+			content: `{"decisions":[{"page_number":0,"boundary":"new_answer","boundary_confidence":0.9,"visible_label":"Q1","label_evidence":"Q1","reason":"visible"}]}`,
+		},
+		{
+			name:    "page number above schema maximum",
+			content: `{"decisions":[{"page_number":10001,"boundary":"new_answer","boundary_confidence":0.9,"visible_label":"Q1","label_evidence":"Q1","reason":"visible"}]}`,
+		},
+		{
+			name:    "confidence below schema minimum",
+			content: `{"decisions":[{"page_number":1,"boundary":"new_answer","boundary_confidence":-0.1,"visible_label":"Q1","label_evidence":"Q1","reason":"visible"}]}`,
+		},
+		{
+			name:    "confidence above schema maximum",
+			content: `{"decisions":[{"page_number":1,"boundary":"new_answer","boundary_confidence":1.1,"visible_label":"Q1","label_evidence":"Q1","reason":"visible"}]}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := parseAnswerBoundaryLedger(tt.content); err == nil {
+				t.Fatalf("parseAnswerBoundaryLedger(%q) error = nil, want rejection", tt.content)
+			}
+		})
+	}
+}
+
+func TestParseAnswerBoundaryLedgerAcceptsExactSchema(t *testing.T) {
+	t.Parallel()
+
+	content := `{"decisions":[{"page_number":1,"boundary":"new_answer","boundary_confidence":0,"visible_label":"","label_evidence":"","reason":"unclear"}]}`
+	ledger, err := parseAnswerBoundaryLedger(content)
+	if err != nil {
+		t.Fatalf("parseAnswerBoundaryLedger() error = %v", err)
+	}
+	if len(ledger.Decisions) != 1 || ledger.Decisions[0].BoundaryConfidence != 0 {
+		t.Fatalf("parseAnswerBoundaryLedger() = %#v, want exact zero-confidence decision", ledger)
+	}
+}
+
 func TestQuestionsFromBoundaryLedgerRejectsInvalidCoverage(t *testing.T) {
 	t.Parallel()
 

@@ -25,6 +25,19 @@ type answerBoundaryDecision struct {
 	Reason             string  `json:"reason"`
 }
 
+type answerBoundaryLedgerPayload struct {
+	Decisions []answerBoundaryDecisionPayload `json:"decisions"`
+}
+
+type answerBoundaryDecisionPayload struct {
+	PageNumber         *int     `json:"page_number"`
+	Boundary           *string  `json:"boundary"`
+	BoundaryConfidence *float64 `json:"boundary_confidence"`
+	VisibleLabel       *string  `json:"visible_label"`
+	LabelEvidence      *string  `json:"label_evidence"`
+	Reason             *string  `json:"reason"`
+}
+
 func (s *Service) groupAnswerPages(
 	ctx context.Context,
 	model string,
@@ -60,19 +73,79 @@ func parseAnswerBoundaryLedger(content string) (answerBoundaryLedger, error) {
 	if content == "" {
 		return answerBoundaryLedger{}, errors.New("empty answer-boundary ledger response")
 	}
-	var ledger answerBoundaryLedger
+	var payload answerBoundaryLedgerPayload
 	decoder := json.NewDecoder(strings.NewReader(content))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&ledger); err != nil {
+	if err := decoder.Decode(&payload); err != nil {
 		return answerBoundaryLedger{}, fmt.Errorf("parse answer-boundary ledger: %w", err)
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return answerBoundaryLedger{}, errors.New("parse answer-boundary ledger: trailing content")
 	}
-	if len(ledger.Decisions) == 0 {
+	if len(payload.Decisions) == 0 {
 		return answerBoundaryLedger{}, errors.New("answer-boundary ledger returned no page decisions")
 	}
+	ledger := answerBoundaryLedger{Decisions: make([]answerBoundaryDecision, 0, len(payload.Decisions))}
+	for i, decision := range payload.Decisions {
+		parsed, err := decision.strictValue(i)
+		if err != nil {
+			return answerBoundaryLedger{}, err
+		}
+		ledger.Decisions = append(ledger.Decisions, parsed)
+	}
 	return ledger, nil
+}
+
+func (d answerBoundaryDecisionPayload) strictValue(index int) (answerBoundaryDecision, error) {
+	missing := ""
+	switch {
+	case d.PageNumber == nil:
+		missing = "page_number"
+	case d.Boundary == nil:
+		missing = "boundary"
+	case d.BoundaryConfidence == nil:
+		missing = "boundary_confidence"
+	case d.VisibleLabel == nil:
+		missing = "visible_label"
+	case d.LabelEvidence == nil:
+		missing = "label_evidence"
+	case d.Reason == nil:
+		missing = "reason"
+	}
+	if missing != "" {
+		return answerBoundaryDecision{}, fmt.Errorf("answer-boundary decision %d missing required field %q", index+1, missing)
+	}
+	decision := answerBoundaryDecision{
+		PageNumber:         *d.PageNumber,
+		Boundary:           *d.Boundary,
+		BoundaryConfidence: *d.BoundaryConfidence,
+		VisibleLabel:       *d.VisibleLabel,
+		LabelEvidence:      *d.LabelEvidence,
+		Reason:             *d.Reason,
+	}
+	if err := validateAnswerBoundaryDecision(decision, index); err != nil {
+		return answerBoundaryDecision{}, err
+	}
+	return decision, nil
+}
+
+func validateAnswerBoundaryDecision(decision answerBoundaryDecision, index int) error {
+	if decision.PageNumber < 1 || decision.PageNumber > 10000 {
+		return fmt.Errorf("answer-boundary decision %d page_number %d is outside [1,10000]", index+1, decision.PageNumber)
+	}
+	switch decision.Boundary {
+	case questionBoundaryNew, questionBoundaryContinuation, questionBoundaryUncertain:
+	default:
+		return fmt.Errorf("answer-boundary decision %d has invalid boundary %q", index+1, decision.Boundary)
+	}
+	if decision.BoundaryConfidence < 0 || decision.BoundaryConfidence > 1 {
+		return fmt.Errorf(
+			"answer-boundary decision %d boundary_confidence %v is outside [0,1]",
+			index+1,
+			decision.BoundaryConfidence,
+		)
+	}
+	return nil
 }
 
 func questionsFromBoundaryLedger(pages []Page, ledger answerBoundaryLedger) ([]Question, error) {
@@ -88,7 +161,10 @@ func questionsFromBoundaryLedger(pages []Page, ledger answerBoundaryLedger) ([]Q
 		pageByNumber[page.Number] = page
 	}
 	decisionByPage := make(map[int]answerBoundaryDecision, len(ledger.Decisions))
-	for _, decision := range ledger.Decisions {
+	for i, decision := range ledger.Decisions {
+		if err := validateAnswerBoundaryDecision(decision, i); err != nil {
+			return nil, err
+		}
 		if _, ok := pageByNumber[decision.PageNumber]; !ok {
 			return nil, fmt.Errorf("answer-boundary ledger referenced unknown page %d", decision.PageNumber)
 		}
@@ -114,10 +190,10 @@ func questionsFromBoundaryLedger(pages []Page, ledger answerBoundaryLedger) ([]Q
 }
 
 func questionFromBoundaryDecision(page Page, decision answerBoundaryDecision) Question {
-	boundary := normalizeQuestionBoundary(decision.Boundary)
-	confidence := clampFloat(decision.BoundaryConfidence, 0, 1)
-	label := strings.TrimSpace(decision.VisibleLabel)
-	evidence := strings.TrimSpace(decision.LabelEvidence)
+	boundary := decision.Boundary
+	confidence := decision.BoundaryConfidence
+	label := decision.VisibleLabel
+	evidence := decision.LabelEvidence
 	hasLabelClaim := label != "" || evidence != ""
 	status := "detected"
 	labelIsGrounded := label == "" && evidence == ""
