@@ -85,6 +85,43 @@ go build -o bin/aicli ./cmd/aicli
 6. Watch the stage, progress, elapsed time, and ETA.
 7. Review the PDF and generated Markdown side by side.
 
+## Topper boundary model benchmark
+
+Benchmark loaded LM Studio models against human-reviewed OCR page groups before using them for large batches. The command uses the same strict answer-boundary prompt, JSON schema, parser, evidence validator, and deterministic grouping code as the production workflow. It never asks the model to rewrite OCR, and its report omits source OCR text.
+
+Create a suite containing answer-bearing pages and human-confirmed question groups:
+
+```json
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "reviewed-copy-sample",
+      "pages": [
+        { "number": 2, "text": "1(a) ..." },
+        { "number": 3, "text": "... continuation ..." },
+        { "number": 4, "text": "1(b) ..." }
+      ],
+      "expected_questions": [
+        { "label": "1(a)", "source_pages": [2, 3], "status": "detected" },
+        { "label": "1(b)", "source_pages": [4], "status": "detected" }
+      ]
+    }
+  ]
+}
+```
+
+Load one model in LM Studio and run repeated evaluations:
+
+```bash
+go run ./cmd/aicli topper-boundary-benchmark \
+  -input ./boundary-benchmark.json \
+  -model qwen/qwen3.6-27b \
+  -runs 3 > qwen-boundary-report.json
+```
+
+Run the same suite separately for each candidate model. Compare `schema_valid_rate`, `exact_grouping_rate`, `label_accuracy`, `status_accuracy`, `stability_rate`, and latency. An omitted expected label or status is excluded from that metric; unavailable metrics are emitted as `null`, never guessed as zero.
+
 Uploaded files are copied into:
 
 ```text
