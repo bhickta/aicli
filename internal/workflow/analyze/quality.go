@@ -41,7 +41,16 @@ func analysisQuality(pages []Page, questions []Question) *AnalysisQuality {
 	promptMatches := 0
 	analyzedQuestions := 0
 	evidenceBackedQuestions := 0
+	boundaryReviewQuestions := 0
 	for _, question := range questions {
+		hasBoundary := strings.TrimSpace(question.Boundary) != ""
+		boundaryUncertain := hasBoundary && normalizeQuestionBoundary(question.Boundary) == questionBoundaryUncertain
+		boundaryLowConfidence := hasBoundary && question.BoundaryConfidence < 0.7
+		statusNeedsReview := questionNeedsReview(question)
+		needsBoundaryReview := statusNeedsReview || boundaryUncertain || boundaryLowConfidence
+		if needsBoundaryReview {
+			boundaryReviewQuestions++
+		}
 		if strings.TrimSpace(question.Title) != "" {
 			promptMatches++
 		}
@@ -59,8 +68,19 @@ func analysisQuality(pages []Page, questions []Question) *AnalysisQuality {
 	quality.OCRUnclearPercent = roundTo(float64(unclearCount)*100/float64(max(1, wordCount)), 2)
 	quality.OverallCoveragePercent = weightedQualityCoverage(quality)
 	quality.Warnings = qualityWarnings(quality, len(pages), len(questions))
+	if boundaryReviewQuestions > 0 {
+		quality.Warnings = append(
+			quality.Warnings,
+			"Some answer boundaries are uncertain; verify their page grouping before using the analysis.",
+		)
+	}
 	quality.RequiresReview = len(quality.Warnings) > 0
 	return quality
+}
+
+func questionNeedsReview(question Question) bool {
+	status := strings.ToLower(strings.TrimSpace(question.Status))
+	return status == "needs review" || status == "needs_review"
 }
 
 func hasEvidenceBackedAnalysis(dimensions *QuestionDimensions) bool {

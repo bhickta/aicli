@@ -184,14 +184,52 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 
 	questions := pageFallbackQuestions(analysisPages)
 	if req.QuestionSplit {
-		questionWorkers := EffectiveQuestionWorkers(req.QuestionWorkers, len(analysisPages))
+		splitPages := pagesForQuestionSplit(pages)
+		questionWorkers := EffectiveQuestionWorkers(req.QuestionWorkers, len(splitPages))
+		questionModel := firstNonBlank(req.QuestionModel, req.Model)
 		stageStart = time.Now()
-		s.logInfo("topper copy question split started", "path", req.Path, "pages", len(analysisPages), "workers", questionWorkers, "provider", providerID(s.questionProvider), "model", firstNonBlank(req.QuestionModel, req.Model))
-		splitResult, splitErr := s.splitQuestions(ctx, firstNonBlank(req.QuestionModel, req.Model), analysisPages, req.QuestionWorkers, func(completedPages int, totalPages int) {
-			progressUnits(progress, fmt.Sprintf("question-wise split with %d worker(s)", questionWorkers), completedPages, totalPages, "page")
-		})
+		s.logInfo(
+			"topper copy question split started",
+			"path",
+			req.Path,
+			"pages",
+			len(splitPages),
+			"workers",
+			questionWorkers,
+			"provider",
+			providerID(s.questionProvider),
+			"model",
+			questionModel,
+		)
+		splitResult, splitErr := s.splitQuestions(
+			ctx,
+			questionModel,
+			splitPages,
+			req.QuestionWorkers,
+			func(completedPages int, totalPages int) {
+				progressUnits(
+					progress,
+					fmt.Sprintf("question-wise split with %d worker(s)", questionWorkers),
+					completedPages,
+					totalPages,
+					"page",
+				)
+			},
+		)
 		if splitErr != nil {
-			s.logWarn("topper copy question split failed", "path", req.Path, "pages", len(analysisPages), "workers", questionWorkers, "elapsed_ms", elapsedMS(stageStart), "error", splitErr)
+			s.logWarn(
+				"topper copy question split failed",
+				"path",
+				req.Path,
+				"pages",
+				len(splitPages),
+				"workers",
+				questionWorkers,
+				"elapsed_ms",
+				elapsedMS(stageStart),
+				"error",
+				splitErr,
+			)
 			return Response{}, splitErr
 		}
 		pages = applyPageClassifications(pages, splitResult.Classifications)

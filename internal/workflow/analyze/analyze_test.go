@@ -394,12 +394,13 @@ func TestSemanticNewAnswersDoNotMergeOnMatchingLabels(t *testing.T) {
 	}
 }
 
-func TestSplitQuestionsSuppliesPreviousPageBoundaryContext(t *testing.T) {
+func TestSplitQuestionsSuppliesAllPagesToCopyBoundaryLedger(t *testing.T) {
 	t.Parallel()
 
 	provider := &fakeProvider{chatResponses: []string{
 		`{"page_kind":"answer","page_kind_confidence":0.98,"classification_reason":"new answer","ocr_confidence":0.95,"ocr_issues":[],"printed_questions":[],"questions":[{"boundary":"new_answer","boundary_confidence":0.98,"visible_label":"1(a)","title":"","answer_markdown":"answer starts","status":"detected"}]}`,
 		`{"page_kind":"answer","page_kind_confidence":0.97,"classification_reason":"continuation","ocr_confidence":0.94,"ocr_issues":[],"printed_questions":[],"questions":[{"boundary":"continuation","boundary_confidence":0.96,"visible_label":"","title":"","answer_markdown":"answer continues","status":"detected"}]}`,
+		`{"decisions":[{"page_number":2,"boundary":"new_answer","boundary_confidence":0.98,"visible_label":"1(a)","label_evidence":"1(a)","reason":"visible label"},{"page_number":3,"boundary":"continuation","boundary_confidence":0.96,"visible_label":"","label_evidence":"","reason":"continues previous page"}]}`,
 	}}
 	service := New(config.ToolConfig{}, &fakeRunner{}, provider)
 	_, err := service.splitQuestions(
@@ -415,12 +416,47 @@ func TestSplitQuestionsSuppliesPreviousPageBoundaryContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("splitQuestions() error = %v", err)
 	}
-	if len(provider.chatPrompts) != 2 {
-		t.Fatalf("chat prompts = %d, want two page classifications", len(provider.chatPrompts))
+	if len(provider.chatPrompts) != 3 {
+		t.Fatalf("chat prompts = %d, want two page classifications and one copy ledger", len(provider.chatPrompts))
 	}
-	secondPrompt := provider.chatPrompts[1]
-	if !strings.Contains(secondPrompt, "previous answer text") || !strings.Contains(secondPrompt, "current continuation text") {
-		t.Fatalf("second prompt missing adjacent-page boundary context:\n%s", secondPrompt)
+	ledgerPrompt := provider.chatPrompts[2]
+	if !strings.Contains(ledgerPrompt, "previous answer text") || !strings.Contains(ledgerPrompt, "current continuation text") {
+		t.Fatalf("ledger prompt missing full copy boundary context:\n%s", ledgerPrompt)
+	}
+}
+
+func TestSplitQuestionsUsesCopyLedgerInsteadOfPageFieldGuesses(t *testing.T) {
+	t.Parallel()
+
+	provider := &fakeProvider{chatResponses: []string{
+		`{"page_kind":"answer","page_kind_confidence":0.99,"classification_reason":"answer","ocr_confidence":0.8,"ocr_issues":[],"printed_questions":[],"questions":[{"boundary":"new_answer","boundary_confidence":1,"visible_label":"","title":"Attitude definition","answer_markdown":"page two model rewrite","status":"needs review"}]}`,
+		`{"page_kind":"answer","page_kind_confidence":0.99,"classification_reason":"answer","ocr_confidence":0.8,"ocr_issues":[],"printed_questions":[],"questions":[{"boundary":"new_answer","boundary_confidence":1,"visible_label":"","title":"Question No.","answer_markdown":"new_answer","status":"needs review"}]}`,
+		`{"page_kind":"answer","page_kind_confidence":0.99,"classification_reason":"answer","ocr_confidence":0.8,"ocr_issues":[],"printed_questions":[],"questions":[{"boundary":"new_answer","boundary_confidence":0.95,"visible_label":"ETHICS ASSOCIATED","title":"1(b)","answer_markdown":"page four model rewrite","status":"needs review"}]}`,
+		`{"page_kind":"answer","page_kind_confidence":0.99,"classification_reason":"answer","ocr_confidence":0.8,"ocr_issues":[],"printed_questions":[],"questions":[{"boundary":"new_answer","boundary_confidence":1,"visible_label":"INDIA'S STANCE","title":"","answer_markdown":"page five model rewrite","status":"needs review"}]}`,
+		`{"decisions":[{"page_number":2,"boundary":"new_answer","boundary_confidence":0.99,"visible_label":"1(a)","label_evidence":"1(a)","reason":"visible answer label"},{"page_number":3,"boundary":"continuation","boundary_confidence":0.97,"visible_label":"","label_evidence":"","reason":"continues the preceding argument"},{"page_number":4,"boundary":"new_answer","boundary_confidence":0.99,"visible_label":"1(b)","label_evidence":"1(b)","reason":"visible answer label and topic reset"},{"page_number":5,"boundary":"continuation","boundary_confidence":0.97,"visible_label":"","label_evidence":"","reason":"continues the CRISPR answer"}]}`,
+	}}
+	pages := []Page{
+		{Number: 2, Text: "1(a) original attitude OCR"},
+		{Number: 3, Text: "original attitude continuation OCR"},
+		{Number: 4, Text: "1(b) original CRISPR OCR"},
+		{Number: 5, Text: "original CRISPR continuation OCR"},
+	}
+	service := New(config.ToolConfig{}, &fakeRunner{}, provider)
+	result, err := service.splitQuestions(context.Background(), "local-model", pages, 1, nil)
+	if err != nil {
+		t.Fatalf("splitQuestions() error = %v", err)
+	}
+	if len(result.Questions) != 2 {
+		t.Fatalf("questions = %#v, want two ledger-grouped answers", result.Questions)
+	}
+	if result.Questions[0].Label != "1(a)" || !slices.Equal(result.Questions[0].SourcePages, []int{2, 3}) {
+		t.Fatalf("first question = %#v, want 1(a) on pages 2-3", result.Questions[0])
+	}
+	if result.Questions[1].Label != "1(b)" || !slices.Equal(result.Questions[1].SourcePages, []int{4, 5}) {
+		t.Fatalf("second question = %#v, want 1(b) on pages 4-5", result.Questions[1])
+	}
+	if !strings.Contains(result.Questions[0].AnswerMarkdown, "original attitude continuation OCR") || strings.Contains(result.Questions[0].AnswerMarkdown, "model rewrite") {
+		t.Fatalf("answer markdown = %q, want original OCR only", result.Questions[0].AnswerMarkdown)
 	}
 }
 
@@ -453,6 +489,22 @@ func TestAnswerBearingPagesExcludeCoverAndOCRFailures(t *testing.T) {
 	}
 }
 
+func TestQuestionSplitPagesRetainPrintedQuestionLedgerOnOCRReuse(t *testing.T) {
+	t.Parallel()
+
+	pages := pagesForQuestionSplit([]Page{
+		{Number: 1, Kind: "cover", Text: "cover"},
+		{Number: 2, Kind: "question_paper", Text: "printed questions"},
+		{Number: 3, Kind: "answer", Text: "candidate answer"},
+		{Number: 4, Kind: "blank", Text: ""},
+		{Number: 5, Kind: "unknown", Text: "unclassified page"},
+		{Number: 6, Text: "> OCR failed for this page: empty"},
+	})
+	if len(pages) != 3 || pages[0].Number != 2 || pages[1].Number != 3 || pages[2].Number != 5 {
+		t.Fatalf("pagesForQuestionSplit() = %#v, want question paper, answer, and unknown pages", pages)
+	}
+}
+
 func TestQuestionsForPagesDropsNonAnswerQuestions(t *testing.T) {
 	t.Parallel()
 
@@ -474,8 +526,9 @@ func TestRunAnalyzeSplitsQuestionsAndWritesArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := &fakeRunner{}
-	fp := &fakeProvider{chatResponses: []string{
+	fp := &fakeProvider{visionContent: "Q1 page text", chatResponses: []string{
 		`{"page_kind":"answer","page_kind_confidence":0.98,"ocr_confidence":0.95,"questions":[{"boundary":"new_answer","boundary_confidence":0.98,"visible_label":"Q1","title":"Polity","answer_markdown":"answer block","status":"detected"}]}`,
+		`{"decisions":[{"page_number":1,"boundary":"new_answer","boundary_confidence":0.98,"visible_label":"Q1","label_evidence":"Q1","reason":"visible label"}]}`,
 		`{"introduction":"good","outro":"fine","transition":"ok","diagram":"none"}`,
 		"final report",
 	}}
@@ -491,18 +544,21 @@ func TestRunAnalyzeSplitsQuestionsAndWritesArtifacts(t *testing.T) {
 	if res.Report != "final report" || len(res.Questions) != 1 || res.Questions[0].Label != "Q1" {
 		t.Fatalf("Response = %#v, want split question and final report", res)
 	}
-	if len(fp.chatPrompts) != 3 {
-		t.Fatalf("chat calls = %d, want split + dimensions + report", len(fp.chatPrompts))
+	if len(fp.chatPrompts) != 4 {
+		t.Fatalf("chat calls = %d, want page classification + boundary ledger + dimensions + report", len(fp.chatPrompts))
 	}
 	if !strings.Contains(fp.chatPrompts[0], "Classify OCR page") {
 		t.Fatalf("first chat prompt = %q, want question split", fp.chatPrompts[0])
 	}
-	if !strings.Contains(fp.chatPrompts[1], "evidence-based diagnostic") {
-		t.Fatalf("second chat prompt = %q, want dimensions", fp.chatPrompts[1])
+	if !strings.Contains(fp.chatPrompts[1], "answer-boundary ledger") {
+		t.Fatalf("second chat prompt = %q, want copy-level boundary ledger", fp.chatPrompts[1])
+	}
+	if !strings.Contains(fp.chatPrompts[2], "evidence-based diagnostic") {
+		t.Fatalf("third chat prompt = %q, want dimensions", fp.chatPrompts[2])
 	}
 	for _, want := range []string{"Structured per-question analysis", `"introduction": "good"`} {
-		if !strings.Contains(fp.chatPrompts[2], want) {
-			t.Fatalf("report prompt missing %q:\n%s", want, fp.chatPrompts[2])
+		if !strings.Contains(fp.chatPrompts[3], want) {
+			t.Fatalf("report prompt missing %q:\n%s", want, fp.chatPrompts[3])
 		}
 	}
 	if res.Pages[0].ImageURL == "" {
@@ -520,7 +576,12 @@ func TestRunAnalyzeQuestionSplitFallsBackOnEmptyPageResponse(t *testing.T) {
 	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fp := &fakeProvider{chatResponses: []string{"", "", "final report"}}
+	fp := &fakeProvider{chatResponses: []string{
+		"",
+		"",
+		`{"decisions":[{"page_number":1,"boundary":"uncertain","boundary_confidence":0.2,"visible_label":"","label_evidence":"","reason":"page classification failed"}]}`,
+		"final report",
+	}}
 	res, err := New(config.ToolConfig{PDFToPPM: "pdftoppm"}, &fakeRunner{}, fp).Run(
 		context.Background(),
 		Request{Path: pdf, Model: "model", QuestionSplit: true},
@@ -535,7 +596,7 @@ func TestRunAnalyzeQuestionSplitFallsBackOnEmptyPageResponse(t *testing.T) {
 		t.Fatalf("questions = %#v, want page fallback question", res.Questions)
 	}
 	question := res.Questions[0]
-	if question.Label != "Page 1" || question.Status != "needs review" || question.AnswerMarkdown != "page text" {
+	if question.Label != "Page 1 block" || question.Status != "needs review" || question.AnswerMarkdown != "page text" {
 		t.Fatalf("question = %#v, want fallback page block", question)
 	}
 }
@@ -573,9 +634,10 @@ func TestRunAnalyzeUsesSeparateStepProviders(t *testing.T) {
 	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ocrProvider := &fakeProvider{id: "ocr", visionContent: "ocr page text"}
+	ocrProvider := &fakeProvider{id: "ocr", visionContent: "Q1 ocr page text"}
 	questionProvider := &fakeProvider{id: "question", chatResponses: []string{
 		`{"page_kind":"answer","page_kind_confidence":0.98,"ocr_confidence":0.95,"questions":[{"boundary":"new_answer","boundary_confidence":0.98,"visible_label":"Q1","answer_markdown":"question answer","status":"detected"}]}`,
+		`{"decisions":[{"page_number":1,"boundary":"new_answer","boundary_confidence":0.98,"visible_label":"Q1","label_evidence":"Q1","reason":"visible label"}]}`,
 		`{"introduction":"good"}`,
 	}}
 	reportProvider := &fakeProvider{id: "report", chatResponses: []string{"report text"}}
@@ -595,7 +657,7 @@ func TestRunAnalyzeUsesSeparateStepProviders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if res.Report != "report text" || len(res.Questions) != 1 || res.Questions[0].AnswerMarkdown != "question answer" {
+	if res.Report != "report text" || len(res.Questions) != 1 || res.Questions[0].AnswerMarkdown != "Q1 ocr page text" {
 		t.Fatalf("Response = %#v, want split question and report", res)
 	}
 	if ocrProvider.visionPrompt == "" {
@@ -604,8 +666,11 @@ func TestRunAnalyzeUsesSeparateStepProviders(t *testing.T) {
 	if !strings.Contains(questionProvider.chatPrompts[0], "Classify OCR page") {
 		t.Fatalf("question provider prompt = %q, want question split prompt", questionProvider.chatPrompts[0])
 	}
-	if !strings.Contains(questionProvider.chatPrompts[1], "evidence-based diagnostic") {
-		t.Fatalf("question provider prompt = %q, want dimensions prompt", questionProvider.chatPrompts[1])
+	if !strings.Contains(questionProvider.chatPrompts[1], "answer-boundary ledger") {
+		t.Fatalf("question provider prompt = %q, want boundary-ledger prompt", questionProvider.chatPrompts[1])
+	}
+	if !strings.Contains(questionProvider.chatPrompts[2], "evidence-based diagnostic") {
+		t.Fatalf("question provider prompt = %q, want dimensions prompt", questionProvider.chatPrompts[2])
 	}
 	if !strings.Contains(reportProvider.chatPrompt, "Answer-Wise Analysis") {
 		t.Fatalf("report provider prompt = %q, want report prompt", reportProvider.chatPrompt)
@@ -854,6 +919,29 @@ func TestAnalysisQualityPenalizesLowClassificationConfidence(t *testing.T) {
 	}
 	if !quality.RequiresReview || !strings.Contains(strings.Join(quality.Warnings, " "), "low model confidence") {
 		t.Fatalf("quality = %#v, want explicit low-confidence review warning", quality)
+	}
+}
+
+func TestAnalysisQualityExplainsUncertainAnswerBoundaries(t *testing.T) {
+	t.Parallel()
+
+	quality := analysisQuality(
+		[]Page{{Number: 1, Kind: "answer", KindConfidence: 0.95, Text: "answer text"}},
+		[]Question{{
+			Label:              "Page 1 block",
+			AnswerMarkdown:     "answer text",
+			SourcePages:        []int{1},
+			Status:             "needs review",
+			Boundary:           questionBoundaryUncertain,
+			BoundaryConfidence: 0.4,
+		}},
+	)
+	if !quality.RequiresReview {
+		t.Fatal("RequiresReview = false, want uncertain boundary review")
+	}
+	warnings := strings.Join(quality.Warnings, " ")
+	if !strings.Contains(warnings, "answer boundaries") {
+		t.Fatalf("warnings = %q, want explicit answer-boundary warning", warnings)
 	}
 }
 

@@ -10,17 +10,6 @@ func pageQuestionSplitJSONSchema() *provider.JSONSchema {
 		},
 		"label", "prompt",
 	)
-	question := strictObjectSchema(
-		map[string]any{
-			"boundary":            enumStringSchema("new_answer", "continuation", "uncertain"),
-			"boundary_confidence": numberSchema(0, 1),
-			"visible_label":       stringSchema(),
-			"title":               stringSchema(),
-			"answer_markdown":     stringSchema(),
-			"status":              enumStringSchema("detected", "needs review"),
-		},
-		"boundary", "boundary_confidence", "visible_label", "title", "answer_markdown", "status",
-	)
 	return &provider.JSONSchema{
 		Name:        "topper_copy_page",
 		Description: "Semantic page classification, OCR reliability, printed prompts, and candidate answer blocks.",
@@ -33,7 +22,6 @@ func pageQuestionSplitJSONSchema() *provider.JSONSchema {
 				"ocr_confidence":        numberSchema(0, 1),
 				"ocr_issues":            arraySchema(stringSchema(), 8),
 				"printed_questions":     arraySchema(printedQuestion, 30),
-				"questions":             arraySchema(question, 8),
 			},
 			"page_kind",
 			"page_kind_confidence",
@@ -41,7 +29,36 @@ func pageQuestionSplitJSONSchema() *provider.JSONSchema {
 			"ocr_confidence",
 			"ocr_issues",
 			"printed_questions",
-			"questions",
+		),
+	}
+}
+
+func answerBoundaryLedgerJSONSchema() *provider.JSONSchema {
+	decision := strictObjectSchema(
+		map[string]any{
+			"page_number":         integerSchema(1, 10000),
+			"boundary":            enumStringSchema("new_answer", "continuation", "uncertain"),
+			"boundary_confidence": numberSchema(0, 1),
+			"visible_label":       stringSchema(),
+			"label_evidence":      stringSchema(),
+			"reason":              stringSchema(),
+		},
+		"page_number",
+		"boundary",
+		"boundary_confidence",
+		"visible_label",
+		"label_evidence",
+		"reason",
+	)
+	return &provider.JSONSchema{
+		Name:        "topper_answer_boundary_ledger",
+		Description: "One evidence-grounded semantic answer-boundary decision per OCR page.",
+		Strict:      true,
+		Schema: strictObjectSchema(
+			map[string]any{
+				"decisions": arraySchema(decision, 500),
+			},
+			"decisions",
 		),
 	}
 }

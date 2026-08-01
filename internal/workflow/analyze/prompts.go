@@ -1,9 +1,6 @@
 package analyze
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 const topperCopyOCRPrompt = `Transcribe this UPSC answer-copy page as compact Markdown.
 
@@ -21,7 +18,7 @@ Rules:
 - Mark unreadable words as [unclear].
 - Output Markdown only.`
 
-func topperCopyQuestionPrompt(page Page, previous *Page) string {
+func topperCopyQuestionPrompt(page Page) string {
 	return fmt.Sprintf(`Classify OCR page %d from a UPSC/Mains answer-copy bundle and extract its useful content.
 
 Return only the JSON object required by the response schema. Do not add prose or markdown fences.
@@ -33,55 +30,27 @@ Rules:
 - page_kind_confidence must be between 0 and 1. Use a lower value when evidence is ambiguous.
 - ocr_confidence must be between 0 and 1 and assess the reliability of the supplied OCR text, independently of page_kind. Lower it for truncation, unreadable markers, implausible word substitutions, or broken sentences; list concrete issues in ocr_issues without correcting the answer.
 - For a question_paper page, return every visible numbered and lettered sub-question separately in printed_questions. Preserve directive words, marks, and word limits. Leave questions empty.
-- For an answer page, split candidate writing into question-wise answer blocks in questions. Include printed_questions only when a complete printed prompt is actually visible.
-- For every answer block, classify its boundary semantically using the previous-page context below:
-  - new_answer: this block visibly or contextually begins a distinct answer on this page.
-  - continuation: this block continues the answer from the immediately preceding page and contains no distinct new-answer start.
-  - uncertain: the OCR does not provide enough evidence to decide safely.
-- boundary_confidence measures only that boundary decision. Use uncertain rather than guessing.
-- visible_label must reproduce the exact answer label visible in the OCR. Use an empty string when no label is visible; never manufacture a generic label.
-- title must contain only a visible printed question prompt or explicit heading. Do not turn the answer's first word or sentence into a title.
-- Do not summarize, rewrite, improve, or remove OCR text.
-- Keep all visible facts, examples, diagrams/flowchart descriptions, marks, comments, and [unclear] markers.
-- If unsure, return one block for the page with status "needs review".
-
-Previous answer-page OCR for boundary context only (never copy it into the current answer block):
-%s
+- For an answer page, classify it only. Answer grouping is handled by a separate copy-level boundary ledger.
+- Do not reproduce, summarize, rewrite, improve, or remove the candidate answer text.
+- Do not put answer headings or candidate content into printed_questions.
 
 Current page OCR:
-%s`, page.Number, previousPageBoundaryContext(previous), page.Text)
+%s`, page.Number, page.Text)
 }
 
-func topperCopyQuestionRetryPrompt(page Page, previous *Page, reason string) string {
+func topperCopyQuestionRetryPrompt(page Page, reason string) string {
 	return fmt.Sprintf(`Retry the semantic classification and extraction for UPSC answer-copy page %d.
 
 %s
 
 Return exactly one valid JSON object matching the response schema and no prose.
 
-For a question-paper page, extract every visible numbered/lettered sub-question into printed_questions and leave questions empty.
-For an answer page, preserve full answer text and copy only labels that are actually visible into visible_label.
-Classify each answer block boundary as new_answer, continuation, or uncertain. Use uncertain instead of inferring a boundary from topic alone.
-title must be a visible printed prompt or explicit heading, never the first word of the candidate's answer.
+For a question-paper page, extract every visible numbered/lettered sub-question into printed_questions.
+For an answer page, classify it only; do not reproduce candidate answer text or infer answer boundaries here.
 Assess OCR reliability semantically in ocr_confidence and ocr_issues. Do not rewrite or correct the OCR.
 
-Previous answer-page OCR for boundary context only:
-%s
-
 Current page OCR:
-%s`, page.Number, reason, previousPageBoundaryContext(previous), page.Text)
-}
-
-func previousPageBoundaryContext(previous *Page) string {
-	if previous == nil {
-		return "[no preceding answer page supplied]"
-	}
-	const maxRunes = 2400
-	text := []rune(strings.TrimSpace(previous.Text))
-	if len(text) > maxRunes {
-		text = text[len(text)-maxRunes:]
-	}
-	return fmt.Sprintf("Page %d:\n%s", previous.Number, string(text))
+%s`, page.Number, reason, page.Text)
 }
 
 func topperCopyReportPrompt(pagesMarkdown string) string {

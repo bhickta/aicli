@@ -14,6 +14,20 @@ func answerBearingPages(pages []Page) []Page {
 	return out
 }
 
+func pagesForQuestionSplit(pages []Page) []Page {
+	out := make([]Page, 0, len(pages))
+	for _, page := range pages {
+		if isOCRFailureText(page.Text) {
+			continue
+		}
+		switch normalizePageKind(page.Kind) {
+		case "answer", "question_paper", "unknown":
+			out = append(out, page)
+		}
+	}
+	return out
+}
+
 func applyPageClassifications(pages []Page, classifications []PageClassification) []Page {
 	byPage := make(map[int]PageClassification, len(classifications))
 	for _, classification := range classifications {

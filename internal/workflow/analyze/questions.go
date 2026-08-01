@@ -40,11 +40,6 @@ type pageQuestionSplit struct {
 	Questions        []Question
 }
 
-type pageQuestionJob struct {
-	Page     Page
-	Previous *Page
-}
-
 type questionSplitRequestError struct {
 	err error
 }
@@ -67,7 +62,7 @@ func (s *Service) splitQuestions(
 		}, nil
 	}
 	workers = EffectiveQuestionWorkers(workers, len(pages))
-	jobs := make(chan pageQuestionJob)
+	jobs := make(chan Page)
 	results := make(chan pageQuestionSplit, len(pages))
 	errCh := make(chan error, 1)
 	ctx, cancel := context.WithCancel(ctx)
@@ -80,11 +75,11 @@ func (s *Service) splitQuestions(
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for job := range jobs {
+			for page := range jobs {
 				start := time.Now()
-				pageResult, err := s.splitPageQuestionsWithPrevious(ctx, model, job.Page, job.Previous)
+				pageResult, err := s.splitPageQuestions(ctx, model, page)
 				if err != nil {
-					s.logWarn("topper copy question split page failed", "page", job.Page.Number, "name", job.Page.Name, "elapsed_ms", elapsedMS(start), "error", err)
+					s.logWarn("topper copy question split page failed", "page", page.Number, "name", page.Name, "elapsed_ms", elapsedMS(start), "error", err)
 					select {
 					case errCh <- err:
 						cancel()
@@ -95,9 +90,9 @@ func (s *Service) splitQuestions(
 				s.logInfo(
 					"topper copy question split page completed",
 					"page",
-					job.Page.Number,
+					page.Number,
 					"name",
-					job.Page.Name,
+					page.Name,
 					"page_kind",
 					pageResult.Classification.Kind,
 					"questions",
@@ -111,16 +106,11 @@ func (s *Service) splitQuestions(
 		}()
 	}
 sendPages:
-	for index, page := range pages {
-		var previous *Page
-		if index > 0 {
-			previousPage := pages[index-1]
-			previous = &previousPage
-		}
+	for _, page := range pages {
 		select {
 		case <-ctx.Done():
 			break sendPages
-		case jobs <- pageQuestionJob{Page: page, Previous: previous}:
+		case jobs <- page:
 		}
 	}
 	close(jobs)
@@ -140,17 +130,24 @@ sendPages:
 	for pageResult := range results {
 		out.Classifications = append(out.Classifications, pageResult.Classification)
 		out.PrintedQuestions = append(out.PrintedQuestions, pageResult.PrintedQuestions...)
-		for _, question := range pageResult.Questions {
-			if question.Status == "" {
-				question.Status = "detected"
-			}
-			out.Questions = append(out.Questions, question)
-		}
 	}
-	if len(out.Questions) == 0 {
+	classifiedPages := applyPageClassifications(append([]Page(nil), pages...), out.Classifications)
+	answerPages := answerBearingPages(classifiedPages)
+	if len(answerPages) == 0 {
 		return out, nil
 	}
-	out.Questions = mergeQuestionBlocks(out.Questions)
+	questions, err := s.groupAnswerPages(ctx, model, answerPages)
+	if err != nil {
+		s.logWarn(
+			"topper copy answer-boundary ledger failed",
+			"pages",
+			len(answerPages),
+			"error",
+			err,
+		)
+		questions = pageFallbackQuestions(answerPages)
+	}
+	out.Questions = questions
 	out.Questions = attachPrintedQuestionPrompts(out.Questions, out.PrintedQuestions)
 	sortQuestions(out.Questions)
 	return out, nil
@@ -236,15 +233,6 @@ func reportQuestionProgress(progress func(completed int, total int), completed *
 }
 
 func (s *Service) splitPageQuestions(ctx context.Context, model string, page Page) (pageQuestionSplit, error) {
-	return s.splitPageQuestionsWithPrevious(ctx, model, page, nil)
-}
-
-func (s *Service) splitPageQuestionsWithPrevious(
-	ctx context.Context,
-	model string,
-	page Page,
-	previous *Page,
-) (pageQuestionSplit, error) {
 	if isOCRFailureText(page.Text) {
 		return pageQuestionSplit{
 			Classification: PageClassification{
@@ -257,14 +245,14 @@ func (s *Service) splitPageQuestionsWithPrevious(
 			Questions:        []Question{},
 		}, nil
 	}
-	result, parseErr := s.requestPageQuestionSplit(ctx, model, page, topperCopyQuestionPrompt(page, previous))
+	result, parseErr := s.requestPageQuestionSplit(ctx, model, page, topperCopyQuestionPrompt(page))
 	needsRetry := parseErr != nil || (result.Classification.Kind == "question_paper" && len(result.PrintedQuestions) == 0)
 	if needsRetry {
 		retryResult, retryErr := s.requestPageQuestionSplit(
 			ctx,
 			model,
 			page,
-			topperCopyQuestionRetryPrompt(page, previous, pageSplitRetryReason(parseErr, result)),
+			topperCopyQuestionRetryPrompt(page, pageSplitRetryReason(parseErr, result)),
 		)
 		if retryErr == nil {
 			result = retryResult
@@ -295,9 +283,6 @@ func (s *Service) splitPageQuestionsWithPrevious(
 		result.Classification.Reason = strings.TrimSpace(
 			result.Classification.Reason + "; candidate answer blocks were extracted",
 		)
-	}
-	if result.Classification.Kind == "answer" && len(result.Questions) == 0 {
-		result.Questions = pageFallbackQuestions([]Page{page})
 	}
 	return result, nil
 }
