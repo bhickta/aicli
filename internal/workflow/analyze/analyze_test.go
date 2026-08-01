@@ -134,7 +134,13 @@ func TestRunAnalyzePipeline(t *testing.T) {
 			t.Fatalf("vision prompt missing %q:\n%s", want, fp.visionPrompt)
 		}
 	}
-	for _, want := range []string{"Answer-Wise Analysis", "Reusable Patterns", "Do not invent official model answers", "page text"} {
+	for _, want := range []string{
+		"Answer-Wise Analysis",
+		"Repeated Winning Patterns",
+		"Deliberate-Practice Plan",
+		"Do not invent official model answers",
+		"page text",
+	} {
 		if !strings.Contains(fp.chatPrompt, want) {
 			t.Fatalf("chat prompt missing %q:\n%s", want, fp.chatPrompt)
 		}
@@ -240,8 +246,10 @@ func TestRunAnalyzeDirectPDFUsesGeminiDocumentOnly(t *testing.T) {
 	if res.Questions[0].Metadata == nil || res.Questions[0].Metadata.Topic != "Fundamental Rights" || res.Questions[0].Metadata.Marks != 10 {
 		t.Fatalf("question metadata = %#v, want parsed question metadata", res.Questions[0].Metadata)
 	}
-	if !strings.Contains(provider.documentPrompt, "Gemini Flash-Lite") || !strings.Contains(provider.documentPrompt, "valid JSON only") {
-		t.Fatalf("document prompt = %q, want Gemini-Lite JSON prompt", provider.documentPrompt)
+	for _, want := range []string{"Gemini Flash-Lite", "valid JSON only", "demand_fulfilment", "Evidence-based Markdown report"} {
+		if !strings.Contains(provider.documentPrompt, want) {
+			t.Fatalf("document prompt missing %q:\n%s", want, provider.documentPrompt)
+		}
 	}
 }
 
@@ -277,12 +285,50 @@ func TestMergeQuestionBlocksAttachesContinuationToPreviousQuestion(t *testing.T)
 	}
 }
 
+func TestMergeQuestionBlocksAttachesGenericAdjacentLabelToSubpart(t *testing.T) {
+	t.Parallel()
+
+	questions := mergeQuestionBlocks([]Question{
+		{
+			ID:             "q1(a)",
+			Label:          "Q1(a)",
+			AnswerMarkdown: "answer starts",
+			SourcePages:    []int{2},
+			Status:         "detected",
+		},
+		{
+			ID:             "q1",
+			Label:          "Q1",
+			AnswerMarkdown: "answer continues without a visible subpart label",
+			SourcePages:    []int{3},
+			Status:         "detected",
+		},
+		{
+			ID:             "1(b)",
+			Label:          "1(b)",
+			AnswerMarkdown: "next subpart starts",
+			SourcePages:    []int{4},
+			Status:         "detected",
+		},
+	})
+	if len(questions) != 2 {
+		t.Fatalf("questions = %#v, want Q1(a) continuation and separate 1(b)", questions)
+	}
+	if questions[0].Label != "Q1(a)" || len(questions[0].SourcePages) != 2 || !strings.Contains(questions[0].AnswerMarkdown, "continues") {
+		t.Fatalf("first question = %#v, want adjacent Q1 merged into Q1(a)", questions[0])
+	}
+	if questions[1].Label != "1(b)" {
+		t.Fatalf("second question = %#v, want distinct subpart", questions[1])
+	}
+}
+
 func TestAnswerBearingPagesExcludeCoverAndOCRFailures(t *testing.T) {
 	t.Parallel()
 
 	pages := answerBearingPages([]Page{
 		{
 			Number: 1,
+			Kind:   "cover",
 			Text:   "ForumIAS ACADEMY\nName Of Candidate\nINDEX TABLE\nINSTRUCTIONS\nMaximum Marks",
 		},
 		{
@@ -291,11 +337,17 @@ func TestAnswerBearingPagesExcludeCoverAndOCRFailures(t *testing.T) {
 		},
 		{
 			Number: 3,
+			Kind:   "question_paper",
+			Text:   "Instructions: All questions are compulsory. Duration 3 Hours. 20 Questions | 250 Marks. Section A. Q.1 What is attitude?",
+		},
+		{
+			Number: 4,
+			Kind:   "answer",
 			Text:   "Q.2 answer body with useful content",
 		},
 	})
-	if len(pages) != 1 || pages[0].Number != 3 {
-		t.Fatalf("answerBearingPages() = %#v, want only page 3", pages)
+	if len(pages) != 1 || pages[0].Number != 4 {
+		t.Fatalf("answerBearingPages() = %#v, want only page 4", pages)
 	}
 }
 
@@ -340,11 +392,16 @@ func TestRunAnalyzeSplitsQuestionsAndWritesArtifacts(t *testing.T) {
 	if len(fp.chatPrompts) != 3 {
 		t.Fatalf("chat calls = %d, want split + dimensions + report", len(fp.chatPrompts))
 	}
-	if !strings.Contains(fp.chatPrompts[0], "Split this OCR") {
+	if !strings.Contains(fp.chatPrompts[0], "Classify OCR page") {
 		t.Fatalf("first chat prompt = %q, want question split", fp.chatPrompts[0])
 	}
-	if !strings.Contains(fp.chatPrompts[1], "Analyze the structural dimensions") {
+	if !strings.Contains(fp.chatPrompts[1], "evidence-based diagnostic") {
 		t.Fatalf("second chat prompt = %q, want dimensions", fp.chatPrompts[1])
+	}
+	for _, want := range []string{"Structured per-question analysis", `"introduction": "good"`} {
+		if !strings.Contains(fp.chatPrompts[2], want) {
+			t.Fatalf("report prompt missing %q:\n%s", want, fp.chatPrompts[2])
+		}
 	}
 	if res.Pages[0].ImageURL == "" {
 		t.Fatalf("page image url is empty: %#v", res.Pages[0])
@@ -442,10 +499,10 @@ func TestRunAnalyzeUsesSeparateStepProviders(t *testing.T) {
 	if ocrProvider.visionPrompt == "" {
 		t.Fatal("ocr provider was not used")
 	}
-	if !strings.Contains(questionProvider.chatPrompts[0], "Split this OCR") {
+	if !strings.Contains(questionProvider.chatPrompts[0], "Classify OCR page") {
 		t.Fatalf("question provider prompt = %q, want question split prompt", questionProvider.chatPrompts[0])
 	}
-	if !strings.Contains(questionProvider.chatPrompts[1], "Analyze the structural dimensions") {
+	if !strings.Contains(questionProvider.chatPrompts[1], "evidence-based diagnostic") {
 		t.Fatalf("question provider prompt = %q, want dimensions prompt", questionProvider.chatPrompts[1])
 	}
 	if !strings.Contains(reportProvider.chatPrompt, "Answer-Wise Analysis") {
@@ -487,10 +544,206 @@ func TestParseQuestionSplitRejectsEmptyQuestionBlocks(t *testing.T) {
 	}
 }
 
+func TestParsePageQuestionSplitClassifiesQuestionPaperWithoutAnswerBlocks(t *testing.T) {
+	t.Parallel()
+
+	result, err := parsePageQuestionSplit(`{
+		"page_kind":"question_paper",
+		"page_kind_confidence":0.96,
+		"classification_reason":"The page lists printed questions and contains no candidate writing.",
+		"printed_questions":[
+			{"label":"Q.1 a)","prompt":"What is attitude? Explain with examples. (10 marks, 150 words)"},
+			{"label":"Q1(b)","prompt":"Identify ethical issues in genetic manipulation."}
+		],
+		"questions":[]
+	}`, 1)
+	if err != nil {
+		t.Fatalf("parsePageQuestionSplit() error = %v", err)
+	}
+	if result.Classification.Kind != "question_paper" || result.Classification.Confidence != 0.96 {
+		t.Fatalf("classification = %#v, want semantic question-paper result", result.Classification)
+	}
+	if len(result.PrintedQuestions) != 2 || len(result.Questions) != 0 {
+		t.Fatalf("result = %#v, want prompt ledger without answer blocks", result)
+	}
+}
+
+func TestParseQuestionDimensionsNormalizesRichAnalysis(t *testing.T) {
+	t.Parallel()
+
+	content := "```json\n" + `{
+		"demand_alignment":"  Directly answers the evaluate directive.  ",
+		"fact":["Article 21","NCRB data"],
+		"strengths":[
+			{"point":"Clear structure","evidence":"Three visible headings","why_it_matters":"Easy to scan"},
+			{"point":"clear structure","evidence":"duplicate"}
+		],
+		"gaps":[{"point":"Thin counterpoint","evidence":"Only one opposing line"}],
+		"missing_dimensions":["Stakeholder view","stakeholder view"],
+		"improvements":[{"priority":"urgent","change":"Add a proportionate counterpoint"}],
+		"reusable_techniques":["Heading-led body"],
+		"scorecard":{
+			"demand_fulfilment":8,
+			"structure":4,
+			"overall_percent":120,
+			"estimated_band":"strong",
+			"confidence":"medium",
+			"rationale":"Visible demand and structure support the result."
+		}
+	}` + "\n```"
+
+	dimensions, err := parseQuestionDimensions(content)
+	if err != nil {
+		t.Fatalf("parseQuestionDimensions() error = %v", err)
+	}
+	if dimensions.DemandAlignment != "Directly answers the evaluate directive." {
+		t.Fatalf("demand alignment = %q, want trimmed analysis", dimensions.DemandAlignment)
+	}
+	if dimensions.Fact != "Article 21; NCRB data" {
+		t.Fatalf("fact = %q, want array normalized to readable text", dimensions.Fact)
+	}
+	if len(dimensions.Strengths) != 1 || dimensions.Strengths[0].Evidence != "Three visible headings" {
+		t.Fatalf("strengths = %#v, want case-insensitive de-duplication", dimensions.Strengths)
+	}
+	if len(dimensions.MissingDimensions) != 1 {
+		t.Fatalf("missing dimensions = %#v, want de-duplicated list", dimensions.MissingDimensions)
+	}
+	if len(dimensions.Improvements) != 1 || dimensions.Improvements[0].Priority != "medium" {
+		t.Fatalf("improvements = %#v, want invalid priority normalized", dimensions.Improvements)
+	}
+	if dimensions.Scorecard == nil || dimensions.Scorecard.DemandFulfilment != 5 || dimensions.Scorecard.OverallPercent != 100 {
+		t.Fatalf("scorecard = %#v, want scores clamped to rubric bounds", dimensions.Scorecard)
+	}
+}
+
+func TestQuestionReferenceNormalizesPrintedAndAnswerLabels(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		label string
+		want  string
+	}{
+		{name: "printed dotted subpart", label: "Q.1 a)", want: "1a"},
+		{name: "answer parenthesized subpart", label: "1(b)", want: "1b"},
+		{name: "question word", label: "Question 12(c)", want: "12c"},
+		{name: "plain question", label: "Q7", want: "7"},
+		{name: "continuation is not a reference", label: "Page 3 continuation", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := questionReference(tt.label); got != tt.want {
+				t.Fatalf("questionReference(%q) = %q, want %q", tt.label, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAttachPrintedQuestionPromptsMapsSubpartVariants(t *testing.T) {
+	t.Parallel()
+
+	questions := attachPrintedQuestionPrompts(
+		[]Question{
+			{Label: "Q1(a)"},
+			{Label: "1(b)", Title: "ETHICS ASSOCIATED"},
+		},
+		[]PrintedQuestion{
+			{Label: "Q1(a)", Prompt: "What is attitude? Explain with examples. (10 marks, 150 words)"},
+			{Label: "Q1(b)", Prompt: "Identify ethical issues in genetic manipulation."},
+		},
+	)
+	if questions[0].Title != "What is attitude? Explain with examples. (10 marks, 150 words)" {
+		t.Fatalf("Q1(a) title = %q, want exact printed prompt", questions[0].Title)
+	}
+	if questions[1].Title != "Identify ethical issues in genetic manipulation." {
+		t.Fatalf("1(b) title = %q, want printed prompt to replace answer heading", questions[1].Title)
+	}
+}
+
+func TestAnalysisQualityReportsCoverageWithoutClaimingAccuracy(t *testing.T) {
+	t.Parallel()
+
+	quality := analysisQuality(
+		[]Page{
+			{Number: 1, Kind: "answer", KindConfidence: 0.9, Text: "clear answer text"},
+			{Number: 2, Kind: "question_paper", KindConfidence: 0.7, Text: "printed prompt [unclear]"},
+		},
+		[]Question{
+			{
+				Title: "Exact printed prompt",
+				Dimensions: &QuestionDimensions{
+					Strengths: []AnalysisPoint{{Point: "Structured", Evidence: "Uses three headings"}},
+					Gaps:      []AnalysisPoint{{Point: "Thin counterpoint", Evidence: "One opposing line"}},
+				},
+			},
+			{Dimensions: &QuestionDimensions{Strengths: []AnalysisPoint{{Point: "Readable"}}}},
+		},
+	)
+
+	if quality.ClassificationCoveragePercent != 100 || quality.AverageClassificationConfidence != 0.8 {
+		t.Fatalf("classification quality = %#v, want full coverage at 0.8 average confidence", quality)
+	}
+	if quality.PromptMatchPercent != 50 || quality.AnalysisCoveragePercent != 100 || quality.EvidenceCoveragePercent != 50 {
+		t.Fatalf("analysis quality = %#v, want independently reported coverage metrics", quality)
+	}
+	if !quality.RequiresReview || len(quality.Warnings) == 0 {
+		t.Fatalf("quality = %#v, want review warning for incomplete prompt/evidence coverage", quality)
+	}
+}
+
+func TestAnalysisQualityPenalizesLowClassificationConfidence(t *testing.T) {
+	t.Parallel()
+
+	quality := analysisQuality(
+		[]Page{{Number: 1, Kind: "answer", KindConfidence: 0.2, Text: "answer"}},
+		[]Question{{
+			Title: "Prompt",
+			Dimensions: &QuestionDimensions{
+				Strengths: []AnalysisPoint{{Point: "Relevant", Evidence: "Direct opening"}},
+			},
+		}},
+	)
+
+	if quality.OverallCoveragePercent >= 90 {
+		t.Fatalf("overall coverage = %d, want low model confidence reflected in aggregate", quality.OverallCoveragePercent)
+	}
+	if !quality.RequiresReview || !strings.Contains(strings.Join(quality.Warnings, " "), "low model confidence") {
+		t.Fatalf("quality = %#v, want explicit low-confidence review warning", quality)
+	}
+}
+
+func TestExtractDimensionsPreservesExistingAnalysisOnInvalidResponse(t *testing.T) {
+	t.Parallel()
+
+	existing := &QuestionDimensions{Introduction: "verified introduction"}
+	service := New(
+		config.ToolConfig{PDFToPPM: "pdftoppm"},
+		&fakeRunner{},
+		&fakeProvider{chatResponses: []string{"not JSON"}},
+	)
+	questions := service.extractDimensions(
+		context.Background(),
+		"model",
+		[]Question{{
+			ID:             "q1",
+			Label:          "Q.1",
+			AnswerMarkdown: "answer text",
+			Status:         "detected",
+			Dimensions:     existing,
+		}},
+		1,
+		nil,
+	)
+	if len(questions) != 1 || questions[0].Dimensions == nil || questions[0].Dimensions.Introduction != "verified introduction" {
+		t.Fatalf("questions = %#v, want existing analysis preserved", questions)
+	}
+}
+
 func TestParseOneShotPDFManifest(t *testing.T) {
 	t.Parallel()
 
-	content := "```json\n{\"metadata\":{\"topper_name\":\"A Topper\",\"paper\":\"GS1\"},\"detected_questions\":[\"Q.1\"],\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"source_pages\":[1],\"answer_markdown\":\"test answer\",\"dimensions\":{\"fact\":\"good examples\"},\"metadata\":{\"subject\":\"History\",\"topic\":\"Ancient India\",\"marks\":10}}],\"report\":\"test report\"}\n```"
+	content := "```json\n{\"metadata\":{\"topper_name\":\"A Topper\",\"paper\":\"GS1\"},\"detected_questions\":[\"Q.1\"],\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"source_pages\":[1],\"answer_markdown\":\"test answer\",\"dimensions\":{\"fact\":\"good examples\",\"strengths\":[{\"point\":\"specific example\",\"evidence\":\"visible case\"}],\"scorecard\":{\"evidence\":4,\"overall_percent\":76,\"estimated_band\":\"strong\",\"confidence\":\"high\"}},\"metadata\":{\"subject\":\"History\",\"topic\":\"Ancient India\",\"marks\":10}}],\"report\":\"test report\"}\n```"
 	metadata, pages, questions, report, err := parseOneShotPDFManifest(content, "copy.pdf")
 	if err != nil {
 		t.Fatalf("parseOneShotPDFManifest() error = %v", err)
@@ -506,6 +759,9 @@ func TestParseOneShotPDFManifest(t *testing.T) {
 	}
 	if questions[0].Dimensions == nil || questions[0].Dimensions.Fact != "good examples" {
 		t.Fatalf("dimensions = %#v, want fact dimension", questions[0].Dimensions)
+	}
+	if len(questions[0].Dimensions.Strengths) != 1 || questions[0].Dimensions.Scorecard == nil || questions[0].Dimensions.Scorecard.OverallPercent != 76 {
+		t.Fatalf("dimensions = %#v, want rich analysis fields", questions[0].Dimensions)
 	}
 	if questions[0].Metadata == nil || questions[0].Metadata.Topic != "Ancient India" || questions[0].Metadata.Marks != 10 {
 		t.Fatalf("question metadata = %#v, want parsed metadata", questions[0].Metadata)

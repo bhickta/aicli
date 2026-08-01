@@ -40,15 +40,17 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 	if action == "questions" || action == "all" {
 		pages := answerBearingPages(pagesFromSet(review.Pages, selected))
 		stageStart := time.Now()
-		questions, err := s.splitQuestions(ctx, firstNonBlank(req.QuestionModel, req.Model), pages, req.QuestionWorkers, func(done int, totalPages int) {
+		splitResult, err := s.splitQuestions(ctx, firstNonBlank(req.QuestionModel, req.Model), pages, req.QuestionWorkers, func(done int, totalPages int) {
 			progressUnits(progress, fmt.Sprintf("splitting %d selected page(s)", totalPages), completed+done, total, "page")
 		})
 		if err != nil {
 			s.logWarn("topper copy reprocess question split failed", "review_id", review.ReviewID, "pages", len(pages), "elapsed_ms", elapsedMS(stageStart), "error", err)
 			return Response{}, err
 		}
+		review.Pages = applyPageClassifications(review.Pages, splitResult.Classifications)
+		questions := splitResult.Questions
 		s.logInfo("topper copy reprocess question split completed", "review_id", review.ReviewID, "pages", len(pages), "questions", len(questions), "elapsed_ms", elapsedMS(stageStart))
-		
+
 		newlySplitQuestions = questions
 		review.Questions = replaceQuestionsForPages(review.Questions, questions, selected)
 		completed += len(selected)
@@ -57,7 +59,7 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 
 	if action == "analytics" || action == "questions" || action == "all" {
 		stageStart := time.Now()
-		
+
 		targetQuestions := newlySplitQuestions
 		if len(targetQuestions) == 0 {
 			targetQuestions = questionsForPages(review.Questions, answerBearingPages(pagesFromSet(review.Pages, selected)))
@@ -69,7 +71,7 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 		s.logInfo("topper copy reprocess dimensions extracted", "review_id", review.ReviewID, "questions", len(questions), "elapsed_ms", elapsedMS(stageStart))
 
 		review.Questions = replaceQuestionsForPages(review.Questions, questions, selected)
-		
+
 		if action == "analytics" {
 			completed += len(selected)
 			progressUnits(progress, "analytics updated", completed, total, "stage")
@@ -90,6 +92,7 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 		completed++
 		progressUnits(progress, "final analysis updated", completed, total, "stage")
 	}
+	review.Quality = analysisQuality(review.Pages, review.Questions)
 
 	progressUnits(progress, "topper copy review updated", total, total, "stage")
 	s.logInfo("topper copy reprocess completed", "review_id", review.ReviewID, "action", action)

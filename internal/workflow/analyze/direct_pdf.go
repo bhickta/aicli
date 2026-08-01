@@ -73,7 +73,7 @@ func (s *Service) directPDFReview(ctx context.Context, req Request, reviewID str
 			return Response{}, err
 		}
 		s.logInfo("direct PDF one-shot extraction completed", "pages", len(pages), "questions", len(questions), "report_chars", len(report), "api_calls", attempt+1)
-		return Response{
+		result := Response{
 			Kind:       "topper_copy_review",
 			ReviewID:   reviewID,
 			PDFName:    pdfName,
@@ -84,7 +84,9 @@ func (s *Service) directPDFReview(ctx context.Context, req Request, reviewID str
 			Pages:      pages,
 			Questions:  questions,
 			Report:     report,
-		}, nil
+		}
+		result.Quality = analysisQuality(result.Pages, result.Questions)
+		return result, nil
 	}
 
 	return Response{}, lastErr

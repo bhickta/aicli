@@ -172,6 +172,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 				Questions:  pageFallbackQuestions(pages),
 				Report:     "OCR checkpoint saved. Complete question split and report generation to finish analysis.",
 			}
+			checkpoint.Quality = analysisQuality(checkpoint.Pages, checkpoint.Questions)
 			if err := s.ocrCheckpoint(checkpoint); err != nil {
 				return Response{}, err
 			}
@@ -179,21 +180,25 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		}
 	}
 	analysisPages := answerBearingPages(pages)
-	s.logInfo("topper copy analysis page filter completed", "path", req.Path, "total_pages", len(pages), "analysis_pages", len(analysisPages), "skipped_pages", len(pages)-len(analysisPages))
+	s.logInfo("topper copy OCR failure filter completed", "path", req.Path, "total_pages", len(pages), "candidate_pages", len(analysisPages), "skipped_pages", len(pages)-len(analysisPages))
 
 	questions := pageFallbackQuestions(analysisPages)
 	if req.QuestionSplit {
 		questionWorkers := EffectiveQuestionWorkers(req.QuestionWorkers, len(analysisPages))
 		stageStart = time.Now()
 		s.logInfo("topper copy question split started", "path", req.Path, "pages", len(analysisPages), "workers", questionWorkers, "provider", providerID(s.questionProvider), "model", firstNonBlank(req.QuestionModel, req.Model))
-		questions, err = s.splitQuestions(ctx, firstNonBlank(req.QuestionModel, req.Model), analysisPages, req.QuestionWorkers, func(completedPages int, totalPages int) {
+		splitResult, splitErr := s.splitQuestions(ctx, firstNonBlank(req.QuestionModel, req.Model), analysisPages, req.QuestionWorkers, func(completedPages int, totalPages int) {
 			progressUnits(progress, fmt.Sprintf("question-wise split with %d worker(s)", questionWorkers), completedPages, totalPages, "page")
 		})
-		if err != nil {
-			s.logWarn("topper copy question split failed", "path", req.Path, "pages", len(analysisPages), "workers", questionWorkers, "elapsed_ms", elapsedMS(stageStart), "error", err)
-			return Response{}, err
+		if splitErr != nil {
+			s.logWarn("topper copy question split failed", "path", req.Path, "pages", len(analysisPages), "workers", questionWorkers, "elapsed_ms", elapsedMS(stageStart), "error", splitErr)
+			return Response{}, splitErr
 		}
+		pages = applyPageClassifications(pages, splitResult.Classifications)
+		analysisPages = answerBearingPages(pages)
+		questions = splitResult.Questions
 		s.logInfo("topper copy question split completed", "path", req.Path, "pages", len(analysisPages), "questions", len(questions), "workers", questionWorkers, "elapsed_ms", elapsedMS(stageStart))
+		s.logInfo("topper copy printed question prompts mapped", "path", req.Path, "questions_with_titles", countQuestionsWithTitles(questions))
 		completedSteps++
 		progressUnits(progress, "question-wise split complete", completedSteps, totalSteps, "step")
 
@@ -226,6 +231,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		Questions:  questions,
 		Report:     report,
 	}
+	res.Quality = analysisQuality(res.Pages, res.Questions)
 	if reviewDir != "" {
 		if err := writeReview(filepath.Join(reviewDir, "review.json"), res); err != nil {
 			return Response{}, err

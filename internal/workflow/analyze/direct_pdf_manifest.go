@@ -34,10 +34,13 @@ type oneShotPDFManifest struct {
 }
 
 type oneShotPDFPage struct {
-	Number       int    `json:"number"`
-	Name         string `json:"name"`
-	Text         string `json:"text"`
-	UnclearCount int    `json:"unclear_count"`
+	Number               int     `json:"number"`
+	Name                 string  `json:"name"`
+	Text                 string  `json:"text"`
+	UnclearCount         int     `json:"unclear_count"`
+	Kind                 string  `json:"kind"`
+	KindConfidence       float64 `json:"kind_confidence"`
+	ClassificationReason string  `json:"classification_reason"`
 }
 
 type oneShotPDFQuestion struct {
@@ -97,7 +100,7 @@ Schema:
   },
   "detected_questions": ["visible label for answer block 1", "visible label for answer block 2"],
   "pages": [
-    {"number": 1, "name": "page-1", "text": "brief source notes for inspection", "unclear_count": 0}
+    {"number": 1, "name": "page-1", "text": "brief source notes for inspection", "unclear_count": 0, "kind": "answer|question_paper|cover|index|evaluation|blank|other", "kind_confidence": 0.0, "classification_reason": "brief visible reason"}
   ],
   "questions": [
     {
@@ -113,7 +116,31 @@ Schema:
         "diagram": "diagram/flowchart/map usage",
         "fact": "facts, examples, committees, schemes, articles, data",
         "fact_usage": "whether facts support arguments or are dumped",
-        "custom": "other scoring patterns"
+        "custom": "other distinctive patterns",
+        "demand_alignment": "visible demand and how directly the answer fulfils it",
+        "body_structure": "body architecture, balance, sequencing, headings, and space allocation",
+        "content_depth": "reasoning, explanation, trade-offs, counterpoints, and synthesis",
+        "multidimensionality": "dimensions covered, balance, and demand-relevant omissions",
+        "presentation": "scanability, keywords, bullets, boxes, density, and visual integration",
+        "strengths": [{"point": "specific strength", "evidence": "short exact quote or visible feature", "why_it_matters": "reader or examiner benefit"}],
+        "gaps": [{"point": "specific weakness or risk", "evidence": "short exact quote or visible omission", "why_it_matters": "cost to relevance, depth, or clarity"}],
+        "missing_dimensions": ["demand-relevant dimension that is absent"],
+        "examiner_signals": ["visible evaluator mark/comment or evaluation-friendly feature"],
+        "improvements": [{"priority": "high|medium|low", "change": "concrete revision or practice action", "example": "form-level example using only visible content"}],
+        "reusable_techniques": ["specific transferable technique"],
+        "scorecard": {
+          "demand_fulfilment": 0,
+          "structure": 0,
+          "content_depth": 0,
+          "evidence": 0,
+          "multidimensionality": 0,
+          "presentation": 0,
+          "conclusion": 0,
+          "overall_percent": 0,
+          "estimated_band": "exceptional|strong|competent|developing|insufficient evidence",
+          "confidence": "high|medium|low",
+          "rationale": "brief evidence-based rationale"
+        }
       },
       "metadata": {
         "subject": "Polity / Economy / History / Geography / Ethics / Essay / Optional / other",
@@ -131,7 +158,7 @@ Schema:
       }
     }
   ],
-  "report": "Markdown report with overall strengths, weak spots, repeated patterns, question-wise scoring cues, and action checklist"
+  "report": "Evidence-based Markdown report with Copy Profile, Scorecard Synthesis, Answer-Wise Analysis, Repeated Winning Patterns, What Not to Copy Blindly, Gap Map, Reusable Answer-Writing Playbook, and Deliberate-Practice Plan"
 }
 
 Rules:
@@ -139,11 +166,15 @@ Rules:
 2. First identify every distinct visible question/answer block in detected_questions. This is mandatory coverage accounting.
 3. Extract every detected question/answer block into questions[]. Do not invent official model answers.
 4. Add concise metadata for every question so it can be searched/filtered by subject, topic, syllabus area, marks, word limit, and demand.
-5. Do not include continuation pages separately in detected_questions. A continued page belongs to the same question.
-6. Keep pages[].text concise; answer_markdown must carry the complete visible answer.
-7. Preserve structure: bullets, headings, arrows, boxes, diagrams as text labels, and evaluator marks.
-8. Mark unreadable words as [unclear].
-9. If a field is uncertain, keep it empty instead of guessing.
+5. For every question, complete the evidence-based dimensions analysis. Limit strengths, gaps, and improvements to the 4 highest-value items each. Every strength/gap needs a short visible quote or exact structural feature as evidence.
+6. Score each scorecard dimension from 0 to 5 (0=not observable, 5=exceptional); overall_percent is 0-100. This is a learning rubric, not predicted UPSC marks or an official examiner assessment.
+7. Do not penalize an absent dimension unless it is relevant to the visible demand. Do not invent facts, model-answer content, evaluator intent, or marks.
+8. Do not include continuation pages separately in detected_questions. A continued page belongs to the same question.
+9. Keep pages[].text concise; answer_markdown must carry the complete visible answer.
+10. Preserve structure: bullets, headings, arrows, boxes, diagrams as text labels, and evaluator marks.
+11. Mark unreadable words as [unclear], treat them as extraction uncertainty rather than student mistakes, and lower analytical confidence.
+12. The report must synthesize all returned question analyses, distinguish observation from interpretation and recommendation, cite answer labels/pages, identify repeated transferable patterns, and give concrete drills with success criteria.
+13. If a field is uncertain, keep it empty instead of guessing.
 
 PDF name: ` + pdfName
 }
@@ -194,11 +225,14 @@ func normalizeManifestPages(in []oneShotPDFPage) []Page {
 			name = fmt.Sprintf("page-%d", number)
 		}
 		pages = append(pages, Page{
-			Number:       number,
-			Name:         name,
-			Text:         strings.TrimSpace(page.Text),
-			UnclearCount: nonNegative(page.UnclearCount),
-			Verified:     false,
+			Number:               number,
+			Name:                 name,
+			Text:                 strings.TrimSpace(page.Text),
+			UnclearCount:         nonNegative(page.UnclearCount),
+			Verified:             false,
+			Kind:                 normalizePageKind(page.Kind),
+			KindConfidence:       clampFloat(page.KindConfidence, 0, 1),
+			ClassificationReason: strings.TrimSpace(page.ClassificationReason),
 		})
 	}
 	sort.Slice(pages, func(i, j int) bool { return pages[i].Number < pages[j].Number })
@@ -351,26 +385,17 @@ func pagesFromQuestionSources(questions []Question) []Page {
 				continue
 			}
 			seen[number] = true
-			pages = append(pages, Page{Number: number, Name: fmt.Sprintf("page-%d", number)})
+			pages = append(pages, Page{
+				Number:               number,
+				Name:                 fmt.Sprintf("page-%d", number),
+				Kind:                 "answer",
+				KindConfidence:       1,
+				ClassificationReason: "Page is referenced by a detected answer block.",
+			})
 		}
 	}
 	sort.Slice(pages, func(i, j int) bool { return pages[i].Number < pages[j].Number })
 	return pages
-}
-
-func nonEmptyDimensions(dim QuestionDimensions) *QuestionDimensions {
-	if strings.TrimSpace(dim.Introduction+dim.Outro+dim.Transition+dim.Diagram+dim.Fact+dim.FactUsage+dim.Custom) == "" {
-		return nil
-	}
-	return &QuestionDimensions{
-		Introduction: strings.TrimSpace(dim.Introduction),
-		Outro:        strings.TrimSpace(dim.Outro),
-		Transition:   strings.TrimSpace(dim.Transition),
-		Diagram:      strings.TrimSpace(dim.Diagram),
-		Fact:         strings.TrimSpace(dim.Fact),
-		FactUsage:    strings.TrimSpace(dim.FactUsage),
-		Custom:       strings.TrimSpace(dim.Custom),
-	}
 }
 
 func positiveUniqueInts(values []int) []int {

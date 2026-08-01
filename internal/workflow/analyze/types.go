@@ -53,23 +53,76 @@ type ReprocessRequest struct {
 }
 
 type Page struct {
-	Number       int    `json:"number"`
-	Name         string `json:"name"`
-	Path         string `json:"path"`
-	ImageURL     string `json:"image_url"`
-	Text         string `json:"text"`
-	UnclearCount int    `json:"unclear_count"`
-	Verified     bool   `json:"verified"`
+	Number               int     `json:"number"`
+	Name                 string  `json:"name"`
+	Path                 string  `json:"path"`
+	ImageURL             string  `json:"image_url"`
+	Text                 string  `json:"text"`
+	UnclearCount         int     `json:"unclear_count"`
+	Verified             bool    `json:"verified"`
+	Kind                 string  `json:"kind,omitempty"`
+	KindConfidence       float64 `json:"kind_confidence,omitempty"`
+	ClassificationReason string  `json:"classification_reason,omitempty"`
 }
 
 type QuestionDimensions struct {
-	Introduction string `json:"introduction"`
-	Outro        string `json:"outro"`
-	Transition   string `json:"transition"`
-	Diagram      string `json:"diagram"`
-	Fact         string `json:"fact"`
-	FactUsage    string `json:"fact_usage"`
-	Custom       string `json:"custom"`
+	Introduction        string                `json:"introduction"`
+	Outro               string                `json:"outro"`
+	Transition          string                `json:"transition"`
+	Diagram             string                `json:"diagram"`
+	Fact                string                `json:"fact"`
+	FactUsage           string                `json:"fact_usage"`
+	Custom              string                `json:"custom"`
+	DemandAlignment     string                `json:"demand_alignment,omitempty"`
+	BodyStructure       string                `json:"body_structure,omitempty"`
+	ContentDepth        string                `json:"content_depth,omitempty"`
+	Multidimensionality string                `json:"multidimensionality,omitempty"`
+	Presentation        string                `json:"presentation,omitempty"`
+	Strengths           []AnalysisPoint       `json:"strengths,omitempty"`
+	Gaps                []AnalysisPoint       `json:"gaps,omitempty"`
+	MissingDimensions   []string              `json:"missing_dimensions,omitempty"`
+	ExaminerSignals     []string              `json:"examiner_signals,omitempty"`
+	Improvements        []AnalysisImprovement `json:"improvements,omitempty"`
+	ReusableTechniques  []string              `json:"reusable_techniques,omitempty"`
+	Scorecard           *QuestionScorecard    `json:"scorecard,omitempty"`
+}
+
+type AnalysisPoint struct {
+	Point        string `json:"point"`
+	Evidence     string `json:"evidence,omitempty"`
+	WhyItMatters string `json:"why_it_matters,omitempty"`
+}
+
+type AnalysisImprovement struct {
+	Priority string `json:"priority"`
+	Change   string `json:"change"`
+	Example  string `json:"example,omitempty"`
+}
+
+type QuestionScorecard struct {
+	DemandFulfilment    int    `json:"demand_fulfilment"`
+	Structure           int    `json:"structure"`
+	ContentDepth        int    `json:"content_depth"`
+	Evidence            int    `json:"evidence"`
+	Multidimensionality int    `json:"multidimensionality"`
+	Presentation        int    `json:"presentation"`
+	Conclusion          int    `json:"conclusion"`
+	OverallPercent      int    `json:"overall_percent"`
+	EstimatedBand       string `json:"estimated_band"`
+	Confidence          string `json:"confidence"`
+	Rationale           string `json:"rationale"`
+}
+
+type AnalysisQuality struct {
+	ClassificationCoveragePercent   int      `json:"classification_coverage_percent"`
+	AverageClassificationConfidence float64  `json:"average_classification_confidence"`
+	PromptMatchPercent              int      `json:"prompt_match_percent"`
+	AnalysisCoveragePercent         int      `json:"analysis_coverage_percent"`
+	EvidenceCoveragePercent         int      `json:"evidence_coverage_percent"`
+	OCRUnclearPercent               float64  `json:"ocr_unclear_percent"`
+	OverallCoveragePercent          int      `json:"overall_coverage_percent"`
+	RequiresReview                  bool     `json:"requires_review"`
+	Warnings                        []string `json:"warnings"`
 }
 
 type CopyMetadata struct {
@@ -128,6 +181,7 @@ type Response struct {
 	Pages      []Page               `json:"pages"`
 	Questions  []Question           `json:"questions"`
 	Report     string               `json:"report"`
+	Quality    *AnalysisQuality     `json:"quality,omitempty"`
 }
 
 type Option func(*Service)

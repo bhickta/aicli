@@ -13,13 +13,42 @@ import (
 	"github.com/bhickta/aicli/internal/provider"
 )
 
-func (s *Service) splitQuestions(ctx context.Context, model string, pages []Page, workers int, progress func(completed int, total int)) ([]Question, error) {
+type questionSplitResult struct {
+	Questions        []Question
+	Classifications  []PageClassification
+	PrintedQuestions []PrintedQuestion
+}
+
+type PageClassification struct {
+	PageNumber int
+	Kind       string
+	Confidence float64
+	Reason     string
+}
+
+type pageQuestionSplit struct {
+	Classification   PageClassification
+	PrintedQuestions []PrintedQuestion
+	Questions        []Question
+}
+
+func (s *Service) splitQuestions(
+	ctx context.Context,
+	model string,
+	pages []Page,
+	workers int,
+	progress func(completed int, total int),
+) (questionSplitResult, error) {
 	if len(pages) == 0 {
-		return nil, nil
+		return questionSplitResult{
+			Questions:        []Question{},
+			Classifications:  []PageClassification{},
+			PrintedQuestions: []PrintedQuestion{},
+		}, nil
 	}
 	workers = EffectiveQuestionWorkers(workers, len(pages))
 	jobs := make(chan Page)
-	results := make(chan []Question, len(pages))
+	results := make(chan pageQuestionSplit, len(pages))
 	errCh := make(chan error, 1)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -33,7 +62,7 @@ func (s *Service) splitQuestions(ctx context.Context, model string, pages []Page
 			defer wg.Done()
 			for page := range jobs {
 				start := time.Now()
-				questions, err := s.splitPageQuestions(ctx, model, page)
+				pageResult, err := s.splitPageQuestions(ctx, model, page)
 				if err != nil {
 					s.logWarn("topper copy question split page failed", "page", page.Number, "name", page.Name, "elapsed_ms", elapsedMS(start), "error", err)
 					select {
@@ -43,8 +72,20 @@ func (s *Service) splitQuestions(ctx context.Context, model string, pages []Page
 					}
 					return
 				}
-				s.logInfo("topper copy question split page completed", "page", page.Number, "name", page.Name, "questions", len(questions), "elapsed_ms", elapsedMS(start))
-				results <- questions
+				s.logInfo(
+					"topper copy question split page completed",
+					"page",
+					page.Number,
+					"name",
+					page.Name,
+					"page_kind",
+					pageResult.Classification.Kind,
+					"questions",
+					len(pageResult.Questions),
+					"elapsed_ms",
+					elapsedMS(start),
+				)
+				results <- pageResult
 				reportQuestionProgress(progress, &completed, &completedMu, len(pages))
 			}
 		}()
@@ -63,24 +104,31 @@ sendPages:
 
 	select {
 	case err := <-errCh:
-		return nil, err
+		return questionSplitResult{}, err
 	default:
 	}
-	detected := []Question{}
-	for questions := range results {
-		for _, question := range questions {
+	out := questionSplitResult{
+		Questions:        []Question{},
+		Classifications:  make([]PageClassification, 0, len(pages)),
+		PrintedQuestions: []PrintedQuestion{},
+	}
+	for pageResult := range results {
+		out.Classifications = append(out.Classifications, pageResult.Classification)
+		out.PrintedQuestions = append(out.PrintedQuestions, pageResult.PrintedQuestions...)
+		for _, question := range pageResult.Questions {
 			if question.Status == "" {
 				question.Status = "detected"
 			}
-			detected = append(detected, question)
+			out.Questions = append(out.Questions, question)
 		}
 	}
-	if len(detected) == 0 {
-		return pageFallbackQuestions(pages), nil
+	if len(out.Questions) == 0 {
+		return out, nil
 	}
-	merged := mergeQuestionBlocks(detected)
-	sortQuestions(merged)
-	return merged, nil
+	out.Questions = mergeQuestionBlocks(out.Questions)
+	out.Questions = attachPrintedQuestionPrompts(out.Questions, out.PrintedQuestions)
+	sortQuestions(out.Questions)
+	return out, nil
 }
 
 func mergeQuestionBlocks(questions []Question) []Question {
@@ -89,7 +137,7 @@ func mergeQuestionBlocks(questions []Question) []Question {
 	seen := map[string]int{}
 	for _, question := range questions {
 		key := normalizedQuestionKey(question)
-		if isContinuationQuestion(question) && len(merged) > 0 {
+		if len(merged) > 0 && (isContinuationQuestion(question) || isLikelyGenericContinuation(merged[len(merged)-1], question)) {
 			appendQuestionBlock(&merged[len(merged)-1], question)
 			continue
 		}
@@ -120,6 +168,39 @@ func isContinuationQuestion(question Question) bool {
 	return strings.Contains(label, "continuation")
 }
 
+func isLikelyGenericContinuation(previous, current Question) bool {
+	previousPage := lastInt(previous.SourcePages)
+	currentPage := firstInt(current.SourcePages)
+	if previousPage <= 0 || currentPage != previousPage+1 {
+		return false
+	}
+	if !hasQuestionSubpart(previous.Label) || hasQuestionSubpart(current.Label) {
+		return false
+	}
+	previousNumber := questionNumber(previous.Label)
+	return previousNumber != "" && previousNumber == questionNumber(current.Label)
+}
+
+func hasQuestionSubpart(label string) bool {
+	return strings.ContainsAny(label, "()")
+}
+
+func questionNumber(label string) string {
+	var number strings.Builder
+	foundDigit := false
+	for _, char := range label {
+		if char >= '0' && char <= '9' {
+			foundDigit = true
+			number.WriteRune(char)
+			continue
+		}
+		if foundDigit {
+			break
+		}
+	}
+	return number.String()
+}
+
 func appendQuestionBlock(dst *Question, src Question) {
 	dst.AnswerMarkdown = strings.TrimSpace(dst.AnswerMarkdown + "\n\n" + src.AnswerMarkdown)
 	dst.SourcePages = appendUniqueInts(dst.SourcePages, src.SourcePages...)
@@ -139,9 +220,18 @@ func reportQuestionProgress(progress func(completed int, total int), completed *
 	progress(done, total)
 }
 
-func (s *Service) splitPageQuestions(ctx context.Context, model string, page Page) ([]Question, error) {
+func (s *Service) splitPageQuestions(ctx context.Context, model string, page Page) (pageQuestionSplit, error) {
 	if isOCRFailureText(page.Text) {
-		return pageFallbackQuestions([]Page{page}), nil
+		return pageQuestionSplit{
+			Classification: PageClassification{
+				PageNumber: page.Number,
+				Kind:       "other",
+				Confidence: 1,
+				Reason:     "OCR failed",
+			},
+			PrintedQuestions: []PrintedQuestion{},
+			Questions:        []Question{},
+		}, nil
 	}
 	res, err := s.questionProvider.Chat(ctx, provider.ChatRequest{
 		Model: model,
@@ -155,13 +245,32 @@ func (s *Service) splitPageQuestions(ctx context.Context, model string, page Pag
 		MaxTokens:   3000,
 	})
 	if err != nil {
-		return nil, err
+		return pageQuestionSplit{}, err
 	}
-	questions, err := parseQuestionSplit(res.Content, page.Number)
+	result, err := parsePageQuestionSplit(res.Content, page.Number)
 	if err != nil {
-		return pageFallbackQuestions([]Page{page}), nil
+		return pageQuestionSplit{
+			Classification: PageClassification{
+				PageNumber: page.Number,
+				Kind:       "unknown",
+				Confidence: 0,
+				Reason:     "model response could not be parsed",
+			},
+			PrintedQuestions: []PrintedQuestion{},
+			Questions:        pageFallbackQuestions([]Page{page}),
+		}, nil
 	}
-	return questions, nil
+	if len(result.Questions) > 0 && result.Classification.Kind != "answer" {
+		result.Classification.Kind = "answer"
+		result.Classification.Confidence = min(result.Classification.Confidence, 0.5)
+		result.Classification.Reason = strings.TrimSpace(
+			result.Classification.Reason + "; candidate answer blocks were extracted",
+		)
+	}
+	if result.Classification.Kind == "answer" && len(result.Questions) == 0 {
+		result.Questions = pageFallbackQuestions([]Page{page})
+	}
+	return result, nil
 }
 
 func isOCRFailureText(text string) bool {
@@ -169,7 +278,11 @@ func isOCRFailureText(text string) bool {
 }
 
 type questionSplitPayload struct {
-	Questions []questionSplitItem `json:"questions"`
+	PageKind             string              `json:"page_kind"`
+	PageKindConfidence   float64             `json:"page_kind_confidence"`
+	ClassificationReason string              `json:"classification_reason"`
+	PrintedQuestions     []PrintedQuestion   `json:"printed_questions"`
+	Questions            []questionSplitItem `json:"questions"`
 }
 
 type questionSplitItem struct {
@@ -182,13 +295,24 @@ type questionSplitItem struct {
 }
 
 func parseQuestionSplit(content string, pageNumber int) ([]Question, error) {
-	content, err := extractQuestionSplitJSON(content)
+	result, err := parsePageQuestionSplit(content, pageNumber)
 	if err != nil {
 		return nil, err
 	}
+	if len(result.Questions) == 0 {
+		return nil, errors.New("question split returned no answer blocks")
+	}
+	return result.Questions, nil
+}
+
+func parsePageQuestionSplit(content string, pageNumber int) (pageQuestionSplit, error) {
+	content, err := extractQuestionSplitJSON(content)
+	if err != nil {
+		return pageQuestionSplit{}, err
+	}
 	var payload questionSplitPayload
 	if err := json.Unmarshal([]byte(strings.TrimSpace(content)), &payload); err != nil {
-		return nil, err
+		return pageQuestionSplit{}, err
 	}
 	questions := make([]Question, 0, len(payload.Questions))
 	for i, item := range payload.Questions {
@@ -219,10 +343,49 @@ func parseQuestionSplit(content string, pageNumber int) ([]Question, error) {
 			Status:         status,
 		})
 	}
-	if len(questions) == 0 {
-		return nil, errors.New("question split returned no answer blocks")
+	kind := normalizePageKind(payload.PageKind)
+	if kind == "unknown" && len(questions) > 0 {
+		kind = "answer"
 	}
-	return questions, nil
+	return pageQuestionSplit{
+		Classification: PageClassification{
+			PageNumber: pageNumber,
+			Kind:       kind,
+			Confidence: clampFloat(payload.PageKindConfidence, 0, 1),
+			Reason:     strings.TrimSpace(payload.ClassificationReason),
+		},
+		PrintedQuestions: cleanPrintedQuestions(payload.PrintedQuestions),
+		Questions:        questions,
+	}, nil
+}
+
+func normalizePageKind(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "answer", "question_paper", "cover", "index", "evaluation", "blank", "other":
+		return strings.ToLower(strings.TrimSpace(kind))
+	default:
+		return "unknown"
+	}
+}
+
+func cleanPrintedQuestions(items []PrintedQuestion) []PrintedQuestion {
+	cleaned := make([]PrintedQuestion, 0, len(items))
+	seen := map[string]bool{}
+	for _, item := range items {
+		item.Label = strings.TrimSpace(item.Label)
+		item.Prompt = strings.TrimSpace(item.Prompt)
+		key := questionReference(item.Label)
+		if key == "" || item.Prompt == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		cleaned = append(cleaned, item)
+	}
+	return cleaned
+}
+
+func clampFloat(value, lower, upper float64) float64 {
+	return max(lower, min(value, upper))
 }
 
 func limitString(s string, limit int) string {
@@ -308,6 +471,13 @@ func firstInt(values []int) int {
 		return 0
 	}
 	return values[0]
+}
+
+func lastInt(values []int) int {
+	if len(values) == 0 {
+		return 0
+	}
+	return values[len(values)-1]
 }
 
 func normalizeQuestionLabel(label string) string {

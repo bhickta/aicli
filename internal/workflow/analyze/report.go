@@ -2,6 +2,8 @@ package analyze
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -22,6 +24,22 @@ func (s *Service) report(ctx context.Context, model string, pages []Page, questi
 			combined.WriteString(intsString(question.SourcePages))
 			combined.WriteString("\n")
 			combined.WriteString(question.AnswerMarkdown)
+			if question.Metadata != nil {
+				metadataJSON, err := json.MarshalIndent(question.Metadata, "", "  ")
+				if err != nil {
+					return "", fmt.Errorf("encode metadata for question %q: %w", question.Label, err)
+				}
+				combined.WriteString("\n\nQuestion metadata:\n")
+				combined.Write(metadataJSON)
+			}
+			if question.Dimensions != nil {
+				analysisJSON, err := json.MarshalIndent(question.Dimensions, "", "  ")
+				if err != nil {
+					return "", fmt.Errorf("encode analysis for question %q: %w", question.Label, err)
+				}
+				combined.WriteString("\n\nStructured per-question analysis:\n")
+				combined.Write(analysisJSON)
+			}
 			combined.WriteString("\n\n")
 		}
 	} else {

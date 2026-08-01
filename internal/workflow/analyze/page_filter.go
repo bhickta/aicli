@@ -1,27 +1,34 @@
 package analyze
 
-import "strings"
-
 func answerBearingPages(pages []Page) []Page {
 	out := make([]Page, 0, len(pages))
 	for _, page := range pages {
-		if isOCRFailureText(page.Text) || isCoverOrIndexPage(page.Text) {
+		if isOCRFailureText(page.Text) {
 			continue
 		}
-		out = append(out, page)
+		switch normalizePageKind(page.Kind) {
+		case "answer", "unknown":
+			out = append(out, page)
+		}
 	}
 	return out
 }
 
-func isCoverOrIndexPage(text string) bool {
-	lower := strings.ToLower(text)
-	if strings.Contains(lower, "index table") && strings.Contains(lower, "name of candidate") {
-		return true
+func applyPageClassifications(pages []Page, classifications []PageClassification) []Page {
+	byPage := make(map[int]PageClassification, len(classifications))
+	for _, classification := range classifications {
+		byPage[classification.PageNumber] = classification
 	}
-	if strings.Contains(lower, "test code") && strings.Contains(lower, "maximum marks") && strings.Contains(lower, "instructions") {
-		return true
+	for index := range pages {
+		classification, ok := byPage[pages[index].Number]
+		if !ok {
+			continue
+		}
+		pages[index].Kind = classification.Kind
+		pages[index].KindConfidence = classification.Confidence
+		pages[index].ClassificationReason = classification.Reason
 	}
-	return false
+	return pages
 }
 
 func questionsForPages(questions []Question, pages []Page) []Question {
