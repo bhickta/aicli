@@ -23,6 +23,7 @@ type Request struct {
 	Model           string `json:"model"`
 	OCRModel        string `json:"ocr_model"`
 	QuestionModel   string `json:"question_model"`
+	BoundaryModel   string `json:"boundary_model"`
 	ReportModel     string `json:"report_model"`
 	Path            string `json:"path"`
 	DPI             int    `json:"dpi"`
@@ -42,6 +43,7 @@ type ReprocessRequest struct {
 	Model           string `json:"model"`
 	OCRModel        string `json:"ocr_model"`
 	QuestionModel   string `json:"question_model"`
+	BoundaryModel   string `json:"boundary_model"`
 	ReportModel     string `json:"report_model"`
 	Action          string `json:"action"`
 	PageNumbers     []int  `json:"page_numbers"`

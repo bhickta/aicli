@@ -19,6 +19,7 @@ const {
   batchProviderId,
   batchOCRModel,
   batchQuestionModel,
+  batchBoundaryModel,
   batchReportModel,
   batchParallelism,
   forceRerun,
@@ -74,6 +75,7 @@ async function refreshActiveCopy() {
         v-model:provider-id="batchProviderId"
         v-model:ocr-model="batchOCRModel"
         v-model:question-model="batchQuestionModel"
+        v-model:boundary-model="batchBoundaryModel"
         v-model:report-model="batchReportModel"
         v-model:parallelism="batchParallelism"
         v-model:force-rerun="forceRerun"

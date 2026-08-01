@@ -8,6 +8,7 @@ defineProps<{
   providerId: string;
   ocrModel: string;
   questionModel: string;
+  boundaryModel: string;
   reportModel: string;
   parallelism: number;
   forceRerun: boolean;
@@ -18,6 +19,7 @@ const emit = defineEmits<{
   "update:providerId": [value: string];
   "update:ocrModel": [value: string];
   "update:questionModel": [value: string];
+  "update:boundaryModel": [value: string];
   "update:reportModel": [value: string];
   "update:parallelism": [value: number];
   "update:forceRerun": [value: boolean];
@@ -28,10 +30,11 @@ const emit = defineEmits<{
 
 const lmStudioProviders = computed(() => providers.value.filter((provider) => provider.id === "lms"));
 
-function updateModel(stage: "ocr" | "question" | "report", value: { provider_id: string; model: string }) {
+function updateModel(stage: "ocr" | "question" | "boundary" | "report", value: { provider_id: string; model: string }) {
   emit("update:providerId", value.provider_id);
   if (stage === "ocr") emit("update:ocrModel", value.model);
   if (stage === "question") emit("update:questionModel", value.model);
+  if (stage === "boundary") emit("update:boundaryModel", value.model);
   if (stage === "report") emit("update:reportModel", value.model);
 }
 </script>
@@ -56,6 +59,15 @@ function updateModel(stage: "ocr" | "question" | "report", value: { provider_id:
           :model="questionModel"
           :provider-options="lmStudioProviders"
           @change="updateModel('question', $event)"
+        />
+      </label>
+      <label class="study-model-stage">
+        <span>Answer boundaries</span>
+        <ProviderModelControl
+          :provider-id="providerId"
+          :model="boundaryModel"
+          :provider-options="lmStudioProviders"
+          @change="updateModel('boundary', $event)"
         />
       </label>
       <label class="study-model-stage">

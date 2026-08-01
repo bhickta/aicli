@@ -4,6 +4,7 @@ import { providerModelField, providerModelPayload } from "./builders";
 const topperCopyFields: WorkflowDefinition["fields"] = [
   { type: "stepProviderModel", id: "ocr", label: "LM Studio vision / OCR model", providerIds: ["lms"] },
   { type: "stepProviderModel", id: "question", label: "LM Studio answer-analysis model", providerIds: ["lms"] },
+  { type: "stepProviderModel", id: "boundary", label: "LM Studio answer-boundary model", providerIds: ["lms"] },
   { type: "stepProviderModel", id: "report", label: "LM Studio final-report model", providerIds: ["lms"] },
   { type: "path", id: "path", label: "Topper copy PDF" },
   { type: "checkbox", id: "force_ocr", label: "Bypass cache", checked: false },
@@ -18,6 +19,7 @@ function topperCopyPayload(values: Record<string, unknown>) {
     ocr_model: values.ocr_model,
     question_provider_id: values.question_provider_id,
     question_model: values.question_model,
+    boundary_model: values.boundary_model,
     report_provider_id: values.report_provider_id,
     report_model: values.report_model,
     path: values.path,

@@ -313,6 +313,7 @@ func (h *Handler) runStudyCopy(w http.ResponseWriter, r *http.Request) {
 		Model         string `json:"model"`
 		OCRModel      string `json:"ocr_model"`
 		QuestionModel string `json:"question_model"`
+		BoundaryModel string `json:"boundary_model"`
 		ReportModel   string `json:"report_model"`
 		ForceOCR      bool   `json:"force_ocr"`
 	}](w, r)
@@ -329,6 +330,7 @@ func (h *Handler) runStudyCopy(w http.ResponseWriter, r *http.Request) {
 		Model:         req.Model,
 		OCRModel:      req.OCRModel,
 		QuestionModel: req.QuestionModel,
+		BoundaryModel: req.BoundaryModel,
 		ReportModel:   req.ReportModel,
 		Parallelism:   1,
 		ForceOCR:      req.ForceOCR,
@@ -429,6 +431,7 @@ func (h *Handler) startStudyBatch(w http.ResponseWriter, r *http.Request) {
 		Model         string   `json:"model"`
 		OCRModel      string   `json:"ocr_model"`
 		QuestionModel string   `json:"question_model"`
+		BoundaryModel string   `json:"boundary_model"`
 		ReportModel   string   `json:"report_model"`
 		Parallelism   int      `json:"parallelism"`
 		ForceOCR      bool     `json:"force_ocr"`
@@ -445,6 +448,7 @@ func (h *Handler) startStudyBatch(w http.ResponseWriter, r *http.Request) {
 		Model:         req.Model,
 		OCRModel:      req.OCRModel,
 		QuestionModel: req.QuestionModel,
+		BoundaryModel: req.BoundaryModel,
 		ReportModel:   req.ReportModel,
 		Parallelism:   req.Parallelism,
 		ForceOCR:      req.ForceOCR,

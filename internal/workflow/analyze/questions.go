@@ -44,14 +44,19 @@ type questionSplitRequestError struct {
 	err error
 }
 
+type questionSplitOptions struct {
+	QuestionModel string
+	BoundaryModel string
+	Workers       int
+}
+
 func (e *questionSplitRequestError) Error() string { return e.err.Error() }
 func (e *questionSplitRequestError) Unwrap() error { return e.err }
 
 func (s *Service) splitQuestions(
 	ctx context.Context,
-	model string,
 	pages []Page,
-	workers int,
+	options questionSplitOptions,
 	progress func(completed int, total int),
 ) (questionSplitResult, error) {
 	if len(pages) == 0 {
@@ -61,7 +66,7 @@ func (s *Service) splitQuestions(
 			PrintedQuestions: []PrintedQuestion{},
 		}, nil
 	}
-	workers = EffectiveQuestionWorkers(workers, len(pages))
+	workers := EffectiveQuestionWorkers(options.Workers, len(pages))
 	jobs := make(chan Page)
 	results := make(chan pageQuestionSplit, len(pages))
 	errCh := make(chan error, 1)
@@ -77,7 +82,7 @@ func (s *Service) splitQuestions(
 			defer wg.Done()
 			for page := range jobs {
 				start := time.Now()
-				pageResult, err := s.splitPageQuestions(ctx, model, page)
+				pageResult, err := s.splitPageQuestions(ctx, options.QuestionModel, page)
 				if err != nil {
 					s.logWarn("topper copy question split page failed", "page", page.Number, "name", page.Name, "elapsed_ms", elapsedMS(start), "error", err)
 					select {
@@ -136,7 +141,8 @@ sendPages:
 	if len(answerPages) == 0 {
 		return out, nil
 	}
-	questions, err := s.groupAnswerPages(ctx, model, answerPages)
+	boundaryModel := firstNonBlank(options.BoundaryModel, options.QuestionModel)
+	questions, err := s.groupAnswerPages(ctx, boundaryModel, answerPages)
 	if err != nil {
 		s.logWarn(
 			"topper copy answer-boundary ledger failed",

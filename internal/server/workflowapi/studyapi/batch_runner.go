@@ -31,6 +31,7 @@ type studyBatchRunOptions struct {
 	Model         string
 	OCRModel      string
 	QuestionModel string
+	BoundaryModel string
 	ReportModel   string
 	Parallelism   int
 	ForceOCR      bool
@@ -303,6 +304,7 @@ func (h *Handler) runImageAnalysisWithRetry(
 			Model:           options.Model,
 			OCRModel:        options.OCRModel,
 			QuestionModel:   options.QuestionModel,
+			BoundaryModel:   options.BoundaryModel,
 			ReportModel:     options.ReportModel,
 			Path:            copyRecord.SourcePath,
 			DPI:             defaultStudyBatchDPI,
@@ -597,6 +599,7 @@ func normalizedStudyBatchRunOptions(options studyBatchRunOptions) studyBatchRunO
 	options.Model = strings.TrimSpace(options.Model)
 	options.OCRModel = strings.TrimSpace(options.OCRModel)
 	options.QuestionModel = strings.TrimSpace(options.QuestionModel)
+	options.BoundaryModel = strings.TrimSpace(options.BoundaryModel)
 	options.ReportModel = strings.TrimSpace(options.ReportModel)
 	if options.Parallelism <= 0 {
 		options.Parallelism = defaultStudyBatchParallelism
@@ -620,7 +623,12 @@ func (h *Handler) resolveStudyBatchRunOptions(
 		options = fillStudyBatchModels(options, options.Model)
 		return options, p, nil
 	}
-	if model := firstString(options.QuestionModel, options.ReportModel, options.OCRModel); model != "" {
+	if model := firstString(
+		options.QuestionModel,
+		options.BoundaryModel,
+		options.ReportModel,
+		options.OCRModel,
+	); model != "" {
 		options = fillStudyBatchModels(options, model)
 		return options, p, nil
 	}
@@ -646,6 +654,7 @@ func (h *Handler) resolveStudyBatchRunOptions(
 func fillStudyBatchModels(options studyBatchRunOptions, fallback string) studyBatchRunOptions {
 	options.OCRModel = firstString(options.OCRModel, fallback)
 	options.QuestionModel = firstString(options.QuestionModel, fallback)
+	options.BoundaryModel = firstString(options.BoundaryModel, options.QuestionModel, fallback)
 	options.ReportModel = firstString(options.ReportModel, options.QuestionModel, fallback)
 	options.Model = firstString(options.Model, options.QuestionModel, options.ReportModel, options.OCRModel, fallback)
 	return options

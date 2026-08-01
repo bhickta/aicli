@@ -35,6 +35,7 @@ type fakeProvider struct {
 	documentReason    string
 	chatPrompt        string
 	chatPrompts       []string
+	chatModels        []string
 	chatResponses     []string
 	chatSchemas       []*provider.JSONSchema
 	chatErr           error
@@ -60,6 +61,7 @@ func (fakeProvider) ListModels(context.Context) ([]provider.Model, error) {
 	return []provider.Model{}, nil
 }
 func (p *fakeProvider) Chat(_ context.Context, req provider.ChatRequest) (provider.ChatResponse, error) {
+	p.chatModels = append(p.chatModels, req.Model)
 	if len(req.Messages) > 0 {
 		p.chatPrompt = req.Messages[0].Content
 		p.chatPrompts = append(p.chatPrompts, req.Messages[0].Content)
@@ -405,12 +407,11 @@ func TestSplitQuestionsSuppliesAllPagesToCopyBoundaryLedger(t *testing.T) {
 	service := New(config.ToolConfig{}, &fakeRunner{}, provider)
 	_, err := service.splitQuestions(
 		context.Background(),
-		"local-model",
 		[]Page{
 			{Number: 2, Text: "previous answer text"},
 			{Number: 3, Text: "current continuation text"},
 		},
-		1,
+		questionSplitOptions{QuestionModel: "local-model", Workers: 1},
 		nil,
 	)
 	if err != nil {
@@ -418,6 +419,9 @@ func TestSplitQuestionsSuppliesAllPagesToCopyBoundaryLedger(t *testing.T) {
 	}
 	if len(provider.chatPrompts) != 3 {
 		t.Fatalf("chat prompts = %d, want two page classifications and one copy ledger", len(provider.chatPrompts))
+	}
+	if !slices.Equal(provider.chatModels, []string{"local-model", "local-model", "local-model"}) {
+		t.Fatalf("chat models = %#v, want question-model fallback for boundary ledger", provider.chatModels)
 	}
 	ledgerPrompt := provider.chatPrompts[2]
 	if !strings.Contains(ledgerPrompt, "previous answer text") || !strings.Contains(ledgerPrompt, "current continuation text") {
@@ -442,7 +446,12 @@ func TestSplitQuestionsUsesCopyLedgerInsteadOfPageFieldGuesses(t *testing.T) {
 		{Number: 5, Text: "original CRISPR continuation OCR"},
 	}
 	service := New(config.ToolConfig{}, &fakeRunner{}, provider)
-	result, err := service.splitQuestions(context.Background(), "local-model", pages, 1, nil)
+	result, err := service.splitQuestions(
+		context.Background(),
+		pages,
+		questionSplitOptions{QuestionModel: "local-model", Workers: 1},
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("splitQuestions() error = %v", err)
 	}
@@ -651,6 +660,7 @@ func TestRunAnalyzeUsesSeparateStepProviders(t *testing.T) {
 		Path:          pdf,
 		OCRModel:      "vision-model",
 		QuestionModel: "split-model",
+		BoundaryModel: "boundary-model",
 		ReportModel:   "report-model",
 		QuestionSplit: true,
 	})
@@ -671,6 +681,9 @@ func TestRunAnalyzeUsesSeparateStepProviders(t *testing.T) {
 	}
 	if !strings.Contains(questionProvider.chatPrompts[2], "evidence-based diagnostic") {
 		t.Fatalf("question provider prompt = %q, want dimensions prompt", questionProvider.chatPrompts[2])
+	}
+	if !slices.Equal(questionProvider.chatModels, []string{"split-model", "boundary-model", "split-model"}) {
+		t.Fatalf("question provider models = %#v, want classification, boundary, and analysis routing", questionProvider.chatModels)
 	}
 	if !strings.Contains(reportProvider.chatPrompt, "Answer-Wise Analysis") {
 		t.Fatalf("report provider prompt = %q, want report prompt", reportProvider.chatPrompt)

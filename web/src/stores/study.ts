@@ -17,6 +17,7 @@ interface StudyState {
   batchProviderId: string;
   batchOCRModel: string;
   batchQuestionModel: string;
+  batchBoundaryModel: string;
   batchReportModel: string;
   batchParallelism: number;
   forceRerun: boolean;
@@ -40,6 +41,7 @@ export const useStudyStore = defineStore("study", {
     batchProviderId: "lms",
     batchOCRModel: "",
     batchQuestionModel: "",
+    batchBoundaryModel: "",
     batchReportModel: "",
     batchParallelism: 1,
     forceRerun: false,
@@ -123,6 +125,7 @@ export const useStudyStore = defineStore("study", {
         model: this.batchQuestionModel || this.batchOCRModel,
         ocr_model: this.batchOCRModel,
         question_model: this.batchQuestionModel,
+        boundary_model: this.batchBoundaryModel,
         report_model: this.batchReportModel,
         parallelism: this.batchParallelism,
         force_ocr: this.forceRerun,
@@ -135,6 +138,7 @@ export const useStudyStore = defineStore("study", {
         model: this.batchQuestionModel || this.batchOCRModel,
         ocr_model: this.batchOCRModel,
         question_model: this.batchQuestionModel,
+        boundary_model: this.batchBoundaryModel,
         report_model: this.batchReportModel,
         force_ocr: this.forceRerun,
       }, "Starting PDF analysis...");

@@ -40,9 +40,25 @@ func (s *Service) ReprocessReview(ctx context.Context, review Response, req Repr
 	if action == "questions" || action == "all" {
 		pages := answerBearingPages(pagesFromSet(review.Pages, selected))
 		stageStart := time.Now()
-		splitResult, err := s.splitQuestions(ctx, firstNonBlank(req.QuestionModel, req.Model), pages, req.QuestionWorkers, func(done int, totalPages int) {
-			progressUnits(progress, fmt.Sprintf("splitting %d selected page(s)", totalPages), completed+done, total, "page")
-		})
+		questionModel := firstNonBlank(req.QuestionModel, req.Model)
+		splitResult, err := s.splitQuestions(
+			ctx,
+			pages,
+			questionSplitOptions{
+				QuestionModel: questionModel,
+				BoundaryModel: firstNonBlank(req.BoundaryModel, questionModel),
+				Workers:       req.QuestionWorkers,
+			},
+			func(done int, totalPages int) {
+				progressUnits(
+					progress,
+					fmt.Sprintf("splitting %d selected page(s)", totalPages),
+					completed+done,
+					total,
+					"page",
+				)
+			},
+		)
 		if err != nil {
 			s.logWarn("topper copy reprocess question split failed", "review_id", review.ReviewID, "pages", len(pages), "elapsed_ms", elapsedMS(stageStart), "error", err)
 			return Response{}, err

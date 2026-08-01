@@ -183,6 +183,7 @@ func (h *Handler) rerunTopperReview(w http.ResponseWriter, r *http.Request) {
 	model := firstModel(req.Model, record.Model)
 	ocrModel := firstModel(req.OCRModel, model)
 	questionModel := firstModel(req.QuestionModel, model)
+	boundaryModel := firstModel(req.BoundaryModel, questionModel)
 	reportModel := firstModel(req.ReportModel, model)
 	ocrProvider, found := h.runtime.ProviderOrError(w, ocrProviderID)
 	if !found {
@@ -202,6 +203,7 @@ func (h *Handler) rerunTopperReview(w http.ResponseWriter, r *http.Request) {
 			defer h.unloadProviderModels(context.Background(), []providerModelUse{
 				{provider: ocrProvider, model: ocrModel},
 				{provider: questionProvider, model: questionModel},
+				{provider: questionProvider, model: boundaryModel},
 				{provider: reportProvider, model: reportModel},
 			})
 		}
@@ -250,6 +252,7 @@ func (h *Handler) rerunTopperReview(w http.ResponseWriter, r *http.Request) {
 		req.Model = model
 		req.OCRModel = ocrModel
 		req.QuestionModel = questionModel
+		req.BoundaryModel = boundaryModel
 		req.ReportModel = reportModel
 		result, err := analyze.New(
 			h.runtime.Settings().Tools,

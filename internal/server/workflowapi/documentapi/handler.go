@@ -111,6 +111,7 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 	reportProviderID := strings.TrimSpace(req.ReportProviderID)
 	ocrModel := strings.TrimSpace(req.OCRModel)
 	questionModel := strings.TrimSpace(req.QuestionModel)
+	boundaryModel := firstModel(req.BoundaryModel, questionModel)
 	reportModel := strings.TrimSpace(req.ReportModel)
 	directPDFRequested := shouldUseDirectPDFMode(ocrProviderID, req.OCRInputMode)
 	preferredReviewID := strings.TrimSpace(req.ReviewID)
@@ -179,6 +180,7 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 			defer h.unloadProviderModels(context.Background(), []providerModelUse{
 				{provider: ocrProvider, model: ocrModel},
 				{provider: questionProvider, model: questionModel},
+				{provider: questionProvider, model: boundaryModel},
 				{provider: reportProvider, model: reportModel},
 			})
 		}
@@ -189,6 +191,7 @@ func (h *Handler) runAnalyze(w http.ResponseWriter, r *http.Request) {
 		request := analyze.Request{
 			OCRModel:        ocrModel,
 			QuestionModel:   questionModel,
+			BoundaryModel:   boundaryModel,
 			ReportModel:     reportModel,
 			Path:            req.Path,
 			DPI:             req.DPI,

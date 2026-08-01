@@ -13,6 +13,7 @@ defineProps<{
   providerId: string;
   ocrModel: string;
   questionModel: string;
+  boundaryModel: string;
   reportModel: string;
   parallelism: number;
   forceRerun: boolean;
@@ -24,6 +25,7 @@ const emit = defineEmits<{
   "update:providerId": [value: string];
   "update:ocrModel": [value: string];
   "update:questionModel": [value: string];
+  "update:boundaryModel": [value: string];
   "update:reportModel": [value: string];
   "update:parallelism": [value: number];
   "update:forceRerun": [value: boolean];
@@ -54,6 +56,7 @@ const emit = defineEmits<{
       :provider-id="providerId"
       :ocr-model="ocrModel"
       :question-model="questionModel"
+      :boundary-model="boundaryModel"
       :report-model="reportModel"
       :parallelism="parallelism"
       :force-rerun="forceRerun"
@@ -61,6 +64,7 @@ const emit = defineEmits<{
       @update:provider-id="emit('update:providerId', $event)"
       @update:ocr-model="emit('update:ocrModel', $event)"
       @update:question-model="emit('update:questionModel', $event)"
+      @update:boundary-model="emit('update:boundaryModel', $event)"
       @update:report-model="emit('update:reportModel', $event)"
       @update:parallelism="emit('update:parallelism', $event)"
       @update:force-rerun="emit('update:forceRerun', $event)"

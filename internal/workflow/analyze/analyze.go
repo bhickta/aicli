@@ -54,6 +54,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		"report_provider", providerID(s.reportProvider),
 		"ocr_model", firstNonBlank(req.OCRModel, req.Model),
 		"question_model", firstNonBlank(req.QuestionModel, req.Model),
+		"boundary_model", firstNonBlank(req.BoundaryModel, req.QuestionModel, req.Model),
 		"report_model", firstNonBlank(req.ReportModel, req.Model),
 	)
 	totalSteps := 3
@@ -187,6 +188,7 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 		splitPages := pagesForQuestionSplit(pages)
 		questionWorkers := EffectiveQuestionWorkers(req.QuestionWorkers, len(splitPages))
 		questionModel := firstNonBlank(req.QuestionModel, req.Model)
+		boundaryModel := firstNonBlank(req.BoundaryModel, questionModel)
 		stageStart = time.Now()
 		s.logInfo(
 			"topper copy question split started",
@@ -198,14 +200,19 @@ func (s *Service) RunWithProgress(ctx context.Context, req Request, progress Pro
 			questionWorkers,
 			"provider",
 			providerID(s.questionProvider),
-			"model",
+			"question_model",
 			questionModel,
+			"boundary_model",
+			boundaryModel,
 		)
 		splitResult, splitErr := s.splitQuestions(
 			ctx,
-			questionModel,
 			splitPages,
-			req.QuestionWorkers,
+			questionSplitOptions{
+				QuestionModel: questionModel,
+				BoundaryModel: boundaryModel,
+				Workers:       req.QuestionWorkers,
+			},
 			func(completedPages int, totalPages int) {
 				progressUnits(
 					progress,
