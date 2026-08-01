@@ -85,6 +85,28 @@ type localFakeVision struct {
 	fakeVision
 }
 
+type cancelAfterFirstVision struct {
+	fakeVision
+	mu            sync.Mutex
+	calls         int
+	secondStarted chan struct{}
+}
+
+func (v *cancelAfterFirstVision) Vision(ctx context.Context, _ provider.VisionRequest) (provider.ChatResponse, error) {
+	v.mu.Lock()
+	v.calls++
+	call := v.calls
+	v.mu.Unlock()
+	if call == 1 {
+		return provider.ChatResponse{Content: "first page"}, nil
+	}
+	if call == 2 {
+		close(v.secondStarted)
+	}
+	<-ctx.Done()
+	return provider.ChatResponse{}, ctx.Err()
+}
+
 func (localFakeVision) ID() string { return "custom-local" }
 func (localFakeVision) LocalModelServer() bool {
 	return true
@@ -349,6 +371,36 @@ func TestOCRImagesKeepsPartialPageFailures(t *testing.T) {
 	}
 	if !strings.Contains(pages[1].Text, "server overloaded") {
 		t.Fatalf("page 2 text = %q, want failure marker", pages[1].Text)
+	}
+}
+
+func TestOCRImagesPropagatesCancellationAfterPartialSuccess(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	vision := &cancelAfterFirstVision{secondStarted: make(chan struct{})}
+	result := make(chan error, 1)
+	go func() {
+		_, err := OCRImages(
+			ctx,
+			vision,
+			"model",
+			[]ImageInput{
+				{Name: "page-1", Data: []byte("one")},
+				{Name: "page-2", Data: []byte("two")},
+				{Name: "page-3", Data: []byte("three")},
+			},
+			"prompt",
+			1,
+			nil,
+		)
+		result <- err
+	}()
+
+	<-vision.secondStarted
+	cancel()
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("OCRImages() error = %v, want context.Canceled", err)
 	}
 }
 

@@ -91,6 +91,7 @@ func OCRImagesWithOptions(
 		wg.Add(1)
 		go ocrImageWorker(ctx, vision, model, inputs, prompt, pages, jobs, errCh, opts.Logger, opts.Progress, &completed, &completedMu, &wg)
 	}
+dispatch:
 	for index := startIndex; index < len(inputs); {
 		end := index + batchSize
 		if end > len(inputs) {
@@ -102,17 +103,17 @@ func OCRImagesWithOptions(
 		}
 		select {
 		case <-ctx.Done():
-			for _, failedIndex := range batch {
-				errCh <- pageError{Index: failedIndex, Name: inputs[failedIndex].Name, Err: ctx.Err()}
-				pages[failedIndex] = failedOCRPage(inputs[failedIndex], ctx.Err())
-			}
+			break dispatch
 		case jobs <- batch:
+			index = end
 		}
-		index = end
 	}
 	close(jobs)
 	wg.Wait()
 	close(errCh)
+	if err := ctx.Err(); err != nil {
+		return pages, err
+	}
 
 	failures := preflightFailures
 	for err := range errCh {
@@ -131,6 +132,9 @@ func validateVisionModel(ctx context.Context, vision provider.Provider, model st
 	page, err := ocrImage(ctx, vision, model, input, prompt)
 	if err == nil {
 		return page, nil, nil
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return OCRPage{}, nil, ctxErr
 	}
 	if isVisionUnsupportedError(err) {
 		return OCRPage{}, nil, fmt.Errorf("OCR model %q does not support images; select a vision OCR model such as unlimited-ocr in the OCR model field, and use text models only for question split/report: %w", model, err)
