@@ -231,7 +231,7 @@ func (h *Handler) saveStudyCopySyncPayload(
 		SourcePath: firstString(payload.SourcePath, existing.SourcePath),
 		ProviderID: payload.ProviderID,
 		Model:      payload.Model,
-		Status:     "ready",
+		Status:     studyTopperReviewStatus(review),
 	})
 	if err := topperStore.SaveTopperReview(ctx, record); err != nil {
 		return fmt.Errorf("save topper review %s: %w", record.ID, err)

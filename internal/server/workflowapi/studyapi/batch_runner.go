@@ -168,7 +168,7 @@ func (h *Handler) runStudyBatchCopy(
 		BatchID:      batch.ID,
 		CopyID:       copyRecord.ID,
 		Stage:        batch.Stage,
-		Status:       "ready",
+		Status:       firstString(result.Status, "ready"),
 		Attempt:      1,
 		CacheHit:     result.CacheHit,
 		APICalls:     result.APICalls,
@@ -236,7 +236,7 @@ func (h *Handler) analyzeStudyBatchCopy(
 		SourcePath: copyRecord.SourcePath,
 		ProviderID: options.ProviderID,
 		Model:      options.Model,
-		Status:     "ready",
+		Status:     studyTopperReviewStatus(result),
 	})
 	if err := topperStore.SaveTopperReview(ctx, record); err != nil {
 		return studyBatchCopyResult{}, err
@@ -247,13 +247,20 @@ func (h *Handler) analyzeStudyBatchCopy(
 	if err := saveStudyFromTopperRecordAsCopy(ctx, store, record, copyRecord.ID, copyRecord); err != nil {
 		return studyBatchCopyResult{}, err
 	}
-	out := studyBatchCopyResult{CopyID: copyRecord.ID, Status: "ready", APICalls: firstInt(result.APICalls, 1)}
+	out := studyBatchCopyResult{CopyID: copyRecord.ID, Status: record.Status, APICalls: firstInt(result.APICalls, 1)}
 	if result.Usage != nil {
 		out.InputTokens = result.Usage.InputTokens
 		out.OutputTokens = result.Usage.OutputTokens
 		out.TotalTokens = result.Usage.TotalTokens
 	}
 	return out, nil
+}
+
+func studyTopperReviewStatus(review analyze.Response) string {
+	if review.Quality != nil && review.Quality.RequiresReview {
+		return "needs_review"
+	}
+	return "ready"
 }
 
 func (h *Handler) runImageAnalysisWithRetry(

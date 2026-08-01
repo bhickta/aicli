@@ -142,3 +142,14 @@ func TestLoadStudyOCRCheckpointResumesOnlyMatchingOCRReadyRecord(t *testing.T) {
 		t.Fatalf("forced pages = %#v, error = %v, want checkpoint bypassed", pages, err)
 	}
 }
+
+func TestStudyTopperReviewStatusRequiresReviewWhenQualityWarns(t *testing.T) {
+	t.Parallel()
+
+	if got := studyTopperReviewStatus(analyze.Response{}); got != "ready" {
+		t.Fatalf("status without quality = %q, want backward-compatible ready", got)
+	}
+	if got := studyTopperReviewStatus(analyze.Response{Quality: &analyze.AnalysisQuality{RequiresReview: true}}); got != "needs_review" {
+		t.Fatalf("review status = %q, want needs_review for failed quality gates", got)
+	}
+}
