@@ -11,7 +11,9 @@ defineProps<{
   activeId: string;
   selectedIds: string[];
   providerId: string;
-  model: string;
+  ocrModel: string;
+  questionModel: string;
+  reportModel: string;
   parallelism: number;
   forceRerun: boolean;
   running: boolean;
@@ -20,7 +22,9 @@ defineProps<{
 const emit = defineEmits<{
   "update:query": [value: string];
   "update:providerId": [value: string];
-  "update:model": [value: string];
+  "update:ocrModel": [value: string];
+  "update:questionModel": [value: string];
+  "update:reportModel": [value: string];
   "update:parallelism": [value: number];
   "update:forceRerun": [value: boolean];
   search: [];
@@ -48,12 +52,16 @@ const emit = defineEmits<{
     <StudyBatchControls
       :selected-count="selectedIds.length"
       :provider-id="providerId"
-      :model="model"
+      :ocr-model="ocrModel"
+      :question-model="questionModel"
+      :report-model="reportModel"
       :parallelism="parallelism"
       :force-rerun="forceRerun"
       :running="running"
       @update:provider-id="emit('update:providerId', $event)"
-      @update:model="emit('update:model', $event)"
+      @update:ocr-model="emit('update:ocrModel', $event)"
+      @update:question-model="emit('update:questionModel', $event)"
+      @update:report-model="emit('update:reportModel', $event)"
       @update:parallelism="emit('update:parallelism', $event)"
       @update:force-rerun="emit('update:forceRerun', $event)"
       @run-selected="emit('runSelected')"
