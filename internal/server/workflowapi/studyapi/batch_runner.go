@@ -414,7 +414,8 @@ func loadStudyOCRCheckpoint(
 	if err != nil {
 		return nil, err
 	}
-	if !strings.EqualFold(strings.TrimSpace(record.Status), "ocr_ready") {
+	status := strings.ToLower(strings.TrimSpace(record.Status))
+	if status != "ocr_ready" && status != "needs_review" {
 		return nil, nil
 	}
 	if record.SourcePath != "" && copyRecord.SourcePath != "" && filepath.Clean(record.SourcePath) != filepath.Clean(copyRecord.SourcePath) {

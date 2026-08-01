@@ -129,6 +129,20 @@ func TestLoadStudyOCRCheckpointResumesOnlyMatchingOCRReadyRecord(t *testing.T) {
 	if err != nil || len(pages) != 1 || pages[0].Text != "saved OCR" {
 		t.Fatalf("pages = %#v, error = %v, want saved OCR resume", pages, err)
 	}
+	record, err := store.GetTopperReview(context.Background(), "copy-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Status = "needs_review"
+	if err := store.SaveTopperReview(context.Background(), record); err != nil {
+		t.Fatal(err)
+	}
+	pages, err = loadStudyOCRCheckpoint(context.Background(), store, storage.StudyCopyRecord{
+		ID: "copy-1", SourcePath: "/tmp/copy.pdf",
+	}, false)
+	if err != nil || len(pages) != 1 {
+		t.Fatalf("needs-review pages = %#v, error = %v, want OCR reused for refinement", pages, err)
+	}
 	pages, err = loadStudyOCRCheckpoint(context.Background(), store, storage.StudyCopyRecord{
 		ID: "copy-1", SourcePath: "/tmp/different.pdf",
 	}, false)
