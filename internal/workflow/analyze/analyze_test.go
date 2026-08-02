@@ -302,6 +302,69 @@ func TestPlanDirectPDFChunksUsesEightPagesWithTwoPageOverlap(t *testing.T) {
 	}
 }
 
+func TestDirectPDFChunkFallsBackToSmallerOverlappingRanges(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	pdf := filepath.Join(dir, "answers.pdf")
+	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	invalid := `{"detected_questions":["Q.1"],"pages":[`
+	firstHalf := `{
+		"metadata":{"topper_name":"Sample Topper"},
+		"detected_questions":["Q.1"],
+		"pages":[
+			{"number":1,"kind":"cover"},{"number":2,"kind":"answer"},{"number":3,"kind":"answer"},
+			{"number":4,"kind":"answer"},{"number":5,"kind":"answer"}
+		],
+		"questions":[{"id":"q1","label":"Q.1","source_pages":[2],"answer_markdown":"first answer"}],
+		"report":"first half"
+	}`
+	secondHalf := `{
+		"metadata":{"topper_name":"Sample Topper"},
+		"detected_questions":["Q.2"],
+		"pages":[
+			{"number":1,"kind":"answer"},{"number":2,"kind":"answer"},
+			{"number":3,"kind":"answer"},{"number":4,"kind":"answer"}
+		],
+		"questions":[{"id":"q2","label":"Q.2","source_pages":[2],"answer_markdown":"second answer"}],
+		"report":"second half"
+	}`
+	processor := &fakeProvider{
+		documentResponses: []string{invalid, invalid, firstHalf, secondHalf},
+	}
+	service := New(
+		config.ToolConfig{QPDF: "qpdf"},
+		&fakeRunner{},
+		processor,
+	)
+	chunk := directPDFChunk{Index: 0, FirstPage: 1, LastPage: 8}
+	result, err := service.extractDirectPDFChunkWithFallback(
+		context.Background(),
+		Request{Path: pdf, OCRModel: "gemini-flash-lite-latest"},
+		"answers.pdf",
+		10,
+		chunk,
+		dir,
+		directPDFChunkPrompts("answers.pdf", 10, chunk),
+		processor,
+	)
+	if err != nil {
+		t.Fatalf("extractDirectPDFChunkWithFallback() error = %v", err)
+	}
+	if processor.documentCalls != 4 || result.Response.APICalls != 4 {
+		t.Fatalf("calls: provider=%d response=%d, want two rejected parent calls plus two smaller ranges", processor.documentCalls, result.Response.APICalls)
+	}
+	if len(result.Response.Pages) != 8 || len(result.Response.Questions) != 2 {
+		t.Fatalf("response has %d pages and %d questions, want 8 and 2", len(result.Response.Pages), len(result.Response.Questions))
+	}
+	if !slices.Equal(result.Response.Questions[0].SourcePages, []int{2}) ||
+		!slices.Equal(result.Response.Questions[1].SourcePages, []int{6}) {
+		t.Fatalf("question source pages = %#v, want globally mapped pages 2 and 6", result.Response.Questions)
+	}
+}
+
 func TestDirectPDFPromptsKeepProcessingBoundariesOutOfVisibleEvidence(t *testing.T) {
 	t.Parallel()
 

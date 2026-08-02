@@ -37,6 +37,20 @@ type directPDFChunkCheckpoint struct {
 	Result       directPDFChunkResult `json:"result"`
 }
 
+type directPDFChunkContentError struct {
+	Err      error
+	Usage    *provider.TokenUsage
+	APICalls int
+}
+
+func (e *directPDFChunkContentError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *directPDFChunkContentError) Unwrap() error {
+	return e.Err
+}
+
 func planDirectPDFChunks(pageCount int) ([]directPDFChunk, error) {
 	if pageCount <= 0 {
 		return nil, errors.New("direct PDF has no pages")
@@ -116,7 +130,7 @@ func (s *Service) directPDFChunkedReview(
 			continue
 		}
 
-		result, err := s.extractDirectPDFChunk(ctx, req, pdfName, chunk, tempDir, prompts, processor)
+		result, err := s.extractDirectPDFChunkWithFallback(ctx, req, pdfName, pageCount, chunk, tempDir, prompts, processor)
 		if err != nil {
 			return Response{}, fmt.Errorf("extract direct PDF chunk %d pages %d-%d: %w", chunk.Index+1, chunk.FirstPage, chunk.LastPage, err)
 		}
@@ -175,6 +189,121 @@ func (s *Service) directPDFChunkedReview(
 	return result, nil
 }
 
+func (s *Service) extractDirectPDFChunkWithFallback(
+	ctx context.Context,
+	req Request,
+	pdfName string,
+	pageCount int,
+	chunk directPDFChunk,
+	tempDir string,
+	prompts []string,
+	processor provider.DocumentProcessor,
+) (directPDFChunkResult, error) {
+	result, err := s.extractDirectPDFChunk(ctx, req, pdfName, chunk, tempDir, prompts, processor)
+	if err == nil {
+		return result, nil
+	}
+	var contentErr *directPDFChunkContentError
+	if !errors.As(err, &contentErr) {
+		return directPDFChunkResult{}, err
+	}
+	subchunks, ok := splitDirectPDFChunkForFallback(chunk)
+	if !ok {
+		return directPDFChunkResult{}, err
+	}
+	s.logWarn(
+		"direct PDF chunk validation failed; retrying smaller overlapping ranges",
+		"chunk", chunk.Index+1,
+		"first_page", chunk.FirstPage,
+		"last_page", chunk.LastPage,
+		"error", err,
+	)
+	results := make([]directPDFChunkResult, 0, len(subchunks))
+	for _, subchunk := range subchunks {
+		prompts := directPDFChunkPrompts(pdfName, pageCount, subchunk)
+		result, subErr := s.extractDirectPDFChunk(ctx, req, pdfName, subchunk, tempDir, prompts, processor)
+		if subErr != nil {
+			return directPDFChunkResult{}, fmt.Errorf(
+				"smaller range pages %d-%d after chunk validation failure: %w",
+				subchunk.FirstPage,
+				subchunk.LastPage,
+				subErr,
+			)
+		}
+		results = append(results, result)
+	}
+	merged, err := mergeDirectPDFFallbackChunk(chunk, pdfName, results)
+	if err != nil {
+		return directPDFChunkResult{}, err
+	}
+	merged.Response.Usage = addTokenUsage(contentErr.Usage, merged.Response.Usage)
+	merged.Response.APICalls += contentErr.APICalls
+	return merged, nil
+}
+
+func splitDirectPDFChunkForFallback(chunk directPDFChunk) ([]directPDFChunk, bool) {
+	pageCount := chunk.LastPage - chunk.FirstPage + 1
+	if pageCount <= 4 {
+		return nil, false
+	}
+	middle := chunk.FirstPage + pageCount/2
+	return []directPDFChunk{
+		{Index: chunk.Index, FirstPage: chunk.FirstPage, LastPage: middle},
+		{Index: chunk.Index, FirstPage: middle, LastPage: chunk.LastPage},
+	}, true
+}
+
+func mergeDirectPDFFallbackChunk(
+	chunk directPDFChunk,
+	pdfName string,
+	results []directPDFChunkResult,
+) (directPDFChunkResult, error) {
+	selectedPages := make(map[int]Page, chunk.LastPage-chunk.FirstPage+1)
+	questions := []Question{}
+	reports := []string{}
+	for _, result := range results {
+		for _, page := range result.Response.Pages {
+			current, found := selectedPages[page.Number]
+			if !found || directPDFPageScore(page) > directPDFPageScore(current) {
+				selectedPages[page.Number] = page
+			}
+		}
+		questions = append(questions, result.Response.Questions...)
+		if report := strings.TrimSpace(result.Response.Report); report != "" {
+			reports = append(reports, report)
+		}
+	}
+	pages := make([]Page, 0, chunk.LastPage-chunk.FirstPage+1)
+	for pageNumber := chunk.FirstPage; pageNumber <= chunk.LastPage; pageNumber++ {
+		page, found := selectedPages[pageNumber]
+		if !found {
+			return directPDFChunkResult{}, fmt.Errorf(
+				"smaller-range fallback omitted page %d from chunk pages %d-%d",
+				pageNumber,
+				chunk.FirstPage,
+				chunk.LastPage,
+			)
+		}
+		pages = append(pages, page)
+	}
+	sortQuestions(questions)
+	usage, calls := directPDFChunkUsage(results)
+	return directPDFChunkResult{
+		Chunk: chunk,
+		Response: Response{
+			Kind:       "topper_copy_chunk",
+			PDFName:    pdfName,
+			SourceMode: OCRInputModePDFDirect,
+			APICalls:   calls,
+			Usage:      usage,
+			Metadata:   mergeDirectPDFChunkMetadata(results),
+			Pages:      pages,
+			Questions:  questions,
+			Report:     strings.Join(reports, "\n\n"),
+		},
+	}, nil
+}
+
 func (s *Service) extractDirectPDFChunk(
 	ctx context.Context,
 	req Request,
@@ -209,7 +338,7 @@ func (s *Service) extractDirectPDFChunk(
 			return directPDFChunkResult{}, err
 		}
 		if err := validateDirectPDFFinishReason(res.FinishReason); err != nil {
-			return directPDFChunkResult{}, err
+			return directPDFChunkResult{}, &directPDFChunkContentError{Err: err, Usage: usage, APICalls: attempt + 1}
 		}
 		metadata, pages, questions, report, err := parseChunkPDFManifest(res.Content)
 		if err == nil {
@@ -220,7 +349,7 @@ func (s *Service) extractDirectPDFChunk(
 				s.logWarn("direct PDF chunk incomplete; retrying", "chunk", chunk.Index+1, "first_page", chunk.FirstPage, "last_page", chunk.LastPage, "error", err)
 				continue
 			}
-			return directPDFChunkResult{}, err
+			return directPDFChunkResult{}, &directPDFChunkContentError{Err: err, Usage: usage, APICalls: attempt + 1}
 		}
 		return directPDFChunkResult{
 			Chunk: chunk,
