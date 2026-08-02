@@ -196,6 +196,10 @@ func applyDirectPDFReconciliation(
 	warnings := []string{}
 	seenQuestionIDs := map[string]int{}
 	for groupIndex, group := range plan.Groups {
+		group.CandidateIDs = cleanStringList(group.CandidateIDs)
+		if len(group.CandidateIDs) == 0 {
+			continue
+		}
 		groupCandidates, normalizedGroup, err := assignDirectPDFGroupCandidates(byID, assigned, groupIndex, group)
 		if err != nil {
 			return nil, nil, err
@@ -230,10 +234,6 @@ func assignDirectPDFGroupCandidates(
 	groupIndex int,
 	group directPDFReconciliationGroup,
 ) ([]directPDFCandidate, directPDFReconciliationGroup, error) {
-	group.CandidateIDs = cleanStringList(group.CandidateIDs)
-	if len(group.CandidateIDs) == 0 {
-		return nil, group, fmt.Errorf("direct PDF reconciliation group %d has no candidates", groupIndex+1)
-	}
 	groupCandidates := make([]directPDFCandidate, 0, len(group.CandidateIDs))
 	for _, id := range group.CandidateIDs {
 		candidate, found := byID[id]

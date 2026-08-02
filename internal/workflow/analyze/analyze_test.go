@@ -2,6 +2,7 @@ package analyze
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -334,7 +335,8 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	reconciliation := `{
 		"groups":[
 			{"id":"q1","candidate_ids":["chunk-001-question-001"],"canonical_candidate_id":"chunk-001-question-001","label":"Q.1","title":"First question","merged_answer_markdown":"","confidence":0.99,"reason":"one complete internal answer"},
-			{"id":"q2","candidate_ids":["chunk-001-question-002","chunk-002-question-001"],"canonical_candidate_id":"chunk-002-question-001","label":"Q.2","title":"Second question","merged_answer_markdown":"","confidence":0.98,"reason":"overlap duplicate; second candidate covers the full answer"}
+			{"id":"q2","candidate_ids":["chunk-001-question-002","chunk-002-question-001"],"canonical_candidate_id":"chunk-002-question-001","label":"Q.2","title":"Second question","merged_answer_markdown":"","confidence":0.98,"reason":"overlap duplicate; second candidate covers the full answer"},
+			{"id":"unused-model-placeholder","candidate_ids":[],"canonical_candidate_id":"","label":"","title":"","merged_answer_markdown":"","confidence":0,"reason":""}
 		],
 		"warnings":[],
 		"report":"copy-wide final report"
@@ -382,6 +384,27 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	}
 	if resumed.APICalls != 3 || len(resumed.Questions) != 2 {
 		t.Fatalf("resumed response = %#v, want checkpoint call provenance and complete questions", resumed)
+	}
+}
+
+func TestQuestionScorecardAcceptsFractionalModelScores(t *testing.T) {
+	t.Parallel()
+
+	var scorecard QuestionScorecard
+	err := json.Unmarshal([]byte(`{
+		"demand_fulfilment":4.5,
+		"structure":3.4,
+		"content_depth":8,
+		"evidence":-1,
+		"overall_percent":1e100,
+		"estimated_band":"strong",
+		"confidence":"high"
+	}`), &scorecard)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if scorecard.DemandFulfilment != 5 || scorecard.Structure != 3 || scorecard.ContentDepth != 5 || scorecard.Evidence != 0 || scorecard.OverallPercent != 100 {
+		t.Fatalf("scorecard = %#v, want rounded and clamped model scores", scorecard)
 	}
 }
 

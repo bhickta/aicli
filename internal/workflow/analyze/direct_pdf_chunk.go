@@ -247,7 +247,11 @@ Return a pages[] entry for every attached page, including cover, question-paper,
 Analyze only visible content in this attachment. A question that begins or ends at a chunk edge may be incomplete; preserve its visible text and source pages without inventing missing content.
 
 `, chunk.Index+1, pageCount, chunk.FirstPage, chunk.LastPage, localPages)
-	return prefix + oneShotPDFPromptBody(pdfName, strict)
+	suffix := `
+
+Chunk-specific output limit: keep report under 1,200 characters and summarize only this chunk. Do not repeat full answer text in report. A later reconciliation call creates the detailed copy-wide report. This limit does not apply to questions[].answer_markdown, which must remain complete for all visible content in the attachment.
+`
+	return prefix + oneShotPDFPromptBody(pdfName, strict) + suffix
 }
 
 func globalizeDirectPDFChunk(chunk directPDFChunk, pages []Page, questions []Question) ([]Page, []Question, error) {
