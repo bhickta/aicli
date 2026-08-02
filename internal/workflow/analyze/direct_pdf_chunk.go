@@ -137,6 +137,7 @@ func (s *Service) directPDFChunkedReview(
 		model,
 		pdfName,
 		sourceData,
+		pageCount,
 		results,
 	)
 	if err != nil {
@@ -420,6 +421,7 @@ func mergeDirectPDFChunkMetadata(results []directPDFChunkResult) *CopyMetadata {
 			copy := *meta
 			copy.Tags = append([]string(nil), meta.Tags...)
 			copy.SearchHints = append([]string(nil), meta.SearchHints...)
+			copy.Notes = ""
 			merged = &copy
 			continue
 		}
@@ -438,7 +440,6 @@ func mergeDirectPDFChunkMetadata(results []directPDFChunkResult) *CopyMetadata {
 		merged.Language = firstNonBlank(merged.Language, meta.Language)
 		merged.Tags = cleanStringList(append(merged.Tags, meta.Tags...))
 		merged.SearchHints = cleanStringList(append(merged.SearchHints, meta.SearchHints...))
-		merged.Notes = firstNonBlank(merged.Notes, meta.Notes)
 	}
 	return merged
 }

@@ -309,7 +309,7 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 		t.Fatal(err)
 	}
 	chunkOne := `{
-		"metadata":{"topper_name":"Sample Topper","paper":"GS2"},
+		"metadata":{"topper_name":"Sample Topper","paper":"GS2","notes":"chunk one only"},
 		"detected_questions":["Q.1","Q.2"],
 		"pages":[
 			{"number":1,"kind":"cover"},{"number":2,"kind":"answer"},{"number":3,"kind":"answer"},{"number":4,"kind":"answer"},
@@ -322,7 +322,7 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 		"report":"chunk one report"
 	}`
 	chunkTwo := `{
-		"metadata":{"topper_name":"Sample Topper","paper":"GS2"},
+		"metadata":{"topper_name":"Sample Topper","paper":"GS2","notes":"chunk two only"},
 		"detected_questions":["Q.2"],
 		"pages":[
 			{"number":1,"kind":"answer"},{"number":2,"kind":"answer"},{"number":3,"kind":"answer"},{"number":4,"kind":"answer"}
@@ -334,12 +334,22 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	}`
 	reconciliation := `{
 		"groups":[
-			{"id":"q1","candidate_ids":["chunk-001-question-001"],"canonical_candidate_id":"chunk-001-question-001","label":"Q.1","title":"First question","merged_answer_markdown":"","confidence":0.99,"reason":"one complete internal answer"},
-			{"id":"q2","candidate_ids":["chunk-001-question-002","chunk-002-question-001"],"canonical_candidate_id":"chunk-002-question-001","label":"Q.2","title":"Second question","merged_answer_markdown":"","confidence":0.98,"reason":"overlap duplicate; second candidate covers the full answer"},
-			{"id":"unused-model-placeholder","candidate_ids":[],"canonical_candidate_id":"","label":"","title":"","merged_answer_markdown":"","confidence":0,"reason":""}
+			{"id":"q1","status":"answered","candidate_ids":["chunk-001-question-001"],"canonical_candidate_id":"chunk-001-question-001","label":"Q.1","title":"First question","source_pages":[2,3,4],"merged_answer_markdown":"","confidence":0.99,"reason":"one complete internal answer"},
+			{"id":"q2","status":"answered","candidate_ids":["chunk-001-question-002","chunk-002-question-001"],"canonical_candidate_id":"chunk-002-question-001","label":"Q.2","title":"Second question","source_pages":[7,8,9,10],"merged_answer_markdown":"","confidence":0.98,"reason":"overlap duplicate; second candidate covers the full answer"},
+			{"id":"q3","status":"unanswered","candidate_ids":[],"canonical_candidate_id":"","label":"Q.3","title":"Third question","source_pages":[5],"merged_answer_markdown":"","confidence":0.97,"reason":"printed prompt with visibly blank answer area"}
 		],
+		"inventory":{"visible_question_slots":3,"answered":2,"unanswered":1},
 		"warnings":[],
-		"report":"copy-wide final report"
+		"report":{
+			"copy_profile":"copy profile",
+			"scorecard_synthesis":"scorecard synthesis",
+			"answer_analyses":[{"group_id":"q1","analysis":"first analysis"},{"group_id":"q2","analysis":"second analysis"}],
+			"repeated_winning_patterns":"winning patterns",
+			"what_not_to_copy_blindly":"copy risks",
+			"gap_map":"gap map",
+			"reusable_answer_writing_playbook":"playbook",
+			"deliberate_practice_plan":"practice plan"
+		}
 	}`
 	provider := &fakeProvider{
 		id:                "gemini",
@@ -365,14 +375,26 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	if provider.documentCalls != 3 || res.APICalls != 3 {
 		t.Fatalf("calls: provider=%d response=%d, want two chunks plus reconciliation", provider.documentCalls, res.APICalls)
 	}
-	if len(res.Pages) != 10 || len(res.Questions) != 2 || res.Report != "copy-wide final report" {
-		t.Fatalf("response = %#v, want ten pages, two questions, and reconciled report", res)
+	if len(res.Pages) != 10 || len(res.Questions) != 3 || !strings.Contains(res.Report, "Visible question slots: 3") {
+		t.Fatalf("response = %#v, want ten pages, three question slots, and deterministic inventory", res)
 	}
-	if !slices.Equal(res.Questions[1].SourcePages, []int{7, 8, 9, 10}) || res.Questions[1].AnswerMarkdown != "complete second answer" {
-		t.Fatalf("second question = %#v, want complete canonical overlap candidate on global pages 7-10", res.Questions[1])
+	questionsByID := make(map[string]Question, len(res.Questions))
+	for _, question := range res.Questions {
+		questionsByID[question.ID] = question
+	}
+	second := questionsByID["q2"]
+	if !slices.Equal(second.SourcePages, []int{7, 8, 9, 10}) || second.AnswerMarkdown != "complete second answer" {
+		t.Fatalf("second question = %#v, want complete canonical overlap candidate on global pages 7-10", second)
 	}
 	if res.Metadata == nil || res.Metadata.TopperName != "Sample Topper" {
 		t.Fatalf("metadata = %#v, want merged chunk metadata", res.Metadata)
+	}
+	if res.Metadata.Notes != "" {
+		t.Fatalf("metadata notes = %q, want chunk-local notes omitted", res.Metadata.Notes)
+	}
+	third := questionsByID["q3"]
+	if third.Status != directPDFQuestionUnanswered || third.AnswerMarkdown != "" || !slices.Equal(third.SourcePages, []int{5}) {
+		t.Fatalf("third question = %#v, want explicit unanswered slot", third)
 	}
 
 	resumed, err := service.Run(context.Background(), req)
@@ -382,7 +404,7 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	if provider.documentCalls != 4 {
 		t.Fatalf("provider calls after resume = %d, want only reconciliation rerun", provider.documentCalls)
 	}
-	if resumed.APICalls != 3 || len(resumed.Questions) != 2 {
+	if resumed.APICalls != 3 || len(resumed.Questions) != 3 {
 		t.Fatalf("resumed response = %#v, want checkpoint call provenance and complete questions", resumed)
 	}
 }
@@ -418,12 +440,16 @@ func TestApplyDirectPDFReconciliationRequiresEveryCandidateExactlyOnce(t *testin
 	_, _, err := applyDirectPDFReconciliation(candidates, directPDFReconciliation{
 		Groups: []directPDFReconciliationGroup{{
 			ID:                   "q1",
+			Status:               directPDFQuestionAnswered,
 			CandidateIDs:         []string{"c1"},
 			CanonicalCandidateID: "c1",
+			Label:                "Q.1",
+			SourcePages:          []int{1},
 			Confidence:           1,
+			Reason:               "visible answer",
 		}},
-		Report: "report",
-	})
+		Inventory: directPDFReconciliationInventory{VisibleQuestionSlots: 1, Answered: 1},
+	}, 2)
 	if err == nil || !strings.Contains(err.Error(), "omitted candidate") {
 		t.Fatalf("applyDirectPDFReconciliation() error = %v, want strict omitted-candidate error", err)
 	}
@@ -439,23 +465,260 @@ func TestApplyDirectPDFReconciliationRequiresSemanticMergeForDisjointContinuatio
 	plan := directPDFReconciliation{
 		Groups: []directPDFReconciliationGroup{{
 			ID:                   "q2",
+			Status:               directPDFQuestionAnswered,
 			CandidateIDs:         []string{"c1", "c2"},
 			CanonicalCandidateID: "c1",
 			Label:                "Q.2",
+			SourcePages:          []int{7, 8, 9, 10},
 			Confidence:           0.95,
+			Reason:               "semantic continuation",
 		}},
-		Report: "report",
+		Inventory: directPDFReconciliationInventory{VisibleQuestionSlots: 1, Answered: 1},
 	}
-	if _, _, err := applyDirectPDFReconciliation(candidates, plan); err == nil || !strings.Contains(err.Error(), "no merged answer") {
+	if _, _, err := applyDirectPDFReconciliation(candidates, plan, 10); err == nil || !strings.Contains(err.Error(), "no merged answer") {
 		t.Fatalf("applyDirectPDFReconciliation() error = %v, want merge-required error", err)
 	}
 	plan.Groups[0].MergedAnswerMarkdown = "start\n\nend"
-	questions, _, err := applyDirectPDFReconciliation(candidates, plan)
+	questions, _, err := applyDirectPDFReconciliation(candidates, plan, 10)
 	if err != nil {
 		t.Fatalf("applyDirectPDFReconciliation() merged error = %v", err)
 	}
 	if len(questions) != 1 || !slices.Equal(questions[0].SourcePages, []int{7, 8, 9, 10}) || questions[0].AnswerMarkdown != "start\n\nend" {
 		t.Fatalf("questions = %#v, want one semantically merged continuation", questions)
+	}
+}
+
+func TestApplyDirectPDFReconciliationPreservesUnansweredSlotWithoutCandidate(t *testing.T) {
+	t.Parallel()
+
+	candidates := []directPDFCandidate{{
+		ID:             "c1",
+		SourcePages:    []int{1, 2},
+		AnswerMarkdown: "visible answer",
+		question: Question{
+			ID:             "candidate-q1",
+			Label:          "Q.1",
+			Title:          "Answered prompt",
+			SourcePages:    []int{1, 2},
+			AnswerMarkdown: "visible answer",
+		},
+	}}
+	plan := directPDFReconciliation{
+		Groups: []directPDFReconciliationGroup{
+			{
+				ID:                   "slot-one",
+				Status:               directPDFQuestionAnswered,
+				CandidateIDs:         []string{"c1"},
+				CanonicalCandidateID: "c1",
+				Label:                "Q.1",
+				Title:                "Answered prompt",
+				SourcePages:          []int{1, 2},
+				Confidence:           0.99,
+				Reason:               "visible handwritten answer",
+			},
+			{
+				ID:          "slot-two",
+				Status:      directPDFQuestionUnanswered,
+				Label:       "Q.2",
+				Title:       "Unanswered prompt",
+				SourcePages: []int{3, 4},
+				Confidence:  0.98,
+				Reason:      "printed prompt followed by blank answer pages",
+			},
+		},
+		Inventory: directPDFReconciliationInventory{VisibleQuestionSlots: 2, Answered: 1, Unanswered: 1},
+	}
+	questions, _, err := applyDirectPDFReconciliation(candidates, plan, 4)
+	if err != nil {
+		t.Fatalf("applyDirectPDFReconciliation() error = %v", err)
+	}
+	if len(questions) != 2 || questions[0].ID != "slot-one" || questions[1].ID != "slot-two" {
+		t.Fatalf("questions = %#v, want stable unique semantic ids", questions)
+	}
+	if questions[0].Status != directPDFQuestionAnswered || questions[1].Status != directPDFQuestionUnanswered {
+		t.Fatalf("statuses = %q, %q, want answered and unanswered", questions[0].Status, questions[1].Status)
+	}
+	if questions[1].AnswerMarkdown != "" || questions[1].Dimensions != nil || !slices.Equal(questions[1].SourcePages, []int{3, 4}) {
+		t.Fatalf("unanswered question = %#v, want blank content with preserved pages", questions[1])
+	}
+}
+
+func TestApplyDirectPDFReconciliationSupportsFullyUnansweredCopy(t *testing.T) {
+	t.Parallel()
+
+	plan := directPDFReconciliation{
+		Groups: []directPDFReconciliationGroup{{
+			ID:          "blank-slot",
+			Status:      directPDFQuestionUnanswered,
+			Label:       "Q.1",
+			Title:       "Visible prompt",
+			SourcePages: []int{1, 2},
+			Confidence:  1,
+			Reason:      "prompt is visible and both answer pages are blank",
+		}},
+		Inventory: directPDFReconciliationInventory{VisibleQuestionSlots: 1, Unanswered: 1},
+	}
+	questions, _, err := applyDirectPDFReconciliation(nil, plan, 2)
+	if err != nil {
+		t.Fatalf("applyDirectPDFReconciliation() error = %v", err)
+	}
+	if len(questions) != 1 || questions[0].Status != directPDFQuestionUnanswered || questions[0].AnswerMarkdown != "" {
+		t.Fatalf("questions = %#v, want one preserved unanswered slot", questions)
+	}
+}
+
+func TestApplyDirectPDFReconciliationRejectsInvalidSemanticInventory(t *testing.T) {
+	t.Parallel()
+
+	candidate := directPDFCandidate{
+		ID:             "c1",
+		SourcePages:    []int{1},
+		AnswerMarkdown: "answer",
+		question:       Question{ID: "q1", Label: "Q.1", SourcePages: []int{1}, AnswerMarkdown: "answer"},
+	}
+	validPlan := func() directPDFReconciliation {
+		return directPDFReconciliation{
+			Groups: []directPDFReconciliationGroup{{
+				ID:                   "slot-one",
+				Status:               directPDFQuestionAnswered,
+				CandidateIDs:         []string{"c1"},
+				CanonicalCandidateID: "c1",
+				Label:                "Q.1",
+				SourcePages:          []int{1},
+				Confidence:           1,
+				Reason:               "visible answer",
+			}},
+			Inventory: directPDFReconciliationInventory{VisibleQuestionSlots: 1, Answered: 1},
+		}
+	}
+	tests := []struct {
+		name    string
+		mutate  func(*directPDFReconciliation)
+		wantErr string
+	}{
+		{
+			name: "duplicate semantic id",
+			mutate: func(plan *directPDFReconciliation) {
+				duplicate := plan.Groups[0]
+				duplicate.ID = "SLOT-ONE"
+				duplicate.Status = directPDFQuestionUnanswered
+				duplicate.CandidateIDs = nil
+				duplicate.CanonicalCandidateID = ""
+				duplicate.SourcePages = []int{2}
+				plan.Groups = append(plan.Groups, duplicate)
+				plan.Inventory = directPDFReconciliationInventory{VisibleQuestionSlots: 2, Answered: 1, Unanswered: 1}
+			},
+			wantErr: "not unique",
+		},
+		{
+			name: "out of bounds page",
+			mutate: func(plan *directPDFReconciliation) {
+				plan.Groups[0].SourcePages = []int{3}
+			},
+			wantErr: "outside 1-2",
+		},
+		{
+			name: "duplicate source page",
+			mutate: func(plan *directPDFReconciliation) {
+				plan.Groups[0].SourcePages = []int{1, 1}
+			},
+			wantErr: "duplicated",
+		},
+		{
+			name: "unanswered group contains generated answer",
+			mutate: func(plan *directPDFReconciliation) {
+				plan.Groups[0].Status = directPDFQuestionUnanswered
+				plan.Groups[0].CanonicalCandidateID = ""
+				plan.Groups[0].MergedAnswerMarkdown = "invented"
+				plan.Inventory = directPDFReconciliationInventory{VisibleQuestionSlots: 1, Unanswered: 1}
+			},
+			wantErr: "must not contain an answer",
+		},
+		{
+			name: "inventory count mismatch",
+			mutate: func(plan *directPDFReconciliation) {
+				plan.Inventory = directPDFReconciliationInventory{VisibleQuestionSlots: 2, Answered: 1, Unanswered: 1}
+			},
+			wantErr: "inventory mismatch",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			plan := validPlan()
+			test.mutate(&plan)
+			_, _, err := applyDirectPDFReconciliation([]directPDFCandidate{candidate}, plan, 2)
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("applyDirectPDFReconciliation() error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestBuildDirectPDFReconciliationReportUsesValidatedQuestionInventory(t *testing.T) {
+	t.Parallel()
+
+	questions := []Question{
+		{ID: "slot-one", Label: "Q.1", Title: "Answered prompt", Status: directPDFQuestionAnswered, SourcePages: []int{1, 2}},
+		{ID: "slot-two", Label: "Q.2", Title: "Blank prompt", Status: directPDFQuestionUnanswered, SourcePages: []int{3, 4}},
+	}
+	plan := directPDFReconciliation{
+		Inventory: directPDFReconciliationInventory{VisibleQuestionSlots: 2, Answered: 1, Unanswered: 1},
+		Report:    testDirectPDFReconciliationReport("slot-one"),
+	}
+	report, err := buildDirectPDFReconciliationReport(questions, plan)
+	if err != nil {
+		t.Fatalf("buildDirectPDFReconciliationReport() error = %v", err)
+	}
+	for _, fact := range []string{"Visible question slots: 2", "Answered: 1", "Unanswered: 1", "Q.2 (pages 3, 4)", "Status:** Unanswered"} {
+		if !strings.Contains(report, fact) {
+			t.Fatalf("report missing deterministic fact %q:\n%s", fact, report)
+		}
+	}
+	plan.Report.AnswerAnalyses = nil
+	if _, err := buildDirectPDFReconciliationReport(questions, plan); err == nil || !strings.Contains(err.Error(), "omitted answered group") {
+		t.Fatalf("missing answer analysis error = %v, want strict coverage error", err)
+	}
+}
+
+func TestAnalysisQualityExcludesUnansweredSlotsFromAnalysisCoverage(t *testing.T) {
+	t.Parallel()
+
+	confidence := 1.0
+	quality := analysisQuality(
+		[]Page{{Number: 1, Kind: "answer", KindConfidence: 1, OCRConfidence: &confidence, Text: "visible text"}},
+		[]Question{
+			{
+				ID:     "answered",
+				Title:  "Answered prompt",
+				Status: directPDFQuestionAnswered,
+				Dimensions: &QuestionDimensions{Strengths: []AnalysisPoint{{
+					Point:    "specific strength",
+					Evidence: "visible evidence",
+				}}},
+			},
+			{ID: "unanswered", Title: "Blank prompt", Status: directPDFQuestionUnanswered},
+		},
+	)
+	if quality.AnalysisCoveragePercent != 100 || quality.EvidenceCoveragePercent != 100 || quality.PromptMatchPercent != 100 {
+		t.Fatalf("quality = %#v, want unanswered slot excluded only from analysis denominators", quality)
+	}
+}
+
+func testDirectPDFReconciliationReport(answerGroupIDs ...string) directPDFReconciliationReport {
+	answerNotes := make([]directPDFReconciliationAnswerNote, 0, len(answerGroupIDs))
+	for _, id := range answerGroupIDs {
+		answerNotes = append(answerNotes, directPDFReconciliationAnswerNote{GroupID: id, Analysis: "evidence-based answer analysis"})
+	}
+	return directPDFReconciliationReport{
+		CopyProfile:                   "Qualitative copy profile without inventory arithmetic.",
+		ScorecardSynthesis:            "Evidence-grounded scorecard synthesis.",
+		AnswerAnalyses:                answerNotes,
+		RepeatedWinningPatterns:       "Repeated evidence-grounded patterns.",
+		WhatNotToCopyBlindly:          "Specific risks to avoid.",
+		GapMap:                        "Demand-relevant gaps.",
+		ReusableAnswerWritingPlaybook: "Reusable answer-writing techniques.",
+		DeliberatePracticePlan:        "Observable deliberate-practice drills.",
 	}
 }
 

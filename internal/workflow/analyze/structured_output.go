@@ -156,6 +156,91 @@ func questionDimensionsJSONSchema() *provider.JSONSchema {
 	}
 }
 
+func directPDFReconciliationJSONSchema(pageCount int, candidateCount int) *provider.JSONSchema {
+	maxPages := max(1, pageCount)
+	maxCandidates := max(1, candidateCount)
+	maxGroups := max(1, pageCount+candidateCount)
+	group := strictObjectSchema(
+		map[string]any{
+			"id":                     stringSchema(),
+			"status":                 enumStringSchema(directPDFQuestionAnswered, directPDFQuestionUnanswered),
+			"candidate_ids":          arraySchema(stringSchema(), maxCandidates),
+			"canonical_candidate_id": stringSchema(),
+			"label":                  stringSchema(),
+			"title":                  stringSchema(),
+			"source_pages":           arraySchema(integerSchema(1, maxPages), maxPages),
+			"merged_answer_markdown": stringSchema(),
+			"confidence":             numberSchema(0, 1),
+			"reason":                 stringSchema(),
+		},
+		"id",
+		"status",
+		"candidate_ids",
+		"canonical_candidate_id",
+		"label",
+		"title",
+		"source_pages",
+		"merged_answer_markdown",
+		"confidence",
+		"reason",
+	)
+	inventory := strictObjectSchema(
+		map[string]any{
+			"visible_question_slots": integerSchema(0, maxGroups),
+			"answered":               integerSchema(0, maxGroups),
+			"unanswered":             integerSchema(0, maxGroups),
+		},
+		"visible_question_slots",
+		"answered",
+		"unanswered",
+	)
+	answerAnalysis := strictObjectSchema(
+		map[string]any{
+			"group_id": stringSchema(),
+			"analysis": stringSchema(),
+		},
+		"group_id",
+		"analysis",
+	)
+	report := strictObjectSchema(
+		map[string]any{
+			"copy_profile":                     stringSchema(),
+			"scorecard_synthesis":              stringSchema(),
+			"answer_analyses":                  arraySchema(answerAnalysis, maxGroups),
+			"repeated_winning_patterns":        stringSchema(),
+			"what_not_to_copy_blindly":         stringSchema(),
+			"gap_map":                          stringSchema(),
+			"reusable_answer_writing_playbook": stringSchema(),
+			"deliberate_practice_plan":         stringSchema(),
+		},
+		"copy_profile",
+		"scorecard_synthesis",
+		"answer_analyses",
+		"repeated_winning_patterns",
+		"what_not_to_copy_blindly",
+		"gap_map",
+		"reusable_answer_writing_playbook",
+		"deliberate_practice_plan",
+	)
+	return &provider.JSONSchema{
+		Name:        "topper_copy_reconciliation",
+		Description: "Semantic full-PDF answer grouping, unanswered-slot inventory, and evidence-grounded report sections.",
+		Strict:      true,
+		Schema: strictObjectSchema(
+			map[string]any{
+				"groups":    arraySchema(group, maxGroups),
+				"inventory": inventory,
+				"warnings":  arraySchema(stringSchema(), maxGroups),
+				"report":    report,
+			},
+			"groups",
+			"inventory",
+			"warnings",
+			"report",
+		),
+	}
+}
+
 func strictObjectSchema(properties map[string]any, required ...string) map[string]any {
 	return map[string]any{
 		"type":                 "object",

@@ -28,6 +28,7 @@ func analysisQuality(pages []Page, questions []Question) *AnalysisQuality {
 	}
 
 	promptMatches := 0
+	analyzableQuestions := 0
 	analyzedQuestions := 0
 	evidenceBackedQuestions := 0
 	boundaryReviewQuestions := 0
@@ -43,6 +44,10 @@ func analysisQuality(pages []Page, questions []Question) *AnalysisQuality {
 		if strings.TrimSpace(question.Title) != "" {
 			promptMatches++
 		}
+		if strings.EqualFold(strings.TrimSpace(question.Status), directPDFQuestionUnanswered) {
+			continue
+		}
+		analyzableQuestions++
 		if question.Dimensions == nil {
 			continue
 		}
@@ -52,8 +57,13 @@ func analysisQuality(pages []Page, questions []Question) *AnalysisQuality {
 		}
 	}
 	quality.PromptMatchPercent = percent(promptMatches, len(questions))
-	quality.AnalysisCoveragePercent = percent(analyzedQuestions, len(questions))
-	quality.EvidenceCoveragePercent = percent(evidenceBackedQuestions, len(questions))
+	if analyzableQuestions == 0 {
+		quality.AnalysisCoveragePercent = 100
+		quality.EvidenceCoveragePercent = 100
+	} else {
+		quality.AnalysisCoveragePercent = percent(analyzedQuestions, analyzableQuestions)
+		quality.EvidenceCoveragePercent = percent(evidenceBackedQuestions, analyzableQuestions)
+	}
 	quality.OCRUnclearPercent = roundTo(
 		float64(pageSummary.unclearCount)*100/float64(max(1, pageSummary.wordCount)),
 		2,

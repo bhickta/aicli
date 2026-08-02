@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -24,27 +25,58 @@ type directPDFCandidate struct {
 }
 
 type directPDFReconciliation struct {
-	Groups   []directPDFReconciliationGroup `json:"groups"`
-	Warnings []string                       `json:"warnings"`
-	Report   string                         `json:"report"`
+	Groups    []directPDFReconciliationGroup   `json:"groups"`
+	Inventory directPDFReconciliationInventory `json:"inventory"`
+	Warnings  []string                         `json:"warnings"`
+	Report    directPDFReconciliationReport    `json:"report"`
 }
 
 type directPDFReconciliationGroup struct {
 	ID                   string   `json:"id"`
+	Status               string   `json:"status"`
 	CandidateIDs         []string `json:"candidate_ids"`
 	CanonicalCandidateID string   `json:"canonical_candidate_id"`
 	Label                string   `json:"label"`
 	Title                string   `json:"title"`
+	SourcePages          []int    `json:"source_pages"`
 	MergedAnswerMarkdown string   `json:"merged_answer_markdown"`
 	Confidence           float64  `json:"confidence"`
 	Reason               string   `json:"reason"`
 }
+
+type directPDFReconciliationInventory struct {
+	VisibleQuestionSlots int `json:"visible_question_slots"`
+	Answered             int `json:"answered"`
+	Unanswered           int `json:"unanswered"`
+}
+
+type directPDFReconciliationReport struct {
+	CopyProfile                   string                              `json:"copy_profile"`
+	ScorecardSynthesis            string                              `json:"scorecard_synthesis"`
+	AnswerAnalyses                []directPDFReconciliationAnswerNote `json:"answer_analyses"`
+	RepeatedWinningPatterns       string                              `json:"repeated_winning_patterns"`
+	WhatNotToCopyBlindly          string                              `json:"what_not_to_copy_blindly"`
+	GapMap                        string                              `json:"gap_map"`
+	ReusableAnswerWritingPlaybook string                              `json:"reusable_answer_writing_playbook"`
+	DeliberatePracticePlan        string                              `json:"deliberate_practice_plan"`
+}
+
+type directPDFReconciliationAnswerNote struct {
+	GroupID  string `json:"group_id"`
+	Analysis string `json:"analysis"`
+}
+
+const (
+	directPDFQuestionAnswered   = "answered"
+	directPDFQuestionUnanswered = "unanswered"
+)
 
 func (s *Service) reconcileDirectPDFChunks(
 	ctx context.Context,
 	model string,
 	pdfName string,
 	sourceData []byte,
+	pageCount int,
 	results []directPDFChunkResult,
 ) ([]Question, string, []string, *provider.TokenUsage, int, error) {
 	processor, ok := s.ocrProvider.(provider.DocumentProcessor)
@@ -52,16 +84,13 @@ func (s *Service) reconcileDirectPDFChunks(
 		return nil, "", nil, nil, 0, fmt.Errorf("OCR provider %q does not support direct PDF reconciliation", providerID(s.ocrProvider))
 	}
 	candidates := directPDFCandidates(results)
-	if len(candidates) == 0 {
-		return nil, "", nil, nil, 0, errors.New("direct PDF chunks returned no answer candidates")
-	}
 	candidateJSON, err := json.Marshal(candidates)
 	if err != nil {
 		return nil, "", nil, nil, 0, err
 	}
 	prompts := []string{
-		directPDFReconciliationPrompt(pdfName, string(candidateJSON), false),
-		directPDFReconciliationPrompt(pdfName, string(candidateJSON), true),
+		directPDFReconciliationPrompt(pdfName, string(candidateJSON), pageCount, false),
+		directPDFReconciliationPrompt(pdfName, string(candidateJSON), pageCount, true),
 	}
 	var usage *provider.TokenUsage
 	var lastErr error
@@ -72,6 +101,7 @@ func (s *Service) reconcileDirectPDFChunks(
 			Data:             sourceData,
 			MIMEType:         "application/pdf",
 			ResponseMIMEType: "application/json",
+			ResponseSchema:   directPDFReconciliationJSONSchema(pageCount, len(candidates)),
 			Temperature:      0,
 			MaxTokens:        geminiLiteDirectPDFMaxTokens,
 		})
@@ -86,10 +116,14 @@ func (s *Service) reconcileDirectPDFChunks(
 		if err == nil {
 			var questions []Question
 			var warnings []string
-			questions, warnings, err = applyDirectPDFReconciliation(candidates, plan)
+			questions, warnings, err = applyDirectPDFReconciliation(candidates, plan, pageCount)
 			if err == nil {
-				warnings = cleanStringList(append(warnings, plan.Warnings...))
-				return questions, strings.TrimSpace(plan.Report), warnings, usage, attempt + 1, nil
+				var report string
+				report, err = buildDirectPDFReconciliationReport(questions, plan)
+				if err == nil {
+					warnings = cleanStringList(append(warnings, plan.Warnings...))
+					return questions, report, warnings, usage, attempt + 1, nil
+				}
 			}
 		}
 		lastErr = err
@@ -121,7 +155,7 @@ func directPDFCandidates(results []directPDFChunkResult) []directPDFCandidate {
 	return candidates
 }
 
-func directPDFReconciliationPrompt(pdfName string, candidateJSON string, strict bool) string {
+func directPDFReconciliationPrompt(pdfName string, candidateJSON string, pageCount int, strict bool) string {
 	prefix := ""
 	if strict {
 		prefix = `Your previous reconciliation was rejected because it omitted, duplicated, or invalidly grouped candidates.
@@ -129,43 +163,30 @@ Before answering, make a private checklist of every candidate ID. Assign every I
 
 `
 	}
-	return prefix + `Reconcile overlapping chunk analyses for one UPSC/Mains topper answer-copy.
+	return prefix + fmt.Sprintf(`Reconcile overlapping chunk analyses for one UPSC/Mains topper answer-copy.
 The complete original PDF is attached for semantic and page-continuity verification. Candidate answer blocks extracted from overlapping chunks are included below.
 
 Decide grouping by visible meaning, answer continuity, page order, and the attached PDF—not by brittle label-string patterns. Labels can be missing, repeated, or OCR-imperfect.
 
-Return valid JSON only with this schema:
-{
-  "groups": [
-    {
-      "id": "stable semantic group id",
-      "candidate_ids": ["every duplicate/continuation candidate for this one answer"],
-      "canonical_candidate_id": "the most complete, accurate candidate in candidate_ids",
-      "label": "best visible answer label",
-      "title": "best exact visible question prompt, if present",
-      "merged_answer_markdown": "",
-      "confidence": 0.0,
-      "reason": "short semantic/page-continuity reason"
-    }
-  ],
-  "warnings": ["specific unresolved uncertainty requiring human review"],
-  "report": "copy-wide evidence-based Markdown report"
-}
+Return only the JSON object required by the response schema.
 
 Rules:
-1. Assign every candidate ID exactly once. Never invent an ID and never discard a candidate.
-2. Put duplicate extractions of the same visible answer in one group. Keep adjacent but distinct questions/subparts in different groups.
-3. Put semantic continuations in the same group even when their visible headings or labels differ.
-4. Choose a canonical candidate that contains the most complete visible answer and strongest evidence-grounded analysis.
-5. Leave merged_answer_markdown empty when one candidate fully covers the group's source pages. If no single candidate covers all group source pages, reconstruct the complete visible answer in merged_answer_markdown using only the attached PDF and candidate text. Do not summarize or invent content.
-6. Confidence is 0-1. Add a warning for uncertain grouping, unreadable boundaries, or potentially incomplete edge-spanning answers.
-7. The report must synthesize the whole copy across all final answer groups: Copy Profile, Scorecard Synthesis, Answer-Wise Analysis, Repeated Winning Patterns, What Not to Copy Blindly, Gap Map, Reusable Answer-Writing Playbook, and Deliberate-Practice Plan. Cite answer labels and pages; distinguish observation, interpretation, and recommendation.
-8. Do not predict official UPSC marks or invent an official model answer.
+1. Scan all %d PDF pages first. Create one group for every distinct visible numbered/lettered question slot, including a printed prompt whose answer area is blank.
+2. Set status to "answered" only when visible candidate answer content exists. Set status to "unanswered" when the prompt is visible but its answer area is blank.
+3. Assign every supplied candidate ID exactly once. Never invent or discard a candidate. An unanswered group may have no candidate IDs when chunk extraction missed the blank slot; it may also contain candidates that only describe the blank slot.
+4. Every group needs a unique stable semantic id, the best visible label/title, and exact unique global source_pages between 1 and %d. Do not derive grouping from label spelling alone.
+5. For answered groups, candidate_ids must be non-empty and canonical_candidate_id must name the most complete candidate in that group. Leave merged_answer_markdown empty when it covers every group page; otherwise reconstruct the complete visible answer from the PDF without summarizing or inventing content.
+6. For unanswered groups, canonical_candidate_id and merged_answer_markdown must be empty. Preserve the visible prompt and blank source pages; do not invent an answer or analysis.
+7. inventory counts must exactly match groups and their statuses. Check the arithmetic before returning JSON.
+8. report.answer_analyses must contain exactly one entry for every answered group id and none for unanswered groups. Base each analysis on visible evidence and cite source pages.
+9. The other report fields are qualitative section bodies only. Do not repeat question-slot, answered, or unanswered counts there; the application renders the validated inventory deterministically.
+10. Confidence is 0-1. Add a warning for uncertain grouping, unreadable boundaries, or potentially incomplete edge-spanning answers.
+11. Do not predict official UPSC marks or invent an official model answer.
 
-PDF name: ` + pdfName + `
+PDF name: %s
 
 Candidates:
-` + candidateJSON
+%s`, pageCount, pageCount, pdfName, candidateJSON)
 }
 
 func parseDirectPDFReconciliation(content string) (directPDFReconciliation, error) {
@@ -180,31 +201,35 @@ func parseDirectPDFReconciliation(content string) (directPDFReconciliation, erro
 	if len(plan.Groups) == 0 {
 		return directPDFReconciliation{}, errors.New("direct PDF reconciliation returned no groups")
 	}
-	if strings.TrimSpace(plan.Report) == "" {
-		return directPDFReconciliation{}, errors.New("direct PDF reconciliation returned an empty report")
-	}
 	return plan, nil
 }
 
 func applyDirectPDFReconciliation(
 	candidates []directPDFCandidate,
 	plan directPDFReconciliation,
+	pageCount int,
 ) ([]Question, []string, error) {
+	if pageCount <= 0 {
+		return nil, nil, errors.New("direct PDF reconciliation requires a positive page count")
+	}
+	if err := validateDirectPDFCandidates(candidates, pageCount); err != nil {
+		return nil, nil, err
+	}
 	byID := directPDFCandidatesByID(candidates)
 	assigned := make(map[string]bool, len(candidates))
 	questions := make([]Question, 0, len(plan.Groups))
 	warnings := []string{}
-	seenQuestionIDs := map[string]int{}
+	seenQuestionIDs := map[string]bool{}
 	for groupIndex, group := range plan.Groups {
-		group.CandidateIDs = cleanStringList(group.CandidateIDs)
-		if len(group.CandidateIDs) == 0 {
-			continue
-		}
-		groupCandidates, normalizedGroup, err := assignDirectPDFGroupCandidates(byID, assigned, groupIndex, group)
+		normalizedGroup, err := validateDirectPDFReconciliationGroup(group, groupIndex, pageCount, seenQuestionIDs)
 		if err != nil {
 			return nil, nil, err
 		}
-		question, warning, err := buildDirectPDFReconciledQuestion(byID, normalizedGroup, groupCandidates, groupIndex, seenQuestionIDs)
+		groupCandidates, normalizedGroup, err := assignDirectPDFGroupCandidates(byID, assigned, groupIndex, normalizedGroup)
+		if err != nil {
+			return nil, nil, err
+		}
+		question, warning, err := buildDirectPDFReconciledQuestion(byID, normalizedGroup, groupCandidates, groupIndex)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -216,8 +241,29 @@ func applyDirectPDFReconciliation(
 	if missing := unassignedDirectPDFCandidates(candidates, assigned); len(missing) > 0 {
 		return nil, nil, fmt.Errorf("direct PDF reconciliation omitted candidate(s): %s", strings.Join(missing, ", "))
 	}
+	if err := validateDirectPDFReconciliationInventory(plan.Inventory, questions); err != nil {
+		return nil, nil, err
+	}
 	sortQuestions(questions)
 	return questions, warnings, nil
+}
+
+func validateDirectPDFCandidates(candidates []directPDFCandidate, pageCount int) error {
+	seen := make(map[string]bool, len(candidates))
+	for index, candidate := range candidates {
+		id := strings.TrimSpace(candidate.ID)
+		if id == "" {
+			return fmt.Errorf("direct PDF candidate %d has an empty id", index+1)
+		}
+		if seen[id] {
+			return fmt.Errorf("direct PDF candidate id %q is not unique", id)
+		}
+		seen[id] = true
+		if _, err := validateDirectPDFSourcePages(candidate.SourcePages, pageCount); err != nil {
+			return fmt.Errorf("direct PDF candidate %q: %w", id, err)
+		}
+	}
+	return nil
 }
 
 func directPDFCandidatesByID(candidates []directPDFCandidate) map[string]directPDFCandidate {
@@ -226,6 +272,125 @@ func directPDFCandidatesByID(candidates []directPDFCandidate) map[string]directP
 		byID[candidate.ID] = candidate
 	}
 	return byID
+}
+
+func validateDirectPDFReconciliationGroup(
+	group directPDFReconciliationGroup,
+	groupIndex int,
+	pageCount int,
+	seenQuestionIDs map[string]bool,
+) (directPDFReconciliationGroup, error) {
+	group.ID = strings.TrimSpace(group.ID)
+	if group.ID == "" {
+		return group, fmt.Errorf("direct PDF reconciliation group %d has an empty id", groupIndex+1)
+	}
+	idKey := strings.ToLower(group.ID)
+	if seenQuestionIDs[idKey] {
+		return group, fmt.Errorf("direct PDF reconciliation group id %q is not unique", group.ID)
+	}
+	seenQuestionIDs[idKey] = true
+
+	group.Status = strings.ToLower(strings.TrimSpace(group.Status))
+	if group.Status != directPDFQuestionAnswered && group.Status != directPDFQuestionUnanswered {
+		return group, fmt.Errorf("direct PDF reconciliation group %q has invalid status %q", group.ID, group.Status)
+	}
+	group.Label = strings.TrimSpace(group.Label)
+	group.Title = strings.TrimSpace(group.Title)
+	if group.Label == "" && group.Title == "" {
+		return group, fmt.Errorf("direct PDF reconciliation group %q has no visible label or title", group.ID)
+	}
+
+	pages, err := validateDirectPDFSourcePages(group.SourcePages, pageCount)
+	if err != nil {
+		return group, fmt.Errorf("direct PDF reconciliation group %q: %w", group.ID, err)
+	}
+	group.SourcePages = pages
+	ids, err := validateDirectPDFCandidateIDs(group.CandidateIDs)
+	if err != nil {
+		return group, fmt.Errorf("direct PDF reconciliation group %q: %w", group.ID, err)
+	}
+	group.CandidateIDs = ids
+	group.CanonicalCandidateID = strings.TrimSpace(group.CanonicalCandidateID)
+	group.MergedAnswerMarkdown = strings.TrimSpace(group.MergedAnswerMarkdown)
+	group.Reason = strings.TrimSpace(group.Reason)
+	if group.Reason == "" {
+		return group, fmt.Errorf("direct PDF reconciliation group %q has no evidence reason", group.ID)
+	}
+	if math.IsNaN(group.Confidence) || math.IsInf(group.Confidence, 0) || group.Confidence < 0 || group.Confidence > 1 {
+		return group, fmt.Errorf("direct PDF reconciliation group %q has invalid confidence %v", group.ID, group.Confidence)
+	}
+
+	if group.Status == directPDFQuestionAnswered && len(group.CandidateIDs) == 0 {
+		return group, fmt.Errorf("direct PDF reconciliation answered group %q has no candidates", group.ID)
+	}
+	if group.Status == directPDFQuestionUnanswered && (group.CanonicalCandidateID != "" || group.MergedAnswerMarkdown != "") {
+		return group, fmt.Errorf("direct PDF reconciliation unanswered group %q must not contain an answer", group.ID)
+	}
+	return group, nil
+}
+
+func validateDirectPDFSourcePages(pages []int, pageCount int) ([]int, error) {
+	if len(pages) == 0 {
+		return nil, errors.New("has no source pages")
+	}
+	out := make([]int, len(pages))
+	seen := make(map[int]bool, len(pages))
+	for index, page := range pages {
+		if page < 1 || page > pageCount {
+			return nil, fmt.Errorf("source page %d is outside 1-%d", page, pageCount)
+		}
+		if seen[page] {
+			return nil, fmt.Errorf("source page %d is duplicated", page)
+		}
+		seen[page] = true
+		out[index] = page
+	}
+	sort.Ints(out)
+	return out, nil
+}
+
+func validateDirectPDFCandidateIDs(ids []string) ([]string, error) {
+	out := make([]string, len(ids))
+	seen := make(map[string]bool, len(ids))
+	for index, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return nil, errors.New("contains an empty candidate id")
+		}
+		if seen[id] {
+			return nil, fmt.Errorf("contains duplicate candidate %q", id)
+		}
+		seen[id] = true
+		out[index] = id
+	}
+	return out, nil
+}
+
+func validateDirectPDFReconciliationInventory(inventory directPDFReconciliationInventory, questions []Question) error {
+	answered := 0
+	unanswered := 0
+	for _, question := range questions {
+		switch strings.ToLower(strings.TrimSpace(question.Status)) {
+		case directPDFQuestionAnswered:
+			answered++
+		case directPDFQuestionUnanswered:
+			unanswered++
+		default:
+			return fmt.Errorf("direct PDF reconciled question %q has invalid status %q", question.ID, question.Status)
+		}
+	}
+	if inventory.VisibleQuestionSlots != len(questions) || inventory.Answered != answered || inventory.Unanswered != unanswered {
+		return fmt.Errorf(
+			"direct PDF reconciliation inventory mismatch: got total=%d answered=%d unanswered=%d; want total=%d answered=%d unanswered=%d",
+			inventory.VisibleQuestionSlots,
+			inventory.Answered,
+			inventory.Unanswered,
+			len(questions),
+			answered,
+			unanswered,
+		)
+	}
+	return nil
 }
 
 func assignDirectPDFGroupCandidates(
@@ -254,15 +419,35 @@ func buildDirectPDFReconciledQuestion(
 	group directPDFReconciliationGroup,
 	groupCandidates []directPDFCandidate,
 	groupIndex int,
-	seenQuestionIDs map[string]int,
 ) (Question, string, error) {
+	allPages := directPDFCandidatePages(groupCandidates)
+	allPages = append(allPages, group.SourcePages...)
+	allPages = positiveUniqueInts(allPages)
+	sort.Ints(allPages)
+	if group.Status == directPDFQuestionUnanswered {
+		question := Question{
+			ID:                 group.ID,
+			Label:              firstNonBlank(group.Label, group.ID),
+			Title:              group.Title,
+			SourcePages:        allPages,
+			Status:             directPDFQuestionUnanswered,
+			Boundary:           questionBoundaryNew,
+			BoundaryConfidence: group.Confidence,
+		}
+		if len(groupCandidates) > 0 {
+			canonical := selectDirectPDFCanonicalCandidate(groupCandidates)
+			question.Label = firstNonBlank(group.Label, canonical.question.Label, group.ID)
+			question.Title = firstNonBlank(group.Title, canonical.question.Title)
+			question.Metadata = mergeDirectPDFQuestionMetadata(canonical, groupCandidates)
+		}
+		return question, directPDFReconciliationConfidenceWarning(question, group.Confidence), nil
+	}
+
 	canonicalID := strings.TrimSpace(group.CanonicalCandidateID)
 	canonical, found := byID[canonicalID]
 	if !found || !containsString(group.CandidateIDs, canonicalID) {
-		canonical = selectDirectPDFCanonicalCandidate(groupCandidates)
-		canonicalID = canonical.ID
+		return Question{}, "", fmt.Errorf("direct PDF reconciliation answered group %q has invalid canonical candidate %q", group.ID, canonicalID)
 	}
-	allPages := directPDFCandidatePages(groupCandidates)
 	answer := strings.TrimSpace(group.MergedAnswerMarkdown)
 	if answer == "" {
 		if !candidateCoversPages(canonical, allPages) {
@@ -273,31 +458,26 @@ func buildDirectPDFReconciledQuestion(
 	if answer == "" {
 		return Question{}, "", fmt.Errorf("direct PDF reconciliation group %d returned an empty answer", groupIndex+1)
 	}
-	label := firstNonBlank(group.Label, canonical.question.Label, fmt.Sprintf("Question %d", groupIndex+1))
-	questionID := normalizeQuestionLabel(firstNonBlank(group.ID, canonical.question.ID, label))
-	if questionID == "" {
-		questionID = fmt.Sprintf("question-%d", groupIndex+1)
-	}
-	seenQuestionIDs[questionID]++
-	if seenQuestionIDs[questionID] > 1 {
-		questionID = fmt.Sprintf("%s-%d", questionID, seenQuestionIDs[questionID])
-	}
+	label := firstNonBlank(group.Label, canonical.question.Label, group.ID)
 	question := canonical.question
-	question.ID = questionID
+	question.ID = group.ID
 	question.Label = label
 	question.Title = firstNonBlank(group.Title, canonical.question.Title)
 	question.SourcePages = allPages
 	question.AnswerMarkdown = answer
-	question.Status = "detected"
+	question.Status = directPDFQuestionAnswered
 	question.Boundary = questionBoundaryNew
-	question.BoundaryConfidence = clampFloat(group.Confidence, 0, 1)
+	question.BoundaryConfidence = group.Confidence
 	question.Dimensions = mergeDirectPDFDimensions(canonical, groupCandidates)
 	question.Metadata = mergeDirectPDFQuestionMetadata(canonical, groupCandidates)
-	warning := ""
-	if group.Confidence < 0.75 {
-		warning = fmt.Sprintf("Answer group %q has low reconciliation confidence %.2f and requires review.", label, group.Confidence)
+	return question, directPDFReconciliationConfidenceWarning(question, group.Confidence), nil
+}
+
+func directPDFReconciliationConfidenceWarning(question Question, confidence float64) string {
+	if confidence >= 0.75 {
+		return ""
 	}
-	return question, warning, nil
+	return fmt.Sprintf("Question slot %q has low reconciliation confidence %.2f and requires review.", question.Label, confidence)
 }
 
 func unassignedDirectPDFCandidates(candidates []directPDFCandidate, assigned map[string]bool) []string {
