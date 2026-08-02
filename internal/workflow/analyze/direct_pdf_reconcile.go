@@ -88,9 +88,14 @@ func (s *Service) reconcileDirectPDFChunks(
 	if err != nil {
 		return nil, "", nil, nil, 0, err
 	}
+	reconciliationSchema := directPDFReconciliationJSONSchema(pageCount, len(candidates))
+	schemaJSON, err := json.Marshal(reconciliationSchema.Schema)
+	if err != nil {
+		return nil, "", nil, nil, 0, err
+	}
 	prompts := []string{
-		directPDFReconciliationPrompt(pdfName, string(candidateJSON), pageCount, false),
-		directPDFReconciliationPrompt(pdfName, string(candidateJSON), pageCount, true),
+		directPDFReconciliationPrompt(pdfName, string(candidateJSON), string(schemaJSON), pageCount, false),
+		directPDFReconciliationPrompt(pdfName, string(candidateJSON), string(schemaJSON), pageCount, true),
 	}
 	var usage *provider.TokenUsage
 	var lastErr error
@@ -101,7 +106,6 @@ func (s *Service) reconcileDirectPDFChunks(
 			Data:             sourceData,
 			MIMEType:         "application/pdf",
 			ResponseMIMEType: "application/json",
-			ResponseSchema:   directPDFReconciliationJSONSchema(pageCount, len(candidates)),
 			Temperature:      0,
 			MaxTokens:        geminiLiteDirectPDFMaxTokens,
 		})
@@ -155,7 +159,7 @@ func directPDFCandidates(results []directPDFChunkResult) []directPDFCandidate {
 	return candidates
 }
 
-func directPDFReconciliationPrompt(pdfName string, candidateJSON string, pageCount int, strict bool) string {
+func directPDFReconciliationPrompt(pdfName string, candidateJSON string, schemaJSON string, pageCount int, strict bool) string {
 	prefix := ""
 	if strict {
 		prefix = `Your previous reconciliation was rejected because it omitted, duplicated, or invalidly grouped candidates.
@@ -168,7 +172,7 @@ The complete original PDF is attached for semantic and page-continuity verificat
 
 Decide grouping by visible meaning, answer continuity, page order, and the attached PDF—not by brittle label-string patterns. Labels can be missing, repeated, or OCR-imperfect.
 
-Return only the JSON object required by the response schema.
+Return only one JSON object conforming to the supplied JSON Schema. Do not add prose or Markdown fences.
 
 Rules:
 1. Scan all %d PDF pages first. Create one group for every distinct visible numbered/lettered question slot, including a printed prompt whose answer area is blank.
@@ -185,8 +189,11 @@ Rules:
 
 PDF name: %s
 
+JSON Schema:
+%s
+
 Candidates:
-%s`, pageCount, pageCount, pdfName, candidateJSON)
+%s`, pageCount, pageCount, pdfName, schemaJSON, candidateJSON)
 }
 
 func parseDirectPDFReconciliation(content string) (directPDFReconciliation, error) {

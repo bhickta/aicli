@@ -407,6 +407,9 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	if resumed.APICalls != 3 || len(resumed.Questions) != 3 {
 		t.Fatalf("resumed response = %#v, want checkpoint call provenance and complete questions", resumed)
 	}
+	if provider.documentRequest.ResponseSchema != nil || !strings.Contains(provider.documentPrompt, `"inventory"`) {
+		t.Fatalf("reconciliation request should carry its schema in the prompt for provider-independent validation")
+	}
 }
 
 func TestQuestionScorecardAcceptsFractionalModelScores(t *testing.T) {
