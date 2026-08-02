@@ -502,6 +502,24 @@ func TestDirectPDFInternalProcessingAnalysisIsRefreshedFromEvidence(t *testing.T
 	}
 }
 
+func TestDirectPDFReconciliationRejectsAnsweredUnansweredPageOverlap(t *testing.T) {
+	t.Parallel()
+
+	err := validateDirectPDFAnsweredUnansweredOverlap([]directPDFReconciliationGroup{
+		{ID: "q8-prompt", Status: directPDFQuestionUnanswered, SourcePages: []int{32}},
+		{ID: "q8-answer", Status: directPDFQuestionAnswered, SourcePages: []int{32, 33, 34, 35, 36}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot be both answered and unanswered") {
+		t.Fatalf("answered/unanswered overlap error = %v", err)
+	}
+	if err := validateDirectPDFAnsweredUnansweredOverlap([]directPDFReconciliationGroup{
+		{ID: "q8", Status: directPDFQuestionAnswered, SourcePages: []int{32, 33, 34, 35, 36}},
+		{ID: "q9", Status: directPDFQuestionAnswered, SourcePages: []int{36, 37, 38}},
+	}); err != nil {
+		t.Fatalf("adjacent answered groups sharing a physical page were rejected: %v", err)
+	}
+}
+
 func TestDirectPDFChunkCheckpointTracksActualPromptFingerprint(t *testing.T) {
 	t.Parallel()
 

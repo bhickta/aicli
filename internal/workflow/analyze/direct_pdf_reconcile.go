@@ -261,6 +261,9 @@ func applyDirectPDFReconciliation(
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := validateDirectPDFAnsweredUnansweredOverlap(normalizedGroups); err != nil {
+		return nil, nil, err
+	}
 	if err := validateDirectPDFCandidateAssignments(candidates, normalizedGroups); err != nil {
 		return nil, nil, err
 	}
@@ -290,6 +293,34 @@ func applyDirectPDFReconciliation(
 	}
 	sortQuestions(questions)
 	return questions, warnings, nil
+}
+
+func validateDirectPDFAnsweredUnansweredOverlap(groups []directPDFReconciliationGroup) error {
+	for leftIndex, left := range groups {
+		leftPages := make(map[int]bool, len(left.SourcePages))
+		for _, page := range left.SourcePages {
+			leftPages[page] = true
+		}
+		for rightIndex := leftIndex + 1; rightIndex < len(groups); rightIndex++ {
+			right := groups[rightIndex]
+			if left.Status == right.Status {
+				continue
+			}
+			for _, page := range right.SourcePages {
+				if leftPages[page] {
+					return fmt.Errorf(
+						"direct PDF reconciliation groups %q (%s) and %q (%s) both claim source page %d; one visible question slot cannot be both answered and unanswered",
+						left.ID,
+						left.Status,
+						right.ID,
+						right.Status,
+						page,
+					)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func normalizeDirectPDFReconciliationGroups(
