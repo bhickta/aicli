@@ -350,6 +350,9 @@ func (s *Service) extractDirectPDFChunk(
 		if err == nil {
 			pages, questions, err = globalizeDirectPDFChunk(chunk, pages, questions)
 		}
+		if err == nil {
+			err = validateDirectPDFQuestionAnalysisLanguage(questions)
+		}
 		if err != nil {
 			if attempt+1 < len(prompts) {
 				s.logWarn("direct PDF chunk incomplete; retrying", "chunk", chunk.Index+1, "first_page", chunk.FirstPage, "last_page", chunk.LastPage, "error", err)
@@ -500,6 +503,9 @@ func loadDirectPDFChunkCheckpoint(
 		checkpoint.PromptSHA256 == "" ||
 		checkpoint.PromptSHA256 != promptSHA256 ||
 		checkpoint.Result.Chunk != chunk {
+		return directPDFChunkResult{}, false, nil
+	}
+	if err := validateDirectPDFQuestionAnalysisLanguage(checkpoint.Result.Response.Questions); err != nil {
 		return directPDFChunkResult{}, false, nil
 	}
 	return checkpoint.Result, true, nil

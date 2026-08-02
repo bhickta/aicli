@@ -434,6 +434,55 @@ func TestDirectPDFPromptsKeepProcessingBoundariesOutOfVisibleEvidence(t *testing
 	}
 }
 
+func TestDirectPDFVisibleAnalysisRejectsInternalProcessingExplanations(t *testing.T) {
+	t.Parallel()
+
+	questions := []Question{{
+		ID:    "q20",
+		Label: "Q.20",
+		Dimensions: &QuestionDimensions{
+			Custom: "Answer incomplete due to chunk boundary.",
+		},
+	}}
+	if err := validateDirectPDFVisibleAnalysis(questions, "visible report", nil); err == nil {
+		t.Fatal("analysis attributed to an internal chunk boundary was accepted")
+	}
+	questions[0].Dimensions.Custom = "Writing visibly stops mid-sentence on page 53; pages 54-56 are blank."
+	if err := validateDirectPDFVisibleAnalysis(questions, "visible report", nil); err != nil {
+		t.Fatalf("visible page evidence was rejected: %v", err)
+	}
+	if err := validateDirectPDFVisibleAnalysis(questions, "technical processing caused truncation", nil); err == nil {
+		t.Fatal("copy-wide report attributed content quality to technical processing")
+	}
+}
+
+func TestDirectPDFChunkCheckpointIgnoresInternalProcessingAnalysis(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	chunk := directPDFChunk{Index: 0, FirstPage: 1, LastPage: 1}
+	promptSHA256 := directPDFPromptsSHA256(directPDFChunkPrompts("copy.pdf", 1, chunk))
+	checkpoint := directPDFChunkCheckpoint{
+		Version:      directPDFCheckpointVersion,
+		SourceSHA256: "source-sha",
+		Model:        "model",
+		PromptSHA256: promptSHA256,
+		Result: directPDFChunkResult{
+			Chunk: chunk,
+			Response: Response{Questions: []Question{{
+				ID:         "q1",
+				Dimensions: &QuestionDimensions{Custom: "Lost at the extraction boundary."},
+			}}},
+		},
+	}
+	if err := saveDirectPDFChunkCheckpoint(dir, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := loadDirectPDFChunkCheckpoint(dir, chunk, "source-sha", "model", promptSHA256); err != nil || found {
+		t.Fatalf("load internal-processing checkpoint = (found=%v, err=%v), want cache miss", found, err)
+	}
+}
+
 func TestDirectPDFChunkCheckpointTracksActualPromptFingerprint(t *testing.T) {
 	t.Parallel()
 
