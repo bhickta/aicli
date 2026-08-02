@@ -33,6 +33,7 @@ type directPDFChunkCheckpoint struct {
 	Version      int                  `json:"version"`
 	SourceSHA256 string               `json:"source_sha256"`
 	Model        string               `json:"model"`
+	PromptSHA256 string               `json:"prompt_sha256"`
 	Result       directPDFChunkResult `json:"result"`
 }
 
@@ -97,11 +98,14 @@ func (s *Service) directPDFChunkedReview(
 		if err := ctx.Err(); err != nil {
 			return Response{}, err
 		}
+		prompts := directPDFChunkPrompts(pdfName, pageCount, chunk)
+		promptSHA256 := directPDFPromptsSHA256(prompts)
 		cached, found, err := loadDirectPDFChunkCheckpoint(
 			checkpointDir,
 			chunk,
 			sourceSHA256,
 			model,
+			promptSHA256,
 		)
 		if err != nil {
 			return Response{}, err
@@ -112,7 +116,7 @@ func (s *Service) directPDFChunkedReview(
 			continue
 		}
 
-		result, err := s.extractDirectPDFChunk(ctx, req, pdfName, pageCount, chunk, tempDir, processor)
+		result, err := s.extractDirectPDFChunk(ctx, req, pdfName, chunk, tempDir, prompts, processor)
 		if err != nil {
 			return Response{}, fmt.Errorf("extract direct PDF chunk %d pages %d-%d: %w", chunk.Index+1, chunk.FirstPage, chunk.LastPage, err)
 		}
@@ -122,6 +126,7 @@ func (s *Service) directPDFChunkedReview(
 				Version:      directPDFCheckpointVersion,
 				SourceSHA256: sourceSHA256,
 				Model:        model,
+				PromptSHA256: promptSHA256,
 				Result:       result,
 			},
 		); err != nil {
@@ -174,9 +179,9 @@ func (s *Service) extractDirectPDFChunk(
 	ctx context.Context,
 	req Request,
 	pdfName string,
-	pageCount int,
 	chunk directPDFChunk,
 	tempDir string,
+	prompts []string,
 	processor provider.DocumentProcessor,
 ) (directPDFChunkResult, error) {
 	chunkPath := filepath.Join(tempDir, fmt.Sprintf("chunk-%03d-p%04d-p%04d.pdf", chunk.Index+1, chunk.FirstPage, chunk.LastPage))
@@ -188,10 +193,6 @@ func (s *Service) extractDirectPDFChunk(
 		return directPDFChunkResult{}, err
 	}
 	model := firstNonBlank(req.OCRModel, req.Model)
-	prompts := []string{
-		directPDFChunkPrompt(pdfName, pageCount, chunk, false),
-		directPDFChunkPrompt(pdfName, pageCount, chunk, true),
-	}
 	var usage *provider.TokenUsage
 	for attempt, prompt := range prompts {
 		res, err := processor.Document(ctx, provider.DocumentRequest{
@@ -237,6 +238,19 @@ func (s *Service) extractDirectPDFChunk(
 		}, nil
 	}
 	return directPDFChunkResult{}, errors.New("direct PDF chunk extraction failed")
+}
+
+func directPDFChunkPrompts(pdfName string, pageCount int, chunk directPDFChunk) []string {
+	return []string{
+		directPDFChunkPrompt(pdfName, pageCount, chunk, false),
+		directPDFChunkPrompt(pdfName, pageCount, chunk, true),
+	}
+}
+
+func directPDFPromptsSHA256(prompts []string) string {
+	data, _ := json.Marshal(prompts)
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:])
 }
 
 func directPDFChunkPrompt(pdfName string, pageCount int, chunk directPDFChunk, strict bool) string {
@@ -328,6 +342,7 @@ func loadDirectPDFChunkCheckpoint(
 	chunk directPDFChunk,
 	sourceSHA256 string,
 	model string,
+	promptSHA256 string,
 ) (directPDFChunkResult, bool, error) {
 	path := directPDFChunkCheckpointPath(dir, chunk)
 	if path == "" {
@@ -347,8 +362,10 @@ func loadDirectPDFChunkCheckpoint(
 	if checkpoint.Version != directPDFCheckpointVersion ||
 		checkpoint.SourceSHA256 != sourceSHA256 ||
 		checkpoint.Model != model ||
+		checkpoint.PromptSHA256 == "" ||
+		checkpoint.PromptSHA256 != promptSHA256 ||
 		checkpoint.Result.Chunk != chunk {
-		return directPDFChunkResult{}, false, fmt.Errorf("direct PDF checkpoint %s does not match the requested source, model, or page range", path)
+		return directPDFChunkResult{}, false, nil
 	}
 	return checkpoint.Result, true, nil
 }
@@ -358,12 +375,16 @@ func saveDirectPDFChunkCheckpoint(dir string, checkpoint directPDFChunkCheckpoin
 	if path == "" {
 		return nil
 	}
+	if strings.TrimSpace(checkpoint.PromptSHA256) == "" {
+		return errors.New("direct PDF checkpoint requires a prompt fingerprint")
+	}
 	if _, err := os.Stat(path); err == nil {
 		_, found, loadErr := loadDirectPDFChunkCheckpoint(
 			dir,
 			checkpoint.Result.Chunk,
 			checkpoint.SourceSHA256,
 			checkpoint.Model,
+			checkpoint.PromptSHA256,
 		)
 		if loadErr != nil {
 			return loadErr
@@ -402,13 +423,7 @@ func saveDirectPDFChunkCheckpoint(dir string, checkpoint directPDFChunkCheckpoin
 	if err := temp.Close(); err != nil {
 		return err
 	}
-	if err := os.Link(tempPath, path); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil
-		}
-		return err
-	}
-	return nil
+	return os.Rename(tempPath, path)
 }
 
 func mergeDirectPDFChunkMetadata(results []directPDFChunkResult) *CopyMetadata {

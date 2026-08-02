@@ -328,6 +328,76 @@ func TestDirectPDFPromptsKeepProcessingBoundariesOutOfVisibleEvidence(t *testing
 	}
 }
 
+func TestDirectPDFChunkCheckpointTracksActualPromptFingerprint(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	chunk := directPDFChunk{Index: 0, FirstPage: 1, LastPage: 8}
+	prompts := directPDFChunkPrompts("copy.pdf", 10, chunk)
+	promptSHA256 := directPDFPromptsSHA256(prompts)
+	if promptSHA256 != directPDFPromptsSHA256(directPDFChunkPrompts("copy.pdf", 10, chunk)) {
+		t.Fatal("unchanged direct PDF prompts produced different fingerprints")
+	}
+	changedPrompts := append([]string(nil), prompts...)
+	changedPrompts[1] += "\nSchema changed."
+	changedPromptSHA256 := directPDFPromptsSHA256(changedPrompts)
+	if changedPromptSHA256 == promptSHA256 {
+		t.Fatal("changed direct PDF prompt/schema produced the same fingerprint")
+	}
+
+	checkpoint := directPDFChunkCheckpoint{
+		Version:      directPDFCheckpointVersion,
+		SourceSHA256: "source-sha",
+		Model:        "model",
+		PromptSHA256: promptSHA256,
+		Result: directPDFChunkResult{
+			Chunk:    chunk,
+			Response: Response{Report: "original"},
+		},
+	}
+	if err := saveDirectPDFChunkCheckpoint(dir, checkpoint); err != nil {
+		t.Fatalf("saveDirectPDFChunkCheckpoint() error = %v", err)
+	}
+	loaded, found, err := loadDirectPDFChunkCheckpoint(dir, chunk, "source-sha", "model", promptSHA256)
+	if err != nil || !found || loaded.Response.Report != "original" {
+		t.Fatalf("load unchanged checkpoint = (%#v, %v, %v), want original cache hit", loaded, found, err)
+	}
+
+	checkpoint.Result.Response.Report = "must not overwrite a reusable checkpoint"
+	if err := saveDirectPDFChunkCheckpoint(dir, checkpoint); err != nil {
+		t.Fatalf("save reusable checkpoint error = %v", err)
+	}
+	loaded, found, err = loadDirectPDFChunkCheckpoint(dir, chunk, "source-sha", "model", promptSHA256)
+	if err != nil || !found || loaded.Response.Report != "original" {
+		t.Fatalf("reloaded unchanged checkpoint = (%#v, %v, %v), want original cache entry", loaded, found, err)
+	}
+
+	if _, found, err = loadDirectPDFChunkCheckpoint(dir, chunk, "source-sha", "model", changedPromptSHA256); err != nil || found {
+		t.Fatalf("load changed-prompt checkpoint = (found=%v, err=%v), want cache miss", found, err)
+	}
+	checkpoint.PromptSHA256 = changedPromptSHA256
+	checkpoint.Result.Response.Report = "refreshed"
+	if err := saveDirectPDFChunkCheckpoint(dir, checkpoint); err != nil {
+		t.Fatalf("replace stale checkpoint error = %v", err)
+	}
+	loaded, found, err = loadDirectPDFChunkCheckpoint(dir, chunk, "source-sha", "model", changedPromptSHA256)
+	if err != nil || !found || loaded.Response.Report != "refreshed" {
+		t.Fatalf("load refreshed checkpoint = (%#v, %v, %v), want replaced cache entry", loaded, found, err)
+	}
+
+	checkpoint.PromptSHA256 = ""
+	legacyJSON, err := json.Marshal(checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(directPDFChunkCheckpointPath(dir, chunk), legacyJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err = loadDirectPDFChunkCheckpoint(dir, chunk, "source-sha", "model", changedPromptSHA256); err != nil || found {
+		t.Fatalf("load legacy checkpoint = (found=%v, err=%v), want cache miss", found, err)
+	}
+}
+
 func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.T) {
 	t.Parallel()
 
