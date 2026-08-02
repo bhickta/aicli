@@ -53,6 +53,7 @@ type fakeProvider struct {
 	documentResponses []string
 	documentPrompt    string
 	documentPrompts   []string
+	documentModels    []string
 	documentRequest   provider.DocumentRequest
 	documentCalls     int
 	documentReason    string
@@ -114,6 +115,7 @@ func (p *fakeProvider) Vision(_ context.Context, req provider.VisionRequest) (pr
 func (p *fakeProvider) Document(_ context.Context, req provider.DocumentRequest) (provider.DocumentResponse, error) {
 	p.documentPrompt = req.Prompt
 	p.documentPrompts = append(p.documentPrompts, req.Prompt)
+	p.documentModels = append(p.documentModels, req.Model)
 	p.documentRequest = req
 	p.documentCalls++
 	if len(p.documentResponses) > 0 {
@@ -756,10 +758,11 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 		WithArtifactDir(filepath.Join(dir, "artifacts")),
 	)
 	req := Request{
-		Path:         pdf,
-		OCRModel:     "gemini-flash-lite-latest",
-		OCRInputMode: OCRInputModePDFDirect,
-		ReviewID:     "copy-10-pages",
+		Path:          pdf,
+		OCRModel:      "gemini-flash-lite-latest",
+		BoundaryModel: "gemini-3.1-flash-lite",
+		OCRInputMode:  OCRInputModePDFDirect,
+		ReviewID:      "copy-10-pages",
 	}
 	res, err := service.Run(context.Background(), req)
 	if err != nil {
@@ -767,6 +770,14 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	}
 	if provider.documentCalls != 4 || res.APICalls != 4 {
 		t.Fatalf("calls: provider=%d response=%d, want two chunks plus one rejected and one valid reconciliation", provider.documentCalls, res.APICalls)
+	}
+	if !slices.Equal(provider.documentModels, []string{
+		"gemini-flash-lite-latest",
+		"gemini-flash-lite-latest",
+		"gemini-3.1-flash-lite",
+		"gemini-3.1-flash-lite",
+	}) {
+		t.Fatalf("document models = %#v, want chunk model followed by boundary model", provider.documentModels)
 	}
 	if len(res.Pages) != 10 || len(res.Questions) != 3 || !strings.Contains(res.Report, "Visible question slots: 3") {
 		t.Fatalf("response = %#v, want ten pages, three question slots, and deterministic inventory", res)
@@ -796,6 +807,9 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	}
 	if provider.documentCalls != 5 {
 		t.Fatalf("provider calls after resume = %d, want only reconciliation rerun", provider.documentCalls)
+	}
+	if provider.documentModels[4] != "gemini-3.1-flash-lite" {
+		t.Fatalf("resumed reconciliation model = %q, want boundary model", provider.documentModels[4])
 	}
 	if resumed.APICalls != 3 || len(resumed.Questions) != 3 {
 		t.Fatalf("resumed response = %#v, want checkpoint call provenance and complete questions", resumed)

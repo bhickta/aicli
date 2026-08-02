@@ -87,6 +87,7 @@ func (s *Service) directPDFChunkedReview(
 		return Response{}, err
 	}
 	model := firstNonBlank(req.OCRModel, req.Model)
+	reconciliationModel := firstNonBlank(req.BoundaryModel, model)
 	pdfName := filepath.Base(req.Path)
 	sourceHash := sha256.Sum256(sourceData)
 	sourceSHA256 := hex.EncodeToString(sourceHash[:])
@@ -102,6 +103,7 @@ func (s *Service) directPDFChunkedReview(
 		"direct PDF chunked extraction started",
 		"path", req.Path,
 		"model", model,
+		"reconciliation_model", reconciliationModel,
 		"pages", pageCount,
 		"chunks", len(chunks),
 		"chunk_pages", directPDFChunkPages,
@@ -153,7 +155,7 @@ func (s *Service) directPDFChunkedReview(
 	pages, pageWarnings := mergeDirectPDFChunkPages(results, pageCount)
 	questions, report, reconcileWarnings, reconcileUsage, reconcileCalls, err := s.reconcileDirectPDFChunks(
 		ctx,
-		model,
+		reconciliationModel,
 		pdfName,
 		sourceData,
 		pageCount,
