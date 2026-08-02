@@ -217,6 +217,7 @@ Rules:
 9. The other report fields are qualitative section bodies only. Do not repeat question-slot, answered, or unanswered counts there; the application renders the validated inventory deterministically.
 10. Confidence is 0-1. Add a warning for uncertain grouping, unreadable boundaries, or potentially incomplete edge-spanning answers.
 11. Do not predict official UPSC marks or invent an official model answer.
+12. Chunks, overlap windows, candidate IDs, retries, and extraction boundaries are internal processing details—not visible-copy evidence. Never mention them in group reasons, warnings, answer analyses, or report text, and never claim they caused an answer to be incomplete or truncated. Describe only what the attached PDF visibly shows, such as an answer ending abruptly or the following answer area being blank, with exact page citations.
 
 PDF name: %s
 

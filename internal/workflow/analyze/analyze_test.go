@@ -302,6 +302,32 @@ func TestPlanDirectPDFChunksUsesEightPagesWithTwoPageOverlap(t *testing.T) {
 	}
 }
 
+func TestDirectPDFPromptsKeepProcessingBoundariesOutOfVisibleEvidence(t *testing.T) {
+	t.Parallel()
+
+	chunkPrompt := directPDFChunkPrompt("copy.pdf", 56, directPDFChunk{Index: 1, FirstPage: 7, LastPage: 14}, false)
+	for _, instruction := range []string{
+		"internal processing detail, not evidence",
+		"Never mention chunks, chunk edges, extraction windows, or technical processing as a content cause",
+		"Describe only visible page evidence",
+	} {
+		if !strings.Contains(chunkPrompt, instruction) {
+			t.Fatalf("chunk prompt missing semantic causality instruction %q", instruction)
+		}
+	}
+
+	reconciliationPrompt := directPDFReconciliationPrompt("copy.pdf", "[]", "{}", 56, "", nil)
+	for _, instruction := range []string{
+		"internal processing details—not visible-copy evidence",
+		"Never mention them in group reasons, warnings, answer analyses, or report text",
+		"Describe only what the attached PDF visibly shows",
+	} {
+		if !strings.Contains(reconciliationPrompt, instruction) {
+			t.Fatalf("reconciliation prompt missing semantic causality instruction %q", instruction)
+		}
+	}
+}
+
 func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.T) {
 	t.Parallel()
 

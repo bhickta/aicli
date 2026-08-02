@@ -245,7 +245,8 @@ func directPDFChunkPrompt(pdfName string, pageCount int, chunk directPDFChunk, s
 It contains original global pages %d-%d, represented inside this attachment as local pages 1-%d.
 In every pages[].number and questions[].source_pages value, use attachment-local page numbers only. The application will apply the global offset.
 Return a pages[] entry for every attached page, including cover, question-paper, evaluation, and blank pages.
-Analyze only visible content in this attachment. A question that begins or ends at a chunk edge may be incomplete; preserve its visible text and source pages without inventing missing content.
+Analyze only visible content in this attachment. Preserve answer text and source pages without inventing content beyond the attached pages.
+The attachment boundary is an internal processing detail, not evidence that the candidate's answer was truncated or incomplete. Never mention chunks, chunk edges, extraction windows, or technical processing as a content cause in any returned field. Describe only visible page evidence—for example, writing visibly ends, the next visible answer area is blank, or handwriting is unreadable—without inferring technical loss.
 
 `, chunk.Index+1, pageCount, chunk.FirstPage, chunk.LastPage, localPages)
 	suffix := `
