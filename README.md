@@ -143,12 +143,20 @@ With the AICLI worker running, process every entry using the configured `gemini-
 ```bash
 go run ./cmd/aicli topper-batch-run \
   -manifest ./topper-batch.json \
+  -output-dir ./topper-batch-output \
   -ocr-model gemini-flash-lite-latest \
-  -reconciliation-model gemini-3.5-flash \
-  > topper-batch-result.json
+  -reconciliation-model gemini-3.5-flash
 ```
 
 Add `-force-ocr` only for a deliberately uncached benchmark. Normal/resumed runs reuse a completed immutable review where available. The command exits nonzero if any item fails while retaining the full structured result on stdout.
+
+When `-output-dir` is set, each completed review is written atomically under `reviews/`
+using a deterministic hash of its explicit source ID. Existing identical output is
+reused; conflicting output fails closed instead of being overwritten. `result.json`
+records the exact `review_id` and absolute review path for every copy, so validation and
+deployment never need to rediscover artifacts from filenames or timestamps. An
+interrupted run can use the same manifest and output directory without repeating
+completed analysis.
 
 Uploaded files are copied into:
 

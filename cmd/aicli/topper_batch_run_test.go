@@ -20,6 +20,7 @@ func TestRunTopperBatchIO(t *testing.T) {
 	t.Parallel()
 
 	manifestPath := writeTopperBatchTestManifest(t, []string{"3663", "3664", "3665"})
+	outputDir := filepath.Join(t.TempDir(), "batch-output")
 	type submission struct {
 		Lane                string
 		OCRModel            string
@@ -61,6 +62,9 @@ func TestRunTopperBatchIO(t *testing.T) {
 				ForceOCR: request.ForceOCR, InputMode: request.OCRInputMode,
 			})
 			reviewJSON, err := json.Marshal(analyze.Response{
+				Kind:      "topper_copy_review",
+				ReviewID:  "review-" + filepath.Base(request.Path),
+				PDFName:   filepath.Base(request.Path),
 				Pages:     []analyze.Page{{Number: 1}},
 				Questions: []analyze.Question{{ID: "Q1"}},
 				APICalls:  12,
@@ -91,6 +95,7 @@ func TestRunTopperBatchIO(t *testing.T) {
 	var stderr bytes.Buffer
 	exitCode := runTopperBatchIO([]string{
 		"-manifest", manifestPath,
+		"-output-dir", outputDir,
 		"-server-url", server.URL,
 		"-force-ocr",
 		"-poll-interval", "1ms",
@@ -105,6 +110,33 @@ func TestRunTopperBatchIO(t *testing.T) {
 	}
 	if result.Total != 3 || result.Completed != 3 || result.Failed != 0 || len(result.Items) != 3 {
 		t.Fatalf("result = %#v, want three completed copies", result)
+	}
+	for _, item := range result.Items {
+		if item.ReviewID == "" || item.ReviewPath == "" {
+			t.Fatalf("result item = %#v, want durable review identity and path", item)
+		}
+		data, err := os.ReadFile(item.ReviewPath)
+		if err != nil {
+			t.Fatalf("read persisted review: %v", err)
+		}
+		var review analyze.Response
+		if err := json.Unmarshal(data, &review); err != nil {
+			t.Fatalf("decode persisted review: %v", err)
+		}
+		if review.ReviewID != item.ReviewID {
+			t.Fatalf("persisted review ID = %q, want %q", review.ReviewID, item.ReviewID)
+		}
+	}
+	resultData, err := os.ReadFile(filepath.Join(outputDir, "result.json"))
+	if err != nil {
+		t.Fatalf("read persisted result: %v", err)
+	}
+	var persistedResult topperBatchResult
+	if err := json.Unmarshal(resultData, &persistedResult); err != nil {
+		t.Fatalf("decode persisted result: %v", err)
+	}
+	if persistedResult.Completed != result.Completed || len(persistedResult.Items) != len(result.Items) {
+		t.Fatalf("persisted result = %#v, want %#v", persistedResult, result)
 	}
 	mu.Lock()
 	defer mu.Unlock()
@@ -158,6 +190,38 @@ func TestRunTopperBatchIOReportsFailedJobs(t *testing.T) {
 	}
 	if result.Completed != 0 || result.Failed != 1 || result.Items[0].Error != "provider denied access" {
 		t.Fatalf("result = %#v, want one evidence-bearing failed item", result)
+	}
+}
+
+func TestWriteTopperBatchReviewIsImmutableAndIdempotent(t *testing.T) {
+	t.Parallel()
+
+	outputDir := t.TempDir()
+	first := []byte(`{"kind":"topper_copy_review","review_id":"review-1"}`)
+	path, err := writeTopperBatchReview(outputDir, "3663", first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reusedPath, err := writeTopperBatchReview(outputDir, "3663", first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reusedPath != path {
+		t.Fatalf("reused path = %q, want %q", reusedPath, path)
+	}
+	if _, err := writeTopperBatchReview(
+		outputDir,
+		"3663",
+		[]byte(`{"kind":"topper_copy_review","review_id":"review-2"}`),
+	); err == nil || !strings.Contains(err.Error(), "different review") {
+		t.Fatalf("conflicting review error = %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(first) {
+		t.Fatalf("immutable review changed to %q", data)
 	}
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -28,6 +29,7 @@ const topperBatchManifestVersion = 1
 
 type topperBatchOptions struct {
 	manifestPath        string
+	outputDir           string
 	serverURL           string
 	lanePrefix          string
 	ocrModel            string
@@ -63,6 +65,8 @@ type topperBatchItemResult struct {
 	Path          string `json:"path"`
 	Lane          string `json:"lane"`
 	JobID         string `json:"job_id,omitempty"`
+	ReviewID      string `json:"review_id,omitempty"`
+	ReviewPath    string `json:"review_path,omitempty"`
 	Status        string `json:"status"`
 	PageCount     int    `json:"page_count,omitempty"`
 	QuestionCount int    `json:"question_count,omitempty"`
@@ -96,6 +100,19 @@ func runTopperBatchIO(args []string, stdout, stderr io.Writer) int {
 	defer stop()
 
 	result, err := executeTopperBatch(ctx, options, stderr)
+	if options.outputDir != "" && result.Total > 0 {
+		data, marshalErr := json.MarshalIndent(result, "", "  ")
+		if marshalErr == nil {
+			data = append(data, '\n')
+			marshalErr = writeTopperBatchFileAtomically(
+				filepath.Join(options.outputDir, "result.json"),
+				data,
+			)
+		}
+		if marshalErr != nil {
+			err = errors.Join(err, fmt.Errorf("persist batch result: %w", marshalErr))
+		}
+	}
 	if result.Total > 0 {
 		encoder := json.NewEncoder(stdout)
 		encoder.SetIndent("", "  ")
@@ -121,6 +138,12 @@ func parseTopperBatchOptions(args []string, stderr io.Writer) (topperBatchOption
 	fs := flag.NewFlagSet("aicli topper-batch-run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&options.manifestPath, "manifest", "", "versioned topper batch manifest JSON")
+	fs.StringVar(
+		&options.outputDir,
+		"output-dir",
+		"",
+		"durable directory for exact review outputs and result.json",
+	)
 	fs.StringVar(&options.serverURL, "server-url", defaultServerURL, "running AICLI server URL")
 	fs.StringVar(&options.lanePrefix, "lane-prefix", "gemini-lane-", "provider ID prefix for independent key lanes")
 	fs.StringVar(&options.ocrModel, "ocr-model", "gemini-flash-lite-latest", "direct PDF extraction model")
@@ -138,6 +161,18 @@ func parseTopperBatchOptions(args []string, stderr io.Writer) (topperBatchOption
 	if strings.TrimSpace(options.manifestPath) == "" {
 		fmt.Fprintln(stderr, "missing -manifest")
 		return topperBatchOptions{}, errors.New("missing manifest")
+	}
+	if options.outputDir != "" {
+		if options.outputDir != strings.TrimSpace(options.outputDir) {
+			fmt.Fprintln(stderr, "-output-dir must contain no surrounding whitespace")
+			return topperBatchOptions{}, errors.New("invalid output directory")
+		}
+		absolute, err := filepath.Abs(options.outputDir)
+		if err != nil {
+			fmt.Fprintf(stderr, "resolve -output-dir: %v\n", err)
+			return topperBatchOptions{}, errors.New("invalid output directory")
+		}
+		options.outputDir = filepath.Clean(absolute)
 	}
 	parsedURL, err := url.ParseRequestURI(options.serverURL)
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
@@ -259,11 +294,31 @@ func executeTopperBatch(ctx context.Context, options topperBatchOptions, stderr 
 					item.Status = storage.JobStatusFailed
 					item.Error = fmt.Sprintf("decode completed review: %v", err)
 					result.Failed++
+				} else if strings.TrimSpace(review.ReviewID) == "" {
+					item.Status = storage.JobStatusFailed
+					item.Error = "completed review has an empty review_id"
+					result.Failed++
 				} else {
+					item.ReviewID = review.ReviewID
+					if options.outputDir != "" {
+						item.ReviewPath, err = writeTopperBatchReview(
+							options.outputDir,
+							activeJob.copy.SourceID,
+							[]byte(job.Output),
+						)
+						if err != nil {
+							item.Status = storage.JobStatusFailed
+							item.Error = fmt.Sprintf("persist completed review: %v", err)
+							result.Failed++
+						} else {
+							result.Completed++
+						}
+					} else {
+						result.Completed++
+					}
 					item.PageCount = len(review.Pages)
 					item.QuestionCount = len(review.Questions)
 					item.APICalls = review.APICalls
-					result.Completed++
 				}
 			} else {
 				result.Failed++
@@ -281,6 +336,58 @@ func executeTopperBatch(ctx context.Context, options topperBatchOptions, stderr 
 		return result, fmt.Errorf("%d of %d copies failed", result.Failed, result.Total)
 	}
 	return result, nil
+}
+
+func writeTopperBatchReview(outputDir, sourceID string, data []byte) (string, error) {
+	reviewsDir := filepath.Join(outputDir, "reviews")
+	if err := os.MkdirAll(reviewsDir, 0o700); err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256([]byte(sourceID))
+	path := filepath.Join(reviewsDir, fmt.Sprintf("review-%x.json", sum[:]))
+	existing, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		if !bytes.Equal(existing, data) {
+			return "", fmt.Errorf("immutable output %q already contains a different review", path)
+		}
+		return path, nil
+	case !errors.Is(err, os.ErrNotExist):
+		return "", err
+	}
+	if err := writeTopperBatchFileAtomically(path, data); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func writeTopperBatchFileAtomically(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(dir, ".topper-batch-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0o600); err != nil {
+		temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, path)
 }
 
 func loadTopperBatchManifest(path string) (topperBatchManifest, error) {
