@@ -122,6 +122,34 @@ go run ./cmd/aicli topper-boundary-benchmark \
 
 Run the same suite separately for each candidate model. Compare `schema_valid_rate`, `exact_grouping_rate`, `label_accuracy`, `status_accuracy`, `stability_rate`, and latency. An omitted expected label or status is excluded from that metric; unavailable metrics are emitted as `null`, never guessed as zero.
 
+## Topper copy batch runner
+
+Use the typed batch runner instead of submitting copies by hand. It discovers configured provider lanes by ID prefix, keeps at most one active copy on each lane, reuses a lane when its copy finishes, and emits a machine-readable result containing per-copy duration, page/question counts, API calls, and failures. It does not infer or silently retry failed jobs from error text.
+
+Create a strict versioned manifest:
+
+```json
+{
+  "version": 1,
+  "copies": [
+    { "source_id": "copy-001", "path": "/absolute/path/to/copy-001.pdf" },
+    { "source_id": "copy-002", "path": "/absolute/path/to/copy-002.pdf" }
+  ]
+}
+```
+
+With the AICLI worker running, process every entry using the configured `gemini-lane-*` providers:
+
+```bash
+go run ./cmd/aicli topper-batch-run \
+  -manifest ./topper-batch.json \
+  -ocr-model gemini-flash-lite-latest \
+  -reconciliation-model gemini-3.5-flash \
+  > topper-batch-result.json
+```
+
+Add `-force-ocr` only for a deliberately uncached benchmark. Normal/resumed runs reuse a completed immutable review where available. The command exits nonzero if any item fails while retaining the full structured result on stdout.
+
 Uploaded files are copied into:
 
 ```text

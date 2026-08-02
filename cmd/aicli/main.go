@@ -32,6 +32,9 @@ func run(args []string) int {
 	if len(args) > 0 && args[0] == "topper-boundary-benchmark" {
 		return runTopperBoundaryBenchmark(args[1:])
 	}
+	if len(args) > 0 && args[0] == "topper-batch-run" {
+		return runTopperBatch(args[1:])
+	}
 
 	var opts app.Options
 	var showVersion bool
