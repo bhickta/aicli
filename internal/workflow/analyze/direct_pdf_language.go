@@ -31,6 +31,10 @@ func validateDirectPDFVisibleAnalysis(questions []Question, report string, warni
 	if err := validateDirectPDFQuestionAnalysisLanguage(questions); err != nil {
 		return err
 	}
+	return validateDirectPDFReportLanguage(report, warnings)
+}
+
+func validateDirectPDFReportLanguage(report string, warnings []string) error {
 	for _, item := range append([]string{report}, warnings...) {
 		if phrase := directPDFInternalProcessingPhrase(item); phrase != "" {
 			return fmt.Errorf("direct PDF visible analysis refers to internal processing (%s)", phrase)

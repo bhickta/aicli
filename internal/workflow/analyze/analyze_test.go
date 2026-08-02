@@ -456,30 +456,49 @@ func TestDirectPDFVisibleAnalysisRejectsInternalProcessingExplanations(t *testin
 	}
 }
 
-func TestDirectPDFChunkCheckpointIgnoresInternalProcessingAnalysis(t *testing.T) {
+func TestDirectPDFInternalProcessingAnalysisIsRefreshedFromEvidence(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	chunk := directPDFChunk{Index: 0, FirstPage: 1, LastPage: 1}
-	promptSHA256 := directPDFPromptsSHA256(directPDFChunkPrompts("copy.pdf", 1, chunk))
-	checkpoint := directPDFChunkCheckpoint{
-		Version:      directPDFCheckpointVersion,
-		SourceSHA256: "source-sha",
-		Model:        "model",
-		PromptSHA256: promptSHA256,
-		Result: directPDFChunkResult{
-			Chunk: chunk,
-			Response: Response{Questions: []Question{{
-				ID:         "q1",
-				Dimensions: &QuestionDimensions{Custom: "Lost at the extraction boundary."},
-			}}},
-		},
-	}
-	if err := saveDirectPDFChunkCheckpoint(dir, checkpoint); err != nil {
+	pdf := filepath.Join(dir, "answers.pdf")
+	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, found, err := loadDirectPDFChunkCheckpoint(dir, chunk, "source-sha", "model", promptSHA256); err != nil || found {
-		t.Fatalf("load internal-processing checkpoint = (found=%v, err=%v), want cache miss", found, err)
+	processor := &fakeProvider{documentResponses: []string{
+		`{"custom":"Incomplete due to chunk boundary."}`,
+		`{"custom":"Writing visibly stops mid-sentence on global page 53."}`,
+	}}
+	service := New(config.ToolConfig{QPDF: "qpdf"}, &fakeRunner{}, processor)
+	questions, usage, calls, err := service.refreshDirectPDFInternalProcessingAnalysis(
+		context.Background(),
+		Request{Path: pdf},
+		"gemini-flash-lite-latest",
+		dir,
+		[]Question{{
+			ID:             "q20",
+			Label:          "Q.20",
+			Title:          "Afghanistan connectivity",
+			AnswerMarkdown: "2. Promote",
+			SourcePages:    []int{53},
+			Dimensions:     &QuestionDimensions{Custom: "Fragmentary due to extraction boundary."},
+		}},
+		processor,
+	)
+	if err != nil {
+		t.Fatalf("refreshDirectPDFInternalProcessingAnalysis() error = %v", err)
+	}
+	if usage != nil || calls != 2 || processor.documentCalls != 2 {
+		t.Fatalf("usage=%#v calls=%d provider calls=%d, want two content attempts", usage, calls, processor.documentCalls)
+	}
+	if got := questions[0].Dimensions.Custom; got != "Writing visibly stops mid-sentence on global page 53." {
+		t.Fatalf("refreshed custom analysis = %q", got)
+	}
+	if len(processor.documentPrompts) != 2 || !strings.Contains(processor.documentPrompts[1], "previous analysis was rejected") ||
+		!strings.Contains(processor.documentPrompts[1], "chunk boundary") {
+		t.Fatalf("strict refresh prompt missing validator feedback: %#v", processor.documentPrompts)
+	}
+	if processor.documentRequest.ResponseSchema == nil || processor.documentRequest.ResponseSchema.Name != "topper_question_analysis" {
+		t.Fatalf("refresh response schema = %#v", processor.documentRequest.ResponseSchema)
 	}
 }
 

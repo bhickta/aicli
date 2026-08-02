@@ -132,7 +132,7 @@ func (s *Service) reconcileDirectPDFChunks(
 				report, err = buildDirectPDFReconciliationReport(questions, plan)
 				if err == nil {
 					warnings = cleanStringList(append(warnings, plan.Warnings...))
-					err = validateDirectPDFVisibleAnalysis(questions, report, warnings)
+					err = validateDirectPDFReportLanguage(report, warnings)
 					if err == nil {
 						return questions, report, warnings, usage, attempt + 1, nil
 					}
