@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"path/filepath"
 	"testing"
 	"time"
@@ -283,6 +284,7 @@ func TestSQLiteStoreStudyLifecycle(t *testing.T) {
 		QuestionNo:  1,
 		Label:       "Q.1",
 		PromptText:  "Elucidate.",
+		Marks:       12.5,
 		AnswerText:  "answer text",
 		SourcePages: []int{2, 3},
 		Status:      "ready",
@@ -315,8 +317,44 @@ func TestSQLiteStoreStudyLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListStudyQuestions() error = %v", err)
 	}
-	if len(questions) != 1 || len(questions[0].SourcePages) != 2 || questions[0].SourcePages[1] != 3 {
+	if len(questions) != 1 || questions[0].Marks != 12.5 || len(questions[0].SourcePages) != 2 || questions[0].SourcePages[1] != 3 {
 		t.Fatalf("questions = %#v, want source pages preserved", questions)
+	}
+}
+
+func TestSQLiteStoreRejectsInvalidStudyQuestionMarks(t *testing.T) {
+	t.Parallel()
+
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := NewSQLiteStore(db)
+	if err := store.Migrate(); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		marks float64
+	}{
+		{name: "negative", marks: -0.5},
+		{name: "not a number", marks: math.NaN()},
+		{name: "infinite", marks: math.Inf(1)},
+		{name: "above upper bound", marks: 1000.5},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := store.SaveStudyQuestion(context.Background(), StudyQuestionRecord{
+				ID:     "invalid-" + test.name,
+				CopyID: "copy-1",
+				Marks:  test.marks,
+			})
+			if err == nil {
+				t.Fatalf("SaveStudyQuestion() error = nil, want rejection for marks %v", test.marks)
+			}
+		})
 	}
 }
 

@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS study_questions (
 	label TEXT NOT NULL DEFAULT '',
 	prompt_text TEXT NOT NULL DEFAULT '',
 	prompt_hi TEXT NOT NULL DEFAULT '',
-	marks INTEGER NOT NULL DEFAULT 0,
+	marks REAL NOT NULL DEFAULT 0,
 	word_limit INTEGER NOT NULL DEFAULT 0,
 	answer_text TEXT NOT NULL DEFAULT '',
 	source_pages_json TEXT NOT NULL DEFAULT '[]',

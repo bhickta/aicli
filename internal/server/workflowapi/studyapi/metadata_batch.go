@@ -46,13 +46,13 @@ type studyMetadataPageInput struct {
 }
 
 type studyMetadataQuestionInput struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	PromptText  string `json:"prompt_text"`
-	AnswerText  string `json:"answer_text"`
-	SourcePages []int  `json:"source_pages"`
-	Marks       int    `json:"marks,omitempty"`
-	WordLimit   int    `json:"word_limit,omitempty"`
+	ID          string  `json:"id"`
+	Label       string  `json:"label"`
+	PromptText  string  `json:"prompt_text"`
+	AnswerText  string  `json:"answer_text"`
+	SourcePages []int   `json:"source_pages"`
+	Marks       float64 `json:"marks,omitempty"`
+	WordLimit   int     `json:"word_limit,omitempty"`
 }
 
 func (h *Handler) generateStudyBatchMetadata(
@@ -191,6 +191,7 @@ This copy can come from any coaching institute, test series, or layout. Treat in
 Return valid JSON only. No markdown fences, no prose, no trailing commas.
 If a field is not visible or cannot be inferred confidently, return an empty string or empty array.
 Return one questions[] object for every provided question id. Keep each id exactly unchanged.
+Preserve visible fractional marks exactly as a JSON number between 0 and 1000; never stringify or round them.
 
 Schema:
 {
@@ -319,7 +320,7 @@ func saveStudyMetadata(
 			continue
 		}
 		question.MetadataJSON = jsonString(meta)
-		question.Marks = firstInt(meta.Marks, question.Marks)
+		question.Marks = firstStudyNumber(meta.Marks, question.Marks)
 		question.WordLimit = firstInt(meta.WordLimit, question.WordLimit)
 		if err := store.SaveStudyQuestion(ctx, question); err != nil {
 			return fmt.Errorf("save question metadata: %w", err)
@@ -457,7 +458,7 @@ func cleanQuestionMetadata(meta analyze.QuestionMetadata) *analyze.QuestionMetad
 		QuestionType: strings.TrimSpace(meta.QuestionType),
 		Demand:       strings.TrimSpace(meta.Demand),
 		Difficulty:   strings.TrimSpace(meta.Difficulty),
-		Marks:        nonNegativeStudyInt(meta.Marks),
+		Marks:        meta.Marks,
 		WordLimit:    nonNegativeStudyInt(meta.WordLimit),
 		Tags:         cleanStudyMetadataList(meta.Tags),
 		SearchHints:  cleanStudyMetadataList(meta.SearchHints),
@@ -490,4 +491,13 @@ func nonNegativeStudyInt(value int) int {
 		return 0
 	}
 	return value
+}
+
+func firstStudyNumber(values ...float64) float64 {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
 }

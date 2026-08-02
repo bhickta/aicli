@@ -167,7 +167,7 @@ Rules:
 1. First identify copy-level metadata concisely. Use only visible evidence or strong document-level inference; keep uncertain fields empty.
 2. First identify every distinct visible question/answer block in detected_questions. This is mandatory coverage accounting.
 3. Extract every detected question/answer block into questions[]. Do not invent official model answers.
-4. Add concise metadata for every question so it can be searched/filtered by subject, topic, syllabus area, marks, word limit, and demand.
+4. Add concise metadata for every question so it can be searched/filtered by subject, topic, syllabus area, marks, word limit, and demand. Preserve visible fractional marks exactly as a JSON number between 0 and 1000; never stringify or round them.
 5. For every question, complete the evidence-based dimensions analysis. Limit strengths, gaps, and improvements to the 4 highest-value items each. Every strength/gap needs a short visible quote or exact structural feature as evidence.
 6. Score each scorecard dimension from 0 to 5 (0=not observable, 5=exceptional); overall_percent is 0-100. This is a learning rubric, not predicted UPSC marks or an official examiner assessment.
 7. Do not penalize an absent dimension unless it is relevant to the visible demand. Do not invent facts, model-answer content, evaluator intent, or marks.
@@ -348,7 +348,7 @@ func nonEmptyQuestionMetadata(meta QuestionMetadata) *QuestionMetadata {
 		QuestionType: strings.TrimSpace(meta.QuestionType),
 		Demand:       strings.TrimSpace(meta.Demand),
 		Difficulty:   strings.TrimSpace(meta.Difficulty),
-		Marks:        nonNegative(meta.Marks),
+		Marks:        meta.Marks,
 		WordLimit:    nonNegative(meta.WordLimit),
 		Tags:         cleanStringList(meta.Tags),
 		SearchHints:  cleanStringList(meta.SearchHints),

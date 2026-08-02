@@ -127,7 +127,7 @@ type StudyQuestionRecord struct {
 	Label        string    `json:"label"`
 	PromptText   string    `json:"prompt_text"`
 	PromptHi     string    `json:"prompt_hi"`
-	Marks        int       `json:"marks"`
+	Marks        float64   `json:"marks"`
 	WordLimit    int       `json:"word_limit"`
 	AnswerText   string    `json:"answer_text"`
 	SourcePages  []int     `json:"source_pages"`

@@ -161,7 +161,7 @@ type QuestionMetadata struct {
 	QuestionType string   `json:"question_type,omitempty"`
 	Demand       string   `json:"demand,omitempty"`
 	Difficulty   string   `json:"difficulty,omitempty"`
-	Marks        int      `json:"marks,omitempty"`
+	Marks        float64  `json:"marks,omitempty"`
 	WordLimit    int      `json:"word_limit,omitempty"`
 	Tags         []string `json:"tags,omitempty"`
 	SearchHints  []string `json:"search_hints,omitempty"`

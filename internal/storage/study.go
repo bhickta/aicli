@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -126,6 +127,9 @@ func (s *SQLiteStore) ListStudyPages(ctx context.Context, copyID string) ([]Stud
 }
 
 func (s *SQLiteStore) SaveStudyQuestion(ctx context.Context, question StudyQuestionRecord) error {
+	if err := validateStudyQuestionMarks(question.Marks); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	if question.CreatedAt.IsZero() {
 		question.CreatedAt = now
@@ -451,6 +455,9 @@ ON CONFLICT(copy_id, page_number) DO UPDATE SET
 }
 
 func saveStudyQuestionExec(ctx context.Context, exec contextExecer, question StudyQuestionRecord) error {
+	if err := validateStudyQuestionMarks(question.Marks); err != nil {
+		return err
+	}
 	sourcePages, _ := json.Marshal(question.SourcePages)
 	_, err := exec.ExecContext(ctx, `INSERT INTO study_questions (id, copy_id, question_no, label, prompt_text, prompt_hi, marks, word_limit, answer_text, source_pages_json, status, feedback_json, analysis_json, metadata_json, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -466,6 +473,14 @@ ON CONFLICT(id) DO UPDATE SET
 		question.PromptHi, question.Marks, question.WordLimit, question.AnswerText, string(sourcePages),
 		question.Status, question.FeedbackJSON, question.AnalysisJSON, question.MetadataJSON, question.CreatedAt, question.UpdatedAt)
 	return err
+}
+
+func validateStudyQuestionMarks(marks float64) error {
+	const maxMarks = 1000.0
+	if math.IsNaN(marks) || math.IsInf(marks, 0) || marks < 0 || marks > maxMarks {
+		return fmt.Errorf("study question marks must be finite and between 0 and %g", maxMarks)
+	}
+	return nil
 }
 
 func saveStudyAnalysisExec(ctx context.Context, exec contextExecer, analysis StudyAnalysisRecord) error {

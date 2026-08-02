@@ -452,6 +452,41 @@ func TestQuestionScorecardAcceptsFractionalModelScores(t *testing.T) {
 	}
 }
 
+func TestQuestionMetadataAcceptsOnlyBoundedFiniteNumericMarks(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		raw     string
+		want    float64
+		wantErr bool
+	}{
+		{name: "fractional", raw: "12.5", want: 12.5},
+		{name: "upper bound", raw: "1000", want: 1000},
+		{name: "negative", raw: "-0.5", wantErr: true},
+		{name: "above upper bound", raw: "1000.5", wantErr: true},
+		{name: "non finite overflow", raw: "1e1000", wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var metadata QuestionMetadata
+			err := json.Unmarshal([]byte(fmt.Sprintf(`{"marks":%s}`, test.raw)), &metadata)
+			if test.wantErr {
+				if err == nil {
+					t.Fatalf("Unmarshal() error = nil, want bounded-number rejection for %s", test.raw)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unmarshal() error = %v", err)
+			}
+			if metadata.Marks != test.want {
+				t.Fatalf("Marks = %v, want %v", metadata.Marks, test.want)
+			}
+		})
+	}
+}
+
 func TestApplyDirectPDFReconciliationRequiresEveryCandidateExactlyOnce(t *testing.T) {
 	t.Parallel()
 
@@ -1587,7 +1622,7 @@ func TestExtractDimensionsPreservesExistingAnalysisOnInvalidResponse(t *testing.
 func TestParseOneShotPDFManifest(t *testing.T) {
 	t.Parallel()
 
-	content := "```json\n{\"metadata\":{\"topper_name\":\"A Topper\",\"paper\":\"GS1\"},\"detected_questions\":[\"Q.1\"],\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"source_pages\":[1],\"answer_markdown\":\"test answer\",\"dimensions\":{\"fact\":\"good examples\",\"strengths\":[{\"point\":\"specific example\",\"evidence\":\"visible case\"}],\"scorecard\":{\"evidence\":4,\"overall_percent\":76,\"estimated_band\":\"strong\",\"confidence\":\"high\"}},\"metadata\":{\"subject\":\"History\",\"topic\":\"Ancient India\",\"marks\":10}}],\"report\":\"test report\"}\n```"
+	content := "```json\n{\"metadata\":{\"topper_name\":\"A Topper\",\"paper\":\"GS1\"},\"detected_questions\":[\"Q.1\"],\"pages\":[{\"number\":1,\"name\":\"page-1\",\"text\":\"ocr text\",\"unclear_count\":1}],\"questions\":[{\"label\":\"Q.1\",\"title\":\"History\",\"source_pages\":[1],\"answer_markdown\":\"test answer\",\"dimensions\":{\"fact\":\"good examples\",\"strengths\":[{\"point\":\"specific example\",\"evidence\":\"visible case\"}],\"scorecard\":{\"evidence\":4,\"overall_percent\":76,\"estimated_band\":\"strong\",\"confidence\":\"high\"}},\"metadata\":{\"subject\":\"History\",\"topic\":\"Ancient India\",\"marks\":12.5}}],\"report\":\"test report\"}\n```"
 	metadata, pages, questions, report, err := parseOneShotPDFManifest(content, "copy.pdf")
 	if err != nil {
 		t.Fatalf("parseOneShotPDFManifest() error = %v", err)
@@ -1607,7 +1642,7 @@ func TestParseOneShotPDFManifest(t *testing.T) {
 	if len(questions[0].Dimensions.Strengths) != 1 || questions[0].Dimensions.Scorecard == nil || questions[0].Dimensions.Scorecard.OverallPercent != 76 {
 		t.Fatalf("dimensions = %#v, want rich analysis fields", questions[0].Dimensions)
 	}
-	if questions[0].Metadata == nil || questions[0].Metadata.Topic != "Ancient India" || questions[0].Metadata.Marks != 10 {
+	if questions[0].Metadata == nil || questions[0].Metadata.Topic != "Ancient India" || questions[0].Metadata.Marks != 12.5 {
 		t.Fatalf("question metadata = %#v, want parsed metadata", questions[0].Metadata)
 	}
 	if report != "test report" {

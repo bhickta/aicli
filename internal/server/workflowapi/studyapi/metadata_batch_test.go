@@ -54,7 +54,7 @@ func TestSaveStudyMetadataUpdatesMetadataWithoutChangingAnswerText(t *testing.T)
 				Subject:   "Polity",
 				Topic:     "Federalism",
 				Paper:     "GS2",
-				Marks:     10,
+				Marks:     12.5,
 				WordLimit: 150,
 			},
 		}},
@@ -84,7 +84,7 @@ func TestSaveStudyMetadataUpdatesMetadataWithoutChangingAnswerText(t *testing.T)
 	if questions[0].AnswerText != question.AnswerText {
 		t.Fatalf("AnswerText = %q, want unchanged answer", questions[0].AnswerText)
 	}
-	if questions[0].Marks != 10 || questions[0].WordLimit != 150 {
+	if questions[0].Marks != 12.5 || questions[0].WordLimit != 150 {
 		t.Fatalf("question = %#v, want marks and word limit from metadata", questions[0])
 	}
 	if !strings.Contains(questions[0].MetadataJSON, "Federalism") {

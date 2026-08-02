@@ -380,7 +380,7 @@ func questionMetadataJSON(question analyze.Question) string {
 	return jsonString(question.Metadata)
 }
 
-func questionMarks(question analyze.Question) int {
+func questionMarks(question analyze.Question) float64 {
 	if question.Metadata == nil {
 		return 0
 	}
