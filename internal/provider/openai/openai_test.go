@@ -3,10 +3,13 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/bhickta/aicli/internal/config"
 	"github.com/bhickta/aicli/internal/provider"
@@ -201,6 +204,107 @@ func TestOpenAICompatibleGeminiDocumentParsesUsage(t *testing.T) {
 	}
 	if res.Usage.InputTokens != 100 || res.Usage.CachedInputTokens != 40 || res.Usage.OutputTokens != 25 || res.Usage.ReasoningOutputTokens != 3 || res.Usage.TotalTokens != 128 {
 		t.Fatalf("usage = %#v, want Gemini usage mapped", res.Usage)
+	}
+}
+
+func TestOpenAICompatibleGeminiDocumentRetriesTransientResponses(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) < geminiDocumentMaxAttempts {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":{"details":[{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"0s"}]}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	p := NewCompatible(config.ProviderConfig{
+		ID:      "gemini",
+		BaseURL: srv.URL + "/v1beta",
+	}, srv.Client())
+	res, err := p.Document(context.Background(), provider.DocumentRequest{
+		Model:  "gemini-flash-lite-latest",
+		Prompt: "read",
+		Data:   []byte("pdf"),
+	})
+	if err != nil {
+		t.Fatalf("Document() error = %v", err)
+	}
+	if res.Content != "done" || calls.Load() != geminiDocumentMaxAttempts {
+		t.Fatalf("response = %#v, calls = %d, want success after %d attempts", res, calls.Load(), geminiDocumentMaxAttempts)
+	}
+}
+
+func TestOpenAICompatibleGeminiDocumentBoundsTransientRetries(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"details":[{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"0s"}]}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	p := NewCompatible(config.ProviderConfig{
+		ID:      "gemini",
+		BaseURL: srv.URL + "/v1beta",
+	}, srv.Client())
+	_, err := p.Document(context.Background(), provider.DocumentRequest{
+		Model:  "gemini-flash-lite-latest",
+		Prompt: "read",
+		Data:   []byte("pdf"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "429 Too Many Requests") {
+		t.Fatalf("Document() error = %v, want final 429", err)
+	}
+	if calls.Load() != geminiDocumentMaxAttempts {
+		t.Fatalf("calls = %d, want %d bounded attempts", calls.Load(), geminiDocumentMaxAttempts)
+	}
+}
+
+func TestGeminiDocumentRetryDelay(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.August, 2, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name       string
+		statusCode int
+		header     http.Header
+		body       string
+		attempt    int
+		wantDelay  time.Duration
+		wantRetry  bool
+	}{
+		{name: "non-transient request error", statusCode: http.StatusBadRequest},
+		{name: "service unavailable backoff", statusCode: http.StatusServiceUnavailable, attempt: 1, wantDelay: 2 * time.Second, wantRetry: true},
+		{name: "structured Gemini retry delay", statusCode: http.StatusTooManyRequests, body: `{"error":{"details":[{"retryDelay":"50s"}]}}`, wantDelay: 50 * time.Second, wantRetry: true},
+		{name: "retry-after seconds takes precedence", statusCode: http.StatusTooManyRequests, header: http.Header{"Retry-After": []string{"3"}}, body: `{"error":{"details":[{"retryDelay":"50s"}]}}`, wantDelay: 3 * time.Second, wantRetry: true},
+		{name: "retry-after date", statusCode: http.StatusServiceUnavailable, header: http.Header{"Retry-After": []string{now.Add(5 * time.Second).Format(http.TimeFormat)}}, wantDelay: 5 * time.Second, wantRetry: true},
+		{name: "server delay is bounded", statusCode: http.StatusTooManyRequests, body: `{"error":{"details":[{"retryDelay":"5m"}]}}`, wantDelay: geminiDocumentMaxRetryDelay, wantRetry: true},
+		{name: "rate limit fallback", statusCode: http.StatusTooManyRequests, body: `{"error":{"details":[{"retryDelay":"later"}]}}`, wantDelay: time.Minute, wantRetry: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			delay, retry := geminiDocumentRetryDelay(tt.statusCode, tt.header, []byte(tt.body), tt.attempt, now)
+			if delay != tt.wantDelay || retry != tt.wantRetry {
+				t.Fatalf("geminiDocumentRetryDelay() = (%s, %t), want (%s, %t)", delay, retry, tt.wantDelay, tt.wantRetry)
+			}
+		})
+	}
+}
+
+func TestWaitForGeminiDocumentRetryHonorsCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := waitForGeminiDocumentRetry(ctx, time.Hour); !errors.Is(err, context.Canceled) {
+		t.Fatalf("waitForGeminiDocumentRetry() error = %v, want context cancellation", err)
 	}
 }
 
