@@ -587,6 +587,20 @@ func TestOpenAICompatibleDocumentUsesGeminiGenerateContent(t *testing.T) {
 		if !ok || properties["groups"] == nil {
 			t.Fatalf("responseSchema = %#v, want groups property", body.GenerationConfig.ResponseSchema)
 		}
+		if _, found := body.GenerationConfig.ResponseSchema["additionalProperties"]; found {
+			t.Fatalf("responseSchema = %#v, want unsupported additionalProperties removed", body.GenerationConfig.ResponseSchema)
+		}
+		groups, ok := properties["groups"].(map[string]any)
+		if !ok {
+			t.Fatalf("groups schema = %#v, want object", properties["groups"])
+		}
+		items, ok := groups["items"].(map[string]any)
+		if !ok {
+			t.Fatalf("groups items schema = %#v, want object", groups["items"])
+		}
+		if _, found := items["additionalProperties"]; found {
+			t.Fatalf("groups items schema = %#v, want nested unsupported keyword removed", items)
+		}
 		w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}`))
 	}))
 	defer srv.Close()
@@ -603,8 +617,12 @@ func TestOpenAICompatibleDocumentUsesGeminiGenerateContent(t *testing.T) {
 		MIMEType:         "application/pdf",
 		ResponseMIMEType: "application/json",
 		ResponseSchema: &provider.JSONSchema{Schema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{"groups": map[string]any{"type": "array"}},
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{"groups": map[string]any{
+				"type":  "array",
+				"items": map[string]any{"type": "object", "additionalProperties": false},
+			}},
 		}},
 	})
 	if err != nil {

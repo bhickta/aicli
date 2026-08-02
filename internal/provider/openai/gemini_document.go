@@ -54,7 +54,7 @@ func (p *OpenAICompatible) Document(ctx context.Context, req provider.DocumentRe
 		body["generationConfig"].(map[string]any)["responseMimeType"] = responseMIMEType
 	}
 	if req.ResponseSchema != nil {
-		body["generationConfig"].(map[string]any)["responseSchema"] = req.ResponseSchema.Schema
+		body["generationConfig"].(map[string]any)["responseSchema"] = geminiDocumentResponseSchema(req.ResponseSchema.Schema)
 	}
 	data, err := json.Marshal(body)
 	if err != nil {
@@ -101,6 +101,35 @@ func (p *OpenAICompatible) Document(ctx context.Context, req provider.DocumentRe
 		FinishReason: payload.Candidates[0].FinishReason,
 		Usage:        payload.UsageMetadata.providerUsage(),
 	}, nil
+}
+
+func geminiDocumentResponseSchema(schema map[string]any) map[string]any {
+	converted, _ := geminiDocumentSchemaValue(schema).(map[string]any)
+	return converted
+}
+
+func geminiDocumentSchemaValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		converted := make(map[string]any, len(typed))
+		for key, child := range typed {
+			// Gemini's GenerateContent responseSchema uses its OpenAPI Schema
+			// type, which does not expose JSON Schema's additionalProperties.
+			if key == "additionalProperties" {
+				continue
+			}
+			converted[key] = geminiDocumentSchemaValue(child)
+		}
+		return converted
+	case []any:
+		converted := make([]any, len(typed))
+		for index, child := range typed {
+			converted[index] = geminiDocumentSchemaValue(child)
+		}
+		return converted
+	default:
+		return value
+	}
 }
 
 type geminiUsageMetadata struct {
