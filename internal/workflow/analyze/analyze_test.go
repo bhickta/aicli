@@ -3,6 +3,7 @@ package analyze
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,11 +15,29 @@ import (
 )
 
 type fakeRunner struct {
-	args []string
+	args      []string
+	pageCount int
 }
 
-func (r *fakeRunner) CombinedOutput(_ context.Context, _ string, args ...string) ([]byte, error) {
+func (r *fakeRunner) CombinedOutput(_ context.Context, command string, args ...string) ([]byte, error) {
 	r.args = append([]string(nil), args...)
+	switch filepath.Base(command) {
+	case "pdfinfo":
+		pageCount := r.pageCount
+		if pageCount <= 0 {
+			pageCount = 1
+		}
+		return []byte(fmt.Sprintf("Pages: %d\n", pageCount)), nil
+	case "qpdf":
+		if len(args) < 2 {
+			return nil, errors.New("qpdf test invocation has no output path")
+		}
+		data, err := os.ReadFile(args[0])
+		if err != nil {
+			return nil, err
+		}
+		return []byte("ok"), os.WriteFile(args[len(args)-1], data, 0o600)
+	}
 	prefix := args[len(args)-1]
 	return []byte("ok"), os.WriteFile(prefix+"-1.jpg", []byte("image"), 0o600)
 }
@@ -260,6 +279,160 @@ func TestRunAnalyzeDirectPDFUsesGeminiDocumentOnly(t *testing.T) {
 		if !strings.Contains(provider.documentPrompt, want) {
 			t.Fatalf("document prompt missing %q:\n%s", want, provider.documentPrompt)
 		}
+	}
+}
+
+func TestPlanDirectPDFChunksUsesEightPagesWithTwoPageOverlap(t *testing.T) {
+	t.Parallel()
+
+	chunks, err := planDirectPDFChunks(20)
+	if err != nil {
+		t.Fatalf("planDirectPDFChunks() error = %v", err)
+	}
+	want := []directPDFChunk{
+		{Index: 0, FirstPage: 1, LastPage: 8},
+		{Index: 1, FirstPage: 7, LastPage: 14},
+		{Index: 2, FirstPage: 13, LastPage: 20},
+	}
+	if !slices.Equal(chunks, want) {
+		t.Fatalf("chunks = %#v, want %#v", chunks, want)
+	}
+}
+
+func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	pdf := filepath.Join(dir, "answers.pdf")
+	if err := os.WriteFile(pdf, []byte("ten-page-pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	chunkOne := `{
+		"metadata":{"topper_name":"Sample Topper","paper":"GS2"},
+		"detected_questions":["Q.1","Q.2"],
+		"pages":[
+			{"number":1,"kind":"cover"},{"number":2,"kind":"answer"},{"number":3,"kind":"answer"},{"number":4,"kind":"answer"},
+			{"number":5,"kind":"evaluation"},{"number":6,"kind":"evaluation"},{"number":7,"kind":"answer"},{"number":8,"kind":"answer"}
+		],
+		"questions":[
+			{"id":"q1","label":"Q.1","source_pages":[2,3,4],"answer_markdown":"complete first answer"},
+			{"id":"q2-part","label":"Q.2","source_pages":[7,8],"answer_markdown":"partial second answer"}
+		],
+		"report":"chunk one report"
+	}`
+	chunkTwo := `{
+		"metadata":{"topper_name":"Sample Topper","paper":"GS2"},
+		"detected_questions":["Q.2"],
+		"pages":[
+			{"number":1,"kind":"answer"},{"number":2,"kind":"answer"},{"number":3,"kind":"answer"},{"number":4,"kind":"answer"}
+		],
+		"questions":[
+			{"id":"q2","label":"Q.2","source_pages":[1,2,3,4],"answer_markdown":"complete second answer","dimensions":{"introduction":"direct"}}
+		],
+		"report":"chunk two report"
+	}`
+	reconciliation := `{
+		"groups":[
+			{"id":"q1","candidate_ids":["chunk-001-question-001"],"canonical_candidate_id":"chunk-001-question-001","label":"Q.1","title":"First question","merged_answer_markdown":"","confidence":0.99,"reason":"one complete internal answer"},
+			{"id":"q2","candidate_ids":["chunk-001-question-002","chunk-002-question-001"],"canonical_candidate_id":"chunk-002-question-001","label":"Q.2","title":"Second question","merged_answer_markdown":"","confidence":0.98,"reason":"overlap duplicate; second candidate covers the full answer"}
+		],
+		"warnings":[],
+		"report":"copy-wide final report"
+	}`
+	provider := &fakeProvider{
+		id:                "gemini",
+		documentResponses: []string{chunkOne, chunkTwo, reconciliation, reconciliation},
+	}
+	runner := &fakeRunner{pageCount: 10}
+	service := New(
+		config.ToolConfig{PDFToPPM: "pdftoppm", QPDF: "qpdf"},
+		runner,
+		provider,
+		WithArtifactDir(filepath.Join(dir, "artifacts")),
+	)
+	req := Request{
+		Path:         pdf,
+		OCRModel:     "gemini-flash-lite-latest",
+		OCRInputMode: OCRInputModePDFDirect,
+		ReviewID:     "copy-10-pages",
+	}
+	res, err := service.Run(context.Background(), req)
+	if err != nil {
+		t.Fatalf("first Run() error = %v", err)
+	}
+	if provider.documentCalls != 3 || res.APICalls != 3 {
+		t.Fatalf("calls: provider=%d response=%d, want two chunks plus reconciliation", provider.documentCalls, res.APICalls)
+	}
+	if len(res.Pages) != 10 || len(res.Questions) != 2 || res.Report != "copy-wide final report" {
+		t.Fatalf("response = %#v, want ten pages, two questions, and reconciled report", res)
+	}
+	if !slices.Equal(res.Questions[1].SourcePages, []int{7, 8, 9, 10}) || res.Questions[1].AnswerMarkdown != "complete second answer" {
+		t.Fatalf("second question = %#v, want complete canonical overlap candidate on global pages 7-10", res.Questions[1])
+	}
+	if res.Metadata == nil || res.Metadata.TopperName != "Sample Topper" {
+		t.Fatalf("metadata = %#v, want merged chunk metadata", res.Metadata)
+	}
+
+	resumed, err := service.Run(context.Background(), req)
+	if err != nil {
+		t.Fatalf("resumed Run() error = %v", err)
+	}
+	if provider.documentCalls != 4 {
+		t.Fatalf("provider calls after resume = %d, want only reconciliation rerun", provider.documentCalls)
+	}
+	if resumed.APICalls != 3 || len(resumed.Questions) != 2 {
+		t.Fatalf("resumed response = %#v, want checkpoint call provenance and complete questions", resumed)
+	}
+}
+
+func TestApplyDirectPDFReconciliationRequiresEveryCandidateExactlyOnce(t *testing.T) {
+	t.Parallel()
+
+	candidates := []directPDFCandidate{
+		{ID: "c1", SourcePages: []int{1}, AnswerMarkdown: "one", question: Question{ID: "q1", Label: "Q.1", SourcePages: []int{1}, AnswerMarkdown: "one"}},
+		{ID: "c2", SourcePages: []int{2}, AnswerMarkdown: "two", question: Question{ID: "q2", Label: "Q.2", SourcePages: []int{2}, AnswerMarkdown: "two"}},
+	}
+	_, _, err := applyDirectPDFReconciliation(candidates, directPDFReconciliation{
+		Groups: []directPDFReconciliationGroup{{
+			ID:                   "q1",
+			CandidateIDs:         []string{"c1"},
+			CanonicalCandidateID: "c1",
+			Confidence:           1,
+		}},
+		Report: "report",
+	})
+	if err == nil || !strings.Contains(err.Error(), "omitted candidate") {
+		t.Fatalf("applyDirectPDFReconciliation() error = %v, want strict omitted-candidate error", err)
+	}
+}
+
+func TestApplyDirectPDFReconciliationRequiresSemanticMergeForDisjointContinuations(t *testing.T) {
+	t.Parallel()
+
+	candidates := []directPDFCandidate{
+		{ID: "c1", SourcePages: []int{7, 8}, AnswerMarkdown: "start", question: Question{ID: "q2", Label: "Q.2", SourcePages: []int{7, 8}, AnswerMarkdown: "start"}},
+		{ID: "c2", SourcePages: []int{9, 10}, AnswerMarkdown: "end", question: Question{ID: "continuation", Label: "Continuation", SourcePages: []int{9, 10}, AnswerMarkdown: "end"}},
+	}
+	plan := directPDFReconciliation{
+		Groups: []directPDFReconciliationGroup{{
+			ID:                   "q2",
+			CandidateIDs:         []string{"c1", "c2"},
+			CanonicalCandidateID: "c1",
+			Label:                "Q.2",
+			Confidence:           0.95,
+		}},
+		Report: "report",
+	}
+	if _, _, err := applyDirectPDFReconciliation(candidates, plan); err == nil || !strings.Contains(err.Error(), "no merged answer") {
+		t.Fatalf("applyDirectPDFReconciliation() error = %v, want merge-required error", err)
+	}
+	plan.Groups[0].MergedAnswerMarkdown = "start\n\nend"
+	questions, _, err := applyDirectPDFReconciliation(candidates, plan)
+	if err != nil {
+		t.Fatalf("applyDirectPDFReconciliation() merged error = %v", err)
+	}
+	if len(questions) != 1 || !slices.Equal(questions[0].SourcePages, []int{7, 8, 9, 10}) || questions[0].AnswerMarkdown != "start\n\nend" {
+		t.Fatalf("questions = %#v, want one semantically merged continuation", questions)
 	}
 }
 

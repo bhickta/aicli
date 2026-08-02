@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/bhickta/aicli/internal/provider"
+	"github.com/bhickta/aicli/internal/workflow/document"
 )
 
 const (
@@ -17,6 +18,8 @@ const (
 	OCRInputModePDFDirect = "pdf_direct"
 
 	geminiLiteDirectPDFMaxTokens = 24576
+	directPDFChunkPages          = 8
+	directPDFChunkOverlapPages   = 2
 )
 
 func (s *Service) shouldUseDirectPDF(req Request) bool {
@@ -36,11 +39,27 @@ func (s *Service) directPDFReview(ctx context.Context, req Request, reviewID str
 	if !ok {
 		return Response{}, fmt.Errorf("OCR provider %q does not support direct PDF input; choose Page images mode", providerID(s.ocrProvider))
 	}
+	pageCount, err := document.PDFPageCount(ctx, s.runner, s.tools.PDFToPPM, req.Path)
+	if err != nil {
+		return Response{}, fmt.Errorf("count direct PDF pages: %w", err)
+	}
 	data, err := os.ReadFile(req.Path)
 	if err != nil {
 		return Response{}, err
 	}
+	if pageCount > directPDFChunkPages {
+		return s.directPDFChunkedReview(ctx, req, reviewID, data, pageCount, processor)
+	}
+	return s.directPDFOneShotReview(ctx, req, reviewID, data, processor)
+}
 
+func (s *Service) directPDFOneShotReview(
+	ctx context.Context,
+	req Request,
+	reviewID string,
+	data []byte,
+	processor provider.DocumentProcessor,
+) (Response, error) {
 	model := firstNonBlank(req.OCRModel, req.Model)
 	s.logInfo("direct PDF one-shot extraction started", "path", req.Path, "model", model, "bytes", len(data))
 	pdfName := filepath.Base(req.Path)

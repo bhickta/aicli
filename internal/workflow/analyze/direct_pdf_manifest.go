@@ -182,12 +182,8 @@ PDF name: ` + pdfName
 }
 
 func parseOneShotPDFManifest(content string, _ string) (*CopyMetadata, []Page, []Question, string, error) {
-	jsonText, err := extractQuestionSplitJSON(content)
+	payload, err := decodeDirectPDFManifest(content)
 	if err != nil {
-		return nil, nil, nil, "", err
-	}
-	var payload oneShotPDFManifest
-	if err := json.Unmarshal([]byte(jsonText), &payload); err != nil {
 		return nil, nil, nil, "", err
 	}
 
@@ -208,6 +204,45 @@ func parseOneShotPDFManifest(content string, _ string) (*CopyMetadata, []Page, [
 		return nil, nil, nil, "", errors.New("direct PDF response returned an empty report")
 	}
 	return nonEmptyCopyMetadata(payload.Metadata), pages, questions, report, nil
+}
+
+func parseChunkPDFManifest(content string) (*CopyMetadata, []Page, []Question, string, error) {
+	payload, err := decodeDirectPDFManifest(content)
+	if err != nil {
+		return nil, nil, nil, "", err
+	}
+	pages := normalizeManifestPages(payload.Pages)
+	questions := normalizeManifestQuestions(payload.Questions)
+	detectedQuestions := normalizeDetectedQuestionLabels(payload.DetectedQuestions)
+	if len(pages) == 0 {
+		return nil, nil, nil, "", newIncompleteDirectPDFError("direct PDF chunk returned no page assessments")
+	}
+	if len(questions) == 0 {
+		for _, page := range pages {
+			if page.Kind == "answer" || (page.Kind == "unknown" && strings.TrimSpace(page.Text) != "") {
+				return nil, nil, nil, "", newIncompleteDirectPDFError("direct PDF chunk returned no questions despite containing possible answer pages")
+			}
+		}
+	} else if err := validateManifestQuestionCoverage(detectedQuestions, questions, len(pages)); err != nil {
+		return nil, nil, nil, "", err
+	}
+	report := strings.TrimSpace(payload.Report)
+	if report == "" {
+		return nil, nil, nil, "", errors.New("direct PDF chunk returned an empty report")
+	}
+	return nonEmptyCopyMetadata(payload.Metadata), pages, questions, report, nil
+}
+
+func decodeDirectPDFManifest(content string) (oneShotPDFManifest, error) {
+	jsonText, err := extractQuestionSplitJSON(content)
+	if err != nil {
+		return oneShotPDFManifest{}, err
+	}
+	var payload oneShotPDFManifest
+	if err := json.Unmarshal([]byte(jsonText), &payload); err != nil {
+		return oneShotPDFManifest{}, err
+	}
+	return payload, nil
 }
 
 func normalizeManifestPages(in []oneShotPDFPage) []Page {
