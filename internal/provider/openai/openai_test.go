@@ -570,7 +570,8 @@ func TestOpenAICompatibleDocumentUsesGeminiGenerateContent(t *testing.T) {
 				Parts []map[string]any `json:"parts"`
 			} `json:"contents"`
 			GenerationConfig struct {
-				ResponseMIMEType string `json:"responseMimeType"`
+				ResponseMIMEType   string         `json:"responseMimeType"`
+				ResponseJSONSchema map[string]any `json:"responseJsonSchema"`
 			} `json:"generationConfig"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -581,6 +582,10 @@ func TestOpenAICompatibleDocumentUsesGeminiGenerateContent(t *testing.T) {
 		}
 		if body.GenerationConfig.ResponseMIMEType != "application/json" {
 			t.Fatalf("responseMimeType = %q, want application/json", body.GenerationConfig.ResponseMIMEType)
+		}
+		properties, ok := body.GenerationConfig.ResponseJSONSchema["properties"].(map[string]any)
+		if !ok || properties["groups"] == nil {
+			t.Fatalf("responseJsonSchema = %#v, want groups property", body.GenerationConfig.ResponseJSONSchema)
 		}
 		w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}`))
 	}))
@@ -597,6 +602,10 @@ func TestOpenAICompatibleDocumentUsesGeminiGenerateContent(t *testing.T) {
 		Data:             []byte("%PDF"),
 		MIMEType:         "application/pdf",
 		ResponseMIMEType: "application/json",
+		ResponseSchema: &provider.JSONSchema{Schema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"groups": map[string]any{"type": "array"}},
+		}},
 	})
 	if err != nil {
 		t.Fatalf("Document() error = %v", err)

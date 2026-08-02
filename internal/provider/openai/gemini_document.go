@@ -53,6 +53,9 @@ func (p *OpenAICompatible) Document(ctx context.Context, req provider.DocumentRe
 	if responseMIMEType := strings.TrimSpace(req.ResponseMIMEType); responseMIMEType != "" {
 		body["generationConfig"].(map[string]any)["responseMimeType"] = responseMIMEType
 	}
+	if req.ResponseSchema != nil {
+		body["generationConfig"].(map[string]any)["responseJsonSchema"] = req.ResponseSchema.Schema
+	}
 	data, err := json.Marshal(body)
 	if err != nil {
 		return provider.DocumentResponse{}, err
