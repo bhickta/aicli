@@ -118,6 +118,12 @@ func geminiDocumentSchemaValue(value any) any {
 			if key == "additionalProperties" {
 				continue
 			}
+			if key == "type" {
+				if schemaType, ok := child.(string); ok {
+					converted[key] = strings.ToUpper(schemaType)
+					continue
+				}
+			}
 			converted[key] = geminiDocumentSchemaValue(child)
 		}
 		return converted

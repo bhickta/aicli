@@ -590,6 +590,9 @@ func TestOpenAICompatibleDocumentUsesGeminiGenerateContent(t *testing.T) {
 		if _, found := body.GenerationConfig.ResponseSchema["additionalProperties"]; found {
 			t.Fatalf("responseSchema = %#v, want unsupported additionalProperties removed", body.GenerationConfig.ResponseSchema)
 		}
+		if body.GenerationConfig.ResponseSchema["type"] != "OBJECT" {
+			t.Fatalf("responseSchema type = %#v, want Gemini OBJECT enum", body.GenerationConfig.ResponseSchema["type"])
+		}
 		groups, ok := properties["groups"].(map[string]any)
 		if !ok {
 			t.Fatalf("groups schema = %#v, want object", properties["groups"])
@@ -600,6 +603,9 @@ func TestOpenAICompatibleDocumentUsesGeminiGenerateContent(t *testing.T) {
 		}
 		if _, found := items["additionalProperties"]; found {
 			t.Fatalf("groups items schema = %#v, want nested unsupported keyword removed", items)
+		}
+		if groups["type"] != "ARRAY" || items["type"] != "OBJECT" {
+			t.Fatalf("groups schema = %#v, want Gemini ARRAY and OBJECT type enums", groups)
 		}
 		w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}`))
 	}))
