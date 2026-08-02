@@ -54,6 +54,7 @@ type fakeProvider struct {
 	documentPrompt    string
 	documentPrompts   []string
 	documentModels    []string
+	documentMaxTokens []int
 	documentRequest   provider.DocumentRequest
 	documentCalls     int
 	documentReason    string
@@ -116,6 +117,7 @@ func (p *fakeProvider) Document(_ context.Context, req provider.DocumentRequest)
 	p.documentPrompt = req.Prompt
 	p.documentPrompts = append(p.documentPrompts, req.Prompt)
 	p.documentModels = append(p.documentModels, req.Model)
+	p.documentMaxTokens = append(p.documentMaxTokens, req.MaxTokens)
 	p.documentRequest = req
 	p.documentCalls++
 	if len(p.documentResponses) > 0 {
@@ -781,6 +783,14 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 		"gemini-3.1-flash-lite",
 	}) {
 		t.Fatalf("document models = %#v, want chunk model followed by boundary model", provider.documentModels)
+	}
+	if !slices.Equal(provider.documentMaxTokens, []int{
+		geminiLiteDirectPDFMaxTokens,
+		geminiLiteDirectPDFMaxTokens,
+		geminiDirectPDFReconcileTokens,
+		geminiDirectPDFReconcileTokens,
+	}) {
+		t.Fatalf("document token limits = %#v, want conservative chunks and full reconciliation envelope", provider.documentMaxTokens)
 	}
 	if len(res.Pages) != 10 || len(res.Questions) != 3 || !strings.Contains(res.Report, "Visible question slots: 3") {
 		t.Fatalf("response = %#v, want ten pages, three question slots, and deterministic inventory", res)

@@ -113,7 +113,7 @@ func (s *Service) reconcileDirectPDFChunks(
 			MIMEType:         "application/pdf",
 			ResponseMIMEType: "application/json",
 			Temperature:      0,
-			MaxTokens:        geminiLiteDirectPDFMaxTokens,
+			MaxTokens:        geminiDirectPDFReconcileTokens,
 		})
 		usage = addTokenUsage(usage, res.Usage)
 		if err != nil {
