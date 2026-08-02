@@ -506,6 +506,9 @@ func TestDirectPDFPromptsKeepProcessingBoundariesOutOfVisibleEvidence(t *testing
 		"internal processing details—not visible-copy evidence",
 		"Never mention them in group reasons, warnings, answer analyses, or report text",
 		"Describe only what the attached PDF visibly shows",
+		"comfortably below 40,000 output tokens",
+		"180 words for each answer analysis",
+		"Do not repeat or quote the full answer inside analysis/report prose",
 	} {
 		if !strings.Contains(reconciliationPrompt, instruction) {
 			t.Fatalf("reconciliation prompt missing semantic causality instruction %q", instruction)

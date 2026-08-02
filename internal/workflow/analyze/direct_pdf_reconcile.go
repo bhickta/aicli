@@ -221,6 +221,7 @@ Rules:
 10. Confidence is 0-1. Add a warning for uncertain grouping, unreadable boundaries, or potentially incomplete edge-spanning answers.
 11. Do not predict official UPSC marks or invent an official model answer.
 12. Chunks, overlap windows, candidate IDs, retries, and extraction boundaries are internal processing details—not visible-copy evidence. Never mention them in group reasons, warnings, answer analyses, or report text, and never claim they caused an answer to be incomplete or truncated. Describe only what the attached PDF visibly shows, such as an answer ending abruptly or the following answer area being blank, with exact page citations.
+13. Keep the complete JSON comfortably below 40,000 output tokens without omitting any group or required report field. Use at most 40 words for each group reason, 180 words for each answer analysis, 250 words for each other report section, and 30 words for each warning. Do not repeat or quote the full answer inside analysis/report prose. These limits do not apply to merged_answer_markdown: when a merge is required, preserve the complete visible answer once, compactly, without commentary or duplicated overlap text.
 
 PDF name: %s
 
