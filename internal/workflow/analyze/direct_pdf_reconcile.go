@@ -96,13 +96,14 @@ func (s *Service) reconcileDirectPDFChunks(
 	const maxReconciliationAttempts = 3
 	var usage *provider.TokenUsage
 	var lastErr error
+	var previousResponse string
 	for attempt := 0; attempt < maxReconciliationAttempts; attempt++ {
 		prompt := directPDFReconciliationPrompt(
 			pdfName,
 			string(candidateJSON),
 			string(schemaJSON),
 			pageCount,
-			attempt > 0,
+			previousResponse,
 			lastErr,
 		)
 		res, err := processor.Document(ctx, provider.DocumentRequest{
@@ -135,6 +136,7 @@ func (s *Service) reconcileDirectPDFChunks(
 				}
 			}
 		}
+		previousResponse = res.Content
 		lastErr = err
 		if attempt+1 < maxReconciliationAttempts {
 			s.logWarn("direct PDF reconciliation invalid; retrying with strict coverage", "attempt", attempt+1, "error", err)
@@ -169,23 +171,32 @@ func directPDFReconciliationPrompt(
 	candidateJSON string,
 	schemaJSON string,
 	pageCount int,
-	strict bool,
+	previousResponse string,
 	previousErr error,
 ) string {
 	prefix := ""
-	if strict {
+	if previousErr != nil {
 		failure := "the response violated semantic reconciliation invariants"
-		if previousErr != nil && strings.TrimSpace(previousErr.Error()) != "" {
+		if strings.TrimSpace(previousErr.Error()) != "" {
 			failure = strings.TrimSpace(previousErr.Error())
-			if len(failure) > 1200 {
-				failure = failure[:1200]
-			}
+		}
+		rejectedResponse := strings.TrimSpace(previousResponse)
+		if rejectedResponse == "" {
+			rejectedResponse = "(no response body was returned)"
 		}
 		prefix = fmt.Sprintf(`Your previous reconciliation was rejected.
-Validation failure: %s
-Before answering, make a private checklist of every candidate ID. Assign every ID exactly once and verify the checklist before returning JSON.
+Validator violations:
+%s
 
-`, failure)
+Rejected full response:
+<rejected_response>
+%s
+</rejected_response>
+
+Return a corrected full JSON object, not a patch. Correct every listed violation while preserving evidence-supported parts. Re-check the attached PDF before changing group boundaries or candidate membership. The application will not choose, discard, or move candidates for you.
+Before answering, make a private checklist of every supplied candidate ID. Assign every ID exactly once across the full plan and verify the checklist before returning JSON.
+
+`, failure, rejectedResponse)
 	}
 	return prefix + fmt.Sprintf(`Reconcile overlapping chunk analyses for one UPSC/Mains topper answer-copy.
 The complete original PDF is attached for semantic and page-continuity verification. Candidate answer blocks extracted from overlapping chunks are included below.
@@ -242,16 +253,18 @@ func applyDirectPDFReconciliation(
 	if err := validateDirectPDFCandidates(candidates, pageCount); err != nil {
 		return nil, nil, err
 	}
+	normalizedGroups, err := normalizeDirectPDFReconciliationGroups(plan.Groups, pageCount)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := validateDirectPDFCandidateAssignments(candidates, normalizedGroups); err != nil {
+		return nil, nil, err
+	}
 	byID := directPDFCandidatesByID(candidates)
 	assigned := make(map[string]bool, len(candidates))
-	questions := make([]Question, 0, len(plan.Groups))
+	questions := make([]Question, 0, len(normalizedGroups))
 	warnings := []string{}
-	seenQuestionIDs := map[string]bool{}
-	for groupIndex, group := range plan.Groups {
-		normalizedGroup, err := validateDirectPDFReconciliationGroup(group, groupIndex, pageCount, seenQuestionIDs)
-		if err != nil {
-			return nil, nil, err
-		}
+	for groupIndex, normalizedGroup := range normalizedGroups {
 		groupCandidates, normalizedGroup, err := assignDirectPDFGroupCandidates(byID, assigned, groupIndex, normalizedGroup)
 		if err != nil {
 			return nil, nil, err
@@ -273,6 +286,22 @@ func applyDirectPDFReconciliation(
 	}
 	sortQuestions(questions)
 	return questions, warnings, nil
+}
+
+func normalizeDirectPDFReconciliationGroups(
+	groups []directPDFReconciliationGroup,
+	pageCount int,
+) ([]directPDFReconciliationGroup, error) {
+	normalized := make([]directPDFReconciliationGroup, 0, len(groups))
+	seenQuestionIDs := make(map[string]bool, len(groups))
+	for groupIndex, group := range groups {
+		normalizedGroup, err := validateDirectPDFReconciliationGroup(group, groupIndex, pageCount, seenQuestionIDs)
+		if err != nil {
+			return nil, err
+		}
+		normalized = append(normalized, normalizedGroup)
+	}
+	return normalized, nil
 }
 
 func validateDirectPDFCandidates(candidates []directPDFCandidate, pageCount int) error {
@@ -332,7 +361,7 @@ func validateDirectPDFReconciliationGroup(
 		return group, fmt.Errorf("direct PDF reconciliation group %q: %w", group.ID, err)
 	}
 	group.SourcePages = pages
-	ids, err := validateDirectPDFCandidateIDs(group.CandidateIDs)
+	ids, err := normalizeDirectPDFCandidateIDs(group.CandidateIDs)
 	if err != nil {
 		return group, fmt.Errorf("direct PDF reconciliation group %q: %w", group.ID, err)
 	}
@@ -376,21 +405,72 @@ func validateDirectPDFSourcePages(pages []int, pageCount int) ([]int, error) {
 	return out, nil
 }
 
-func validateDirectPDFCandidateIDs(ids []string) ([]string, error) {
+func normalizeDirectPDFCandidateIDs(ids []string) ([]string, error) {
 	out := make([]string, len(ids))
-	seen := make(map[string]bool, len(ids))
 	for index, id := range ids {
 		id = strings.TrimSpace(id)
 		if id == "" {
 			return nil, errors.New("contains an empty candidate id")
 		}
-		if seen[id] {
-			return nil, fmt.Errorf("contains duplicate candidate %q", id)
-		}
-		seen[id] = true
 		out[index] = id
 	}
 	return out, nil
+}
+
+func validateDirectPDFCandidateAssignments(
+	candidates []directPDFCandidate,
+	groups []directPDFReconciliationGroup,
+) error {
+	known := make(map[string]bool, len(candidates))
+	for _, candidate := range candidates {
+		known[candidate.ID] = true
+	}
+
+	assignmentCounts := make(map[string]int, len(candidates))
+	unknownSet := make(map[string]bool)
+	for _, group := range groups {
+		for _, id := range group.CandidateIDs {
+			assignmentCounts[id]++
+			if !known[id] {
+				unknownSet[id] = true
+			}
+		}
+	}
+
+	unknown := sortedStringSet(unknownSet)
+	duplicated := make([]string, 0)
+	for id, count := range assignmentCounts {
+		if count > 1 {
+			duplicated = append(duplicated, id)
+		}
+	}
+	sort.Strings(duplicated)
+	missing := make([]string, 0)
+	for _, candidate := range candidates {
+		if assignmentCounts[candidate.ID] == 0 {
+			missing = append(missing, candidate.ID)
+		}
+	}
+	sort.Strings(missing)
+
+	if len(unknown) == 0 && len(duplicated) == 0 && len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"direct PDF reconciliation candidate assignment violations: unknown candidate IDs=%q; duplicated candidate IDs=%q; missing candidate IDs=%q",
+		unknown,
+		duplicated,
+		missing,
+	)
+}
+
+func sortedStringSet(values map[string]bool) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func validateDirectPDFReconciliationInventory(inventory directPDFReconciliationInventory, questions []Question) error {

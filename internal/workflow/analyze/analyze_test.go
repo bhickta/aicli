@@ -425,6 +425,10 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	if len(provider.documentPrompts) < 4 || !strings.Contains(provider.documentPrompts[3], "inventory mismatch") {
 		t.Fatalf("strict reconciliation retry should include the precise semantic validation failure")
 	}
+	if !strings.Contains(provider.documentPrompts[3], string(invalidReconciliationJSON)) ||
+		!strings.Contains(provider.documentPrompts[3], "Return a corrected full JSON object, not a patch") {
+		t.Fatalf("strict reconciliation retry should include the rejected full response and request a corrected full plan")
+	}
 }
 
 func TestQuestionScorecardAcceptsFractionalModelScores(t *testing.T) {
@@ -468,8 +472,57 @@ func TestApplyDirectPDFReconciliationRequiresEveryCandidateExactlyOnce(t *testin
 		}},
 		Inventory: directPDFReconciliationInventory{VisibleQuestionSlots: 1, Answered: 1},
 	}, 2)
-	if err == nil || !strings.Contains(err.Error(), "omitted candidate") {
-		t.Fatalf("applyDirectPDFReconciliation() error = %v, want strict omitted-candidate error", err)
+	if err == nil || !strings.Contains(err.Error(), `missing candidate IDs=["c2"]`) {
+		t.Fatalf("applyDirectPDFReconciliation() error = %v, want strict missing-candidate error", err)
+	}
+}
+
+func TestApplyDirectPDFReconciliationReportsAllCandidateAssignmentViolations(t *testing.T) {
+	t.Parallel()
+
+	candidates := []directPDFCandidate{
+		{ID: "c1", SourcePages: []int{1}, AnswerMarkdown: "one", question: Question{ID: "q1", Label: "Q.1", SourcePages: []int{1}, AnswerMarkdown: "one"}},
+		{ID: "c2", SourcePages: []int{2}, AnswerMarkdown: "two", question: Question{ID: "q2", Label: "Q.2", SourcePages: []int{2}, AnswerMarkdown: "two"}},
+		{ID: "c3", SourcePages: []int{3}, AnswerMarkdown: "three", question: Question{ID: "q3", Label: "Q.3", SourcePages: []int{3}, AnswerMarkdown: "three"}},
+	}
+	plan := directPDFReconciliation{
+		Groups: []directPDFReconciliationGroup{
+			{
+				ID:                   "slot-one",
+				Status:               directPDFQuestionAnswered,
+				CandidateIDs:         []string{"c1", " unknown-candidate "},
+				CanonicalCandidateID: "c1",
+				Label:                "Q.1",
+				SourcePages:          []int{1},
+				Confidence:           1,
+				Reason:               "visible first answer",
+			},
+			{
+				ID:                   "slot-two",
+				Status:               directPDFQuestionAnswered,
+				CandidateIDs:         []string{" c1 "},
+				CanonicalCandidateID: " c1 ",
+				Label:                "Q.2",
+				SourcePages:          []int{2},
+				Confidence:           1,
+				Reason:               "candidate was assigned here too",
+			},
+		},
+		Inventory: directPDFReconciliationInventory{VisibleQuestionSlots: 2, Answered: 2},
+	}
+
+	_, _, err := applyDirectPDFReconciliation(candidates, plan, 3)
+	if err == nil {
+		t.Fatal("applyDirectPDFReconciliation() error = nil, want complete assignment violation")
+	}
+	for _, violation := range []string{
+		`unknown candidate IDs=["unknown-candidate"]`,
+		`duplicated candidate IDs=["c1"]`,
+		`missing candidate IDs=["c2" "c3"]`,
+	} {
+		if !strings.Contains(err.Error(), violation) {
+			t.Fatalf("applyDirectPDFReconciliation() error = %v, want violation %q", err, violation)
+		}
 	}
 }
 
