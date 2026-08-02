@@ -243,8 +243,14 @@ func (s *Service) extractDirectPDFChunkWithFallback(
 
 func splitDirectPDFChunkForFallback(chunk directPDFChunk) ([]directPDFChunk, bool) {
 	pageCount := chunk.LastPage - chunk.FirstPage + 1
-	if pageCount <= 4 {
+	if pageCount <= 1 {
 		return nil, false
+	}
+	if pageCount == 2 {
+		return []directPDFChunk{
+			{Index: chunk.Index, FirstPage: chunk.FirstPage, LastPage: chunk.FirstPage},
+			{Index: chunk.Index, FirstPage: chunk.LastPage, LastPage: chunk.LastPage},
+		}, true
 	}
 	middle := chunk.FirstPage + pageCount/2
 	return []directPDFChunk{

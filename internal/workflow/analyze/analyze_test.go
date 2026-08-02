@@ -365,6 +365,49 @@ func TestDirectPDFChunkFallsBackToSmallerOverlappingRanges(t *testing.T) {
 	}
 }
 
+func TestSplitDirectPDFChunkForFallbackReachesSinglePageFloor(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		chunk directPDFChunk
+		want  []directPDFChunk
+		ok    bool
+	}{
+		{
+			name:  "single page cannot split",
+			chunk: directPDFChunk{Index: 2, FirstPage: 7, LastPage: 7},
+			ok:    false,
+		},
+		{
+			name:  "two pages split into single pages",
+			chunk: directPDFChunk{Index: 2, FirstPage: 7, LastPage: 8},
+			want: []directPDFChunk{
+				{Index: 2, FirstPage: 7, LastPage: 7},
+				{Index: 2, FirstPage: 8, LastPage: 8},
+			},
+			ok: true,
+		},
+		{
+			name:  "three pages retain one-page overlap",
+			chunk: directPDFChunk{Index: 2, FirstPage: 7, LastPage: 9},
+			want: []directPDFChunk{
+				{Index: 2, FirstPage: 7, LastPage: 8},
+				{Index: 2, FirstPage: 8, LastPage: 9},
+			},
+			ok: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := splitDirectPDFChunkForFallback(tt.chunk)
+			if ok != tt.ok || !slices.Equal(got, tt.want) {
+				t.Fatalf("splitDirectPDFChunkForFallback(%#v) = (%#v, %t), want (%#v, %t)", tt.chunk, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
 func TestDirectPDFPromptsKeepProcessingBoundariesOutOfVisibleEvidence(t *testing.T) {
 	t.Parallel()
 
