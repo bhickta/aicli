@@ -93,13 +93,18 @@ func (s *Service) reconcileDirectPDFChunks(
 	if err != nil {
 		return nil, "", nil, nil, 0, err
 	}
-	prompts := []string{
-		directPDFReconciliationPrompt(pdfName, string(candidateJSON), string(schemaJSON), pageCount, false),
-		directPDFReconciliationPrompt(pdfName, string(candidateJSON), string(schemaJSON), pageCount, true),
-	}
+	const maxReconciliationAttempts = 3
 	var usage *provider.TokenUsage
 	var lastErr error
-	for attempt, prompt := range prompts {
+	for attempt := 0; attempt < maxReconciliationAttempts; attempt++ {
+		prompt := directPDFReconciliationPrompt(
+			pdfName,
+			string(candidateJSON),
+			string(schemaJSON),
+			pageCount,
+			attempt > 0,
+			lastErr,
+		)
 		res, err := processor.Document(ctx, provider.DocumentRequest{
 			Model:            model,
 			Prompt:           prompt,
@@ -131,12 +136,12 @@ func (s *Service) reconcileDirectPDFChunks(
 			}
 		}
 		lastErr = err
-		if attempt+1 < len(prompts) {
+		if attempt+1 < maxReconciliationAttempts {
 			s.logWarn("direct PDF reconciliation invalid; retrying with strict coverage", "attempt", attempt+1, "error", err)
 			continue
 		}
 	}
-	return nil, "", nil, usage, len(prompts), lastErr
+	return nil, "", nil, usage, maxReconciliationAttempts, lastErr
 }
 
 func directPDFCandidates(results []directPDFChunkResult) []directPDFCandidate {
@@ -159,13 +164,28 @@ func directPDFCandidates(results []directPDFChunkResult) []directPDFCandidate {
 	return candidates
 }
 
-func directPDFReconciliationPrompt(pdfName string, candidateJSON string, schemaJSON string, pageCount int, strict bool) string {
+func directPDFReconciliationPrompt(
+	pdfName string,
+	candidateJSON string,
+	schemaJSON string,
+	pageCount int,
+	strict bool,
+	previousErr error,
+) string {
 	prefix := ""
 	if strict {
-		prefix = `Your previous reconciliation was rejected because it omitted, duplicated, or invalidly grouped candidates.
+		failure := "the response violated semantic reconciliation invariants"
+		if previousErr != nil && strings.TrimSpace(previousErr.Error()) != "" {
+			failure = strings.TrimSpace(previousErr.Error())
+			if len(failure) > 1200 {
+				failure = failure[:1200]
+			}
+		}
+		prefix = fmt.Sprintf(`Your previous reconciliation was rejected.
+Validation failure: %s
 Before answering, make a private checklist of every candidate ID. Assign every ID exactly once and verify the checklist before returning JSON.
 
-`
+`, failure)
 	}
 	return prefix + fmt.Sprintf(`Reconcile overlapping chunk analyses for one UPSC/Mains topper answer-copy.
 The complete original PDF is attached for semantic and page-continuity verification. Candidate answer blocks extracted from overlapping chunks are included below.

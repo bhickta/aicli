@@ -51,6 +51,7 @@ type fakeProvider struct {
 	documentContent   string
 	documentResponses []string
 	documentPrompt    string
+	documentPrompts   []string
 	documentRequest   provider.DocumentRequest
 	documentCalls     int
 	documentReason    string
@@ -111,6 +112,7 @@ func (p *fakeProvider) Vision(_ context.Context, req provider.VisionRequest) (pr
 }
 func (p *fakeProvider) Document(_ context.Context, req provider.DocumentRequest) (provider.DocumentResponse, error) {
 	p.documentPrompt = req.Prompt
+	p.documentPrompts = append(p.documentPrompts, req.Prompt)
 	p.documentRequest = req
 	p.documentCalls++
 	if len(p.documentResponses) > 0 {
@@ -351,9 +353,19 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 			"deliberate_practice_plan":"practice plan"
 		}
 	}`
+	var invalidReconciliation directPDFReconciliation
+	if err := json.Unmarshal([]byte(reconciliation), &invalidReconciliation); err != nil {
+		t.Fatal(err)
+	}
+	invalidReconciliation.Inventory.Answered = 1
+	invalidReconciliation.Inventory.Unanswered = 2
+	invalidReconciliationJSON, err := json.Marshal(invalidReconciliation)
+	if err != nil {
+		t.Fatal(err)
+	}
 	provider := &fakeProvider{
 		id:                "gemini",
-		documentResponses: []string{chunkOne, chunkTwo, reconciliation, reconciliation},
+		documentResponses: []string{chunkOne, chunkTwo, string(invalidReconciliationJSON), reconciliation, reconciliation},
 	}
 	runner := &fakeRunner{pageCount: 10}
 	service := New(
@@ -372,8 +384,8 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	if err != nil {
 		t.Fatalf("first Run() error = %v", err)
 	}
-	if provider.documentCalls != 3 || res.APICalls != 3 {
-		t.Fatalf("calls: provider=%d response=%d, want two chunks plus reconciliation", provider.documentCalls, res.APICalls)
+	if provider.documentCalls != 4 || res.APICalls != 4 {
+		t.Fatalf("calls: provider=%d response=%d, want two chunks plus one rejected and one valid reconciliation", provider.documentCalls, res.APICalls)
 	}
 	if len(res.Pages) != 10 || len(res.Questions) != 3 || !strings.Contains(res.Report, "Visible question slots: 3") {
 		t.Fatalf("response = %#v, want ten pages, three question slots, and deterministic inventory", res)
@@ -401,7 +413,7 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	if err != nil {
 		t.Fatalf("resumed Run() error = %v", err)
 	}
-	if provider.documentCalls != 4 {
+	if provider.documentCalls != 5 {
 		t.Fatalf("provider calls after resume = %d, want only reconciliation rerun", provider.documentCalls)
 	}
 	if resumed.APICalls != 3 || len(resumed.Questions) != 3 {
@@ -409,6 +421,9 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	}
 	if provider.documentRequest.ResponseSchema != nil || !strings.Contains(provider.documentPrompt, `"inventory"`) {
 		t.Fatalf("reconciliation request should carry its schema in the prompt for provider-independent validation")
+	}
+	if len(provider.documentPrompts) < 4 || !strings.Contains(provider.documentPrompts[3], "inventory mismatch") {
+		t.Fatalf("strict reconciliation retry should include the precise semantic validation failure")
 	}
 }
 
