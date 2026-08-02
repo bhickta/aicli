@@ -160,11 +160,13 @@ func directPDFReconciliationJSONSchema(pageCount int, candidateCount int) *provi
 	maxPages := max(1, pageCount)
 	maxCandidates := max(1, candidateCount)
 	maxGroups := max(1, pageCount+candidateCount)
+	candidateIDs := arraySchema(stringSchema(), maxCandidates)
+	candidateIDs["minItems"] = 1
 	group := strictObjectSchema(
 		map[string]any{
 			"id":                     stringSchema(),
 			"status":                 enumStringSchema(directPDFQuestionAnswered, directPDFQuestionUnanswered),
-			"candidate_ids":          arraySchema(stringSchema(), maxCandidates),
+			"candidate_ids":          candidateIDs,
 			"canonical_candidate_id": stringSchema(),
 			"label":                  stringSchema(),
 			"title":                  stringSchema(),

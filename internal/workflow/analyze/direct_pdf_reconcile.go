@@ -208,7 +208,7 @@ Return only one JSON object conforming to the supplied JSON Schema. Do not add p
 Rules:
 1. Scan all %d PDF pages first. Create one group for every distinct visible numbered/lettered question slot, including a printed prompt whose answer area is blank.
 2. Set status to "answered" only when visible candidate answer content exists. Set status to "unanswered" when the prompt is visible but its answer area is blank.
-3. Assign every supplied candidate ID exactly once. Never invent or discard a candidate. An unanswered group may have no candidate IDs when chunk extraction missed the blank slot; it may also contain candidates that only describe the blank slot.
+3. Assign every supplied candidate ID exactly once. Never invent or discard a candidate. Every group, including an unanswered group, must contain at least one supplied candidate ID. A candidate-backed unanswered group may describe a visible printed prompt with a blank answer area; never invent a group for a blank or continuation page that has no extracted prompt candidate.
 4. Every group needs a unique stable semantic id, the best visible label/title, and exact unique global source_pages between 1 and %d. Do not derive grouping from label spelling alone.
 5. For answered groups, candidate_ids must be non-empty and canonical_candidate_id must name the most complete candidate in that group. Leave merged_answer_markdown empty when it covers every group page; otherwise reconstruct the complete visible answer from the PDF without summarizing or inventing content.
 6. For unanswered groups, canonical_candidate_id and merged_answer_markdown must be empty. Preserve the visible prompt and blank source pages; do not invent an answer or analysis.
@@ -377,8 +377,8 @@ func validateDirectPDFReconciliationGroup(
 		return group, fmt.Errorf("direct PDF reconciliation group %q has invalid confidence %v", group.ID, group.Confidence)
 	}
 
-	if group.Status == directPDFQuestionAnswered && len(group.CandidateIDs) == 0 {
-		return group, fmt.Errorf("direct PDF reconciliation answered group %q has no candidates", group.ID)
+	if len(group.CandidateIDs) == 0 {
+		return group, fmt.Errorf("direct PDF reconciliation group %q has no candidates", group.ID)
 	}
 	if group.Status == directPDFQuestionUnanswered && (group.CanonicalCandidateID != "" || group.MergedAnswerMarkdown != "") {
 		return group, fmt.Errorf("direct PDF reconciliation unanswered group %q must not contain an answer", group.ID)

@@ -338,14 +338,15 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	}
 	chunkOne := `{
 		"metadata":{"topper_name":"Sample Topper","paper":"GS2","notes":"chunk one only"},
-		"detected_questions":["Q.1","Q.2"],
+		"detected_questions":["Q.1","Q.2","Q.3"],
 		"pages":[
 			{"number":1,"kind":"cover"},{"number":2,"kind":"answer"},{"number":3,"kind":"answer"},{"number":4,"kind":"answer"},
 			{"number":5,"kind":"evaluation"},{"number":6,"kind":"evaluation"},{"number":7,"kind":"answer"},{"number":8,"kind":"answer"}
 		],
 		"questions":[
 			{"id":"q1","label":"Q.1","source_pages":[2,3,4],"answer_markdown":"complete first answer"},
-			{"id":"q2-part","label":"Q.2","source_pages":[7,8],"answer_markdown":"partial second answer"}
+			{"id":"q2-part","label":"Q.2","source_pages":[7,8],"answer_markdown":"partial second answer"},
+			{"id":"q3-blank","label":"Q.3","title":"Third question","source_pages":[5],"answer_markdown":"Printed prompt; the visible answer area is blank."}
 		],
 		"report":"chunk one report"
 	}`
@@ -363,8 +364,8 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	reconciliation := `{
 		"groups":[
 			{"id":"q1","status":"answered","candidate_ids":["chunk-001-question-001"],"canonical_candidate_id":"chunk-001-question-001","label":"Q.1","title":"First question","source_pages":[2,3,4],"merged_answer_markdown":"","confidence":0.99,"reason":"one complete internal answer"},
-			{"id":"q2","status":"answered","candidate_ids":["chunk-001-question-002","chunk-002-question-001"],"canonical_candidate_id":"chunk-002-question-001","label":"Q.2","title":"Second question","source_pages":[7,8,9,10],"merged_answer_markdown":"","confidence":0.98,"reason":"overlap duplicate; second candidate covers the full answer"},
-			{"id":"q3","status":"unanswered","candidate_ids":[],"canonical_candidate_id":"","label":"Q.3","title":"Third question","source_pages":[5],"merged_answer_markdown":"","confidence":0.97,"reason":"printed prompt with visibly blank answer area"}
+			{"id":"q2","status":"answered","candidate_ids":["chunk-001-question-003","chunk-002-question-001"],"canonical_candidate_id":"chunk-002-question-001","label":"Q.2","title":"Second question","source_pages":[7,8,9,10],"merged_answer_markdown":"","confidence":0.98,"reason":"overlap duplicate; second candidate covers the full answer"},
+			{"id":"q3","status":"unanswered","candidate_ids":["chunk-001-question-002"],"canonical_candidate_id":"","label":"Q.3","title":"Third question","source_pages":[5],"merged_answer_markdown":"","confidence":0.97,"reason":"printed prompt with visibly blank answer area"}
 		],
 		"inventory":{"visible_question_slots":3,"answered":2,"unanswered":1},
 		"warnings":[],
@@ -620,21 +621,36 @@ func TestApplyDirectPDFReconciliationRequiresSemanticMergeForDisjointContinuatio
 	}
 }
 
-func TestApplyDirectPDFReconciliationPreservesUnansweredSlotWithoutCandidate(t *testing.T) {
+func TestApplyDirectPDFReconciliationPreservesCandidateBackedUnansweredSlot(t *testing.T) {
 	t.Parallel()
 
-	candidates := []directPDFCandidate{{
-		ID:             "c1",
-		SourcePages:    []int{1, 2},
-		AnswerMarkdown: "visible answer",
-		question: Question{
-			ID:             "candidate-q1",
-			Label:          "Q.1",
-			Title:          "Answered prompt",
+	candidates := []directPDFCandidate{
+		{
+			ID:             "c1",
 			SourcePages:    []int{1, 2},
 			AnswerMarkdown: "visible answer",
+			question: Question{
+				ID:             "candidate-q1",
+				Label:          "Q.1",
+				Title:          "Answered prompt",
+				SourcePages:    []int{1, 2},
+				AnswerMarkdown: "visible answer",
+			},
 		},
-	}}
+		{
+			ID:             "c2",
+			SourcePages:    []int{3, 4},
+			AnswerMarkdown: "Printed prompt; the visible answer area is blank.",
+			question: Question{
+				ID:             "candidate-q2",
+				Label:          "Q.2",
+				Title:          "Unanswered prompt",
+				SourcePages:    []int{3, 4},
+				AnswerMarkdown: "Printed prompt; the visible answer area is blank.",
+				Status:         directPDFQuestionUnanswered,
+			},
+		},
+	}
 	plan := directPDFReconciliation{
 		Groups: []directPDFReconciliationGroup{
 			{
@@ -649,13 +665,14 @@ func TestApplyDirectPDFReconciliationPreservesUnansweredSlotWithoutCandidate(t *
 				Reason:               "visible handwritten answer",
 			},
 			{
-				ID:          "slot-two",
-				Status:      directPDFQuestionUnanswered,
-				Label:       "Q.2",
-				Title:       "Unanswered prompt",
-				SourcePages: []int{3, 4},
-				Confidence:  0.98,
-				Reason:      "printed prompt followed by blank answer pages",
+				ID:           "slot-two",
+				Status:       directPDFQuestionUnanswered,
+				CandidateIDs: []string{"c2"},
+				Label:        "Q.2",
+				Title:        "Unanswered prompt",
+				SourcePages:  []int{3, 4},
+				Confidence:   0.98,
+				Reason:       "printed prompt followed by blank answer pages",
 			},
 		},
 		Inventory: directPDFReconciliationInventory{VisibleQuestionSlots: 2, Answered: 1, Unanswered: 1},
@@ -678,19 +695,33 @@ func TestApplyDirectPDFReconciliationPreservesUnansweredSlotWithoutCandidate(t *
 func TestApplyDirectPDFReconciliationSupportsFullyUnansweredCopy(t *testing.T) {
 	t.Parallel()
 
+	candidates := []directPDFCandidate{{
+		ID:             "blank-candidate",
+		SourcePages:    []int{1, 2},
+		AnswerMarkdown: "Printed prompt; both visible answer pages are blank.",
+		question: Question{
+			ID:             "candidate-q1",
+			Label:          "Q.1",
+			Title:          "Visible prompt",
+			SourcePages:    []int{1, 2},
+			AnswerMarkdown: "Printed prompt; both visible answer pages are blank.",
+			Status:         directPDFQuestionUnanswered,
+		},
+	}}
 	plan := directPDFReconciliation{
 		Groups: []directPDFReconciliationGroup{{
-			ID:          "blank-slot",
-			Status:      directPDFQuestionUnanswered,
-			Label:       "Q.1",
-			Title:       "Visible prompt",
-			SourcePages: []int{1, 2},
-			Confidence:  1,
-			Reason:      "prompt is visible and both answer pages are blank",
+			ID:           "blank-slot",
+			Status:       directPDFQuestionUnanswered,
+			CandidateIDs: []string{"blank-candidate"},
+			Label:        "Q.1",
+			Title:        "Visible prompt",
+			SourcePages:  []int{1, 2},
+			Confidence:   1,
+			Reason:       "prompt is visible and both answer pages are blank",
 		}},
 		Inventory: directPDFReconciliationInventory{VisibleQuestionSlots: 1, Unanswered: 1},
 	}
-	questions, _, err := applyDirectPDFReconciliation(nil, plan, 2)
+	questions, _, err := applyDirectPDFReconciliation(candidates, plan, 2)
 	if err != nil {
 		t.Fatalf("applyDirectPDFReconciliation() error = %v", err)
 	}
@@ -765,6 +796,16 @@ func TestApplyDirectPDFReconciliationRejectsInvalidSemanticInventory(t *testing.
 				plan.Inventory = directPDFReconciliationInventory{VisibleQuestionSlots: 1, Unanswered: 1}
 			},
 			wantErr: "must not contain an answer",
+		},
+		{
+			name: "unanswered group without candidate evidence",
+			mutate: func(plan *directPDFReconciliation) {
+				plan.Groups[0].Status = directPDFQuestionUnanswered
+				plan.Groups[0].CandidateIDs = nil
+				plan.Groups[0].CanonicalCandidateID = ""
+				plan.Inventory = directPDFReconciliationInventory{VisibleQuestionSlots: 1, Unanswered: 1}
+			},
+			wantErr: "has no candidates",
 		},
 		{
 			name: "inventory count mismatch",
