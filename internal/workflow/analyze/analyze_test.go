@@ -366,6 +366,82 @@ func TestDirectPDFChunkFallsBackToSmallerOverlappingRanges(t *testing.T) {
 	}
 }
 
+func TestDirectPDFChunkFallbackRecursesUntilValid(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	pdf := filepath.Join(dir, "answers.pdf")
+	if err := os.WriteFile(pdf, []byte("pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	invalid := `{"detected_questions":["Q.1"],"pages":[`
+	firstHalf := `{
+		"metadata":{"topper_name":"Sample Topper"},
+		"detected_questions":["Q.1"],
+		"pages":[
+			{"number":1,"kind":"cover"},{"number":2,"kind":"answer"},{"number":3,"kind":"answer"},
+			{"number":4,"kind":"answer"},{"number":5,"kind":"answer"}
+		],
+		"questions":[{"id":"q1","label":"Q.1","source_pages":[2],"answer_markdown":"first answer"}],
+		"report":"first half"
+	}`
+	nestedFirst := `{
+		"metadata":{"topper_name":"Sample Topper"},
+		"detected_questions":["Q.2"],
+		"pages":[{"number":1,"kind":"answer"},{"number":2,"kind":"answer"},{"number":3,"kind":"answer"}],
+		"questions":[{"id":"q2","label":"Q.2","source_pages":[2],"answer_markdown":"nested first"}],
+		"report":"nested first"
+	}`
+	nestedSecond := `{
+		"metadata":{"topper_name":"Sample Topper"},
+		"detected_questions":["Q.3"],
+		"pages":[{"number":1,"kind":"answer"},{"number":2,"kind":"answer"}],
+		"questions":[{"id":"q3","label":"Q.3","source_pages":[2],"answer_markdown":"nested second"}],
+		"report":"nested second"
+	}`
+	processor := &fakeProvider{
+		documentResponses: []string{
+			invalid,
+			invalid,
+			firstHalf,
+			invalid,
+			invalid,
+			nestedFirst,
+			nestedSecond,
+		},
+	}
+	service := New(
+		config.ToolConfig{QPDF: "qpdf"},
+		&fakeRunner{},
+		processor,
+	)
+	chunk := directPDFChunk{Index: 0, FirstPage: 1, LastPage: 8}
+	result, err := service.extractDirectPDFChunkWithFallback(
+		context.Background(),
+		Request{Path: pdf, OCRModel: "gemini-flash-lite-latest"},
+		"answers.pdf",
+		10,
+		chunk,
+		dir,
+		directPDFChunkPrompts("answers.pdf", 10, chunk),
+		processor,
+	)
+	if err != nil {
+		t.Fatalf("extractDirectPDFChunkWithFallback() error = %v", err)
+	}
+	if processor.documentCalls != 7 || result.Response.APICalls != 7 {
+		t.Fatalf("calls: provider=%d response=%d, want rejected parent and child attempts plus three valid ranges", processor.documentCalls, result.Response.APICalls)
+	}
+	if len(result.Response.Pages) != 8 || len(result.Response.Questions) != 3 {
+		t.Fatalf("response has %d pages and %d questions, want 8 and 3", len(result.Response.Pages), len(result.Response.Questions))
+	}
+	if !slices.Equal(result.Response.Questions[0].SourcePages, []int{2}) ||
+		!slices.Equal(result.Response.Questions[1].SourcePages, []int{6}) ||
+		!slices.Equal(result.Response.Questions[2].SourcePages, []int{8}) {
+		t.Fatalf("question source pages = %#v, want recursively mapped pages 2, 6, and 8", result.Response.Questions)
+	}
+}
+
 func TestSplitDirectPDFChunkForFallbackReachesSinglePageFloor(t *testing.T) {
 	t.Parallel()
 

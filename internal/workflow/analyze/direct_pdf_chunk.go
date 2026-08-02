@@ -234,7 +234,16 @@ func (s *Service) extractDirectPDFChunkWithFallback(
 	results := make([]directPDFChunkResult, 0, len(subchunks))
 	for _, subchunk := range subchunks {
 		prompts := directPDFChunkPrompts(pdfName, pageCount, subchunk)
-		result, subErr := s.extractDirectPDFChunk(ctx, req, pdfName, subchunk, tempDir, prompts, processor)
+		result, subErr := s.extractDirectPDFChunkWithFallback(
+			ctx,
+			req,
+			pdfName,
+			pageCount,
+			subchunk,
+			tempDir,
+			prompts,
+			processor,
+		)
 		if subErr != nil {
 			return directPDFChunkResult{}, fmt.Errorf(
 				"smaller range pages %d-%d after chunk validation failure: %w",
