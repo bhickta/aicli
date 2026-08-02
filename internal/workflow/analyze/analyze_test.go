@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bhickta/aicli/internal/config"
 	"github.com/bhickta/aicli/internal/provider"
@@ -517,6 +518,21 @@ func TestDirectPDFReconciliationRejectsAnsweredUnansweredPageOverlap(t *testing.
 		{ID: "q9", Status: directPDFQuestionAnswered, SourcePages: []int{36, 37, 38}},
 	}); err != nil {
 		t.Fatalf("adjacent answered groups sharing a physical page were rejected: %v", err)
+	}
+}
+
+func TestDirectPDFReconciliationQuotaDelayUsesWholeMinuteWindow(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.August, 2, 12, 0, 0, 0, time.UTC)
+	if delay := directPDFReconciliationQuotaDelay(time.Time{}, now); delay != 0 {
+		t.Fatalf("first reconciliation delay = %v, want zero", delay)
+	}
+	if delay := directPDFReconciliationQuotaDelay(now.Add(-10*time.Second), now); delay != 51*time.Second {
+		t.Fatalf("reconciliation inside quota window delay = %v, want 51s", delay)
+	}
+	if delay := directPDFReconciliationQuotaDelay(now.Add(-directPDFReconciliationQuotaWindow), now); delay != 0 {
+		t.Fatalf("reconciliation after quota window delay = %v, want zero", delay)
 	}
 }
 

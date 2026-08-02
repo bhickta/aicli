@@ -106,7 +106,7 @@ func (s *Service) reconcileDirectPDFChunks(
 			previousResponse,
 			lastErr,
 		)
-		res, err := processor.Document(ctx, provider.DocumentRequest{
+		res, err := s.runDirectPDFReconciliationDocument(ctx, processor, provider.DocumentRequest{
 			Model:            model,
 			Prompt:           prompt,
 			Data:             sourceData,
