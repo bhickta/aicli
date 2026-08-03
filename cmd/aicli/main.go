@@ -38,6 +38,7 @@ func run(args []string) int {
 
 	var opts app.Options
 	var showVersion bool
+	var geminiKeysPath string
 
 	fs := flag.NewFlagSet("aicli", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -47,6 +48,12 @@ func run(args []string) int {
 	fs.StringVar(&opts.ConfigPath, "config", "", "settings file path")
 	fs.BoolVar(&opts.OpenBrowser, "open", false, "print the app URL after startup")
 	fs.BoolVar(&showVersion, "version", false, "print version and exit")
+	fs.StringVar(
+		&geminiKeysPath,
+		"gemini-keys-file",
+		"",
+		"private Gemini lane-key JSON file (defaults to the user config directory)",
+	)
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -58,6 +65,10 @@ func run(args []string) int {
 
 	if opts.ConfigPath == "" {
 		opts.ConfigPath = filepath.Join(opts.DataDir, "settings.json")
+	}
+	if err := loadConfiguredGeminiLaneKeys(geminiKeysPath); err != nil {
+		fmt.Fprintf(os.Stderr, "load Gemini lane keys: %v\n", err)
+		return 1
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
