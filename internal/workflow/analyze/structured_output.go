@@ -196,6 +196,25 @@ func directPDFReconciliationJSONSchema(pageCount int, candidateCount int) *provi
 		"answered",
 		"unanswered",
 	)
+	return &provider.JSONSchema{
+		Name:        "topper_copy_reconciliation",
+		Description: "Semantic full-PDF answer grouping and unanswered-slot inventory.",
+		Strict:      true,
+		Schema: strictObjectSchema(
+			map[string]any{
+				"groups":    arraySchema(group, maxGroups),
+				"inventory": inventory,
+				"warnings":  arraySchema(stringSchema(), maxGroups),
+			},
+			"groups",
+			"inventory",
+			"warnings",
+		),
+	}
+}
+
+func directPDFReconciliationReportJSONSchema(questionCount int) *provider.JSONSchema {
+	maxQuestions := max(1, questionCount)
 	answerAnalysis := strictObjectSchema(
 		map[string]any{
 			"group_id": stringSchema(),
@@ -208,7 +227,7 @@ func directPDFReconciliationJSONSchema(pageCount int, candidateCount int) *provi
 		map[string]any{
 			"copy_profile":                     stringSchema(),
 			"scorecard_synthesis":              stringSchema(),
-			"answer_analyses":                  arraySchema(answerAnalysis, maxGroups),
+			"answer_analyses":                  arraySchema(answerAnalysis, maxQuestions),
 			"repeated_winning_patterns":        stringSchema(),
 			"what_not_to_copy_blindly":         stringSchema(),
 			"gap_map":                          stringSchema(),
@@ -225,21 +244,10 @@ func directPDFReconciliationJSONSchema(pageCount int, candidateCount int) *provi
 		"deliberate_practice_plan",
 	)
 	return &provider.JSONSchema{
-		Name:        "topper_copy_reconciliation",
-		Description: "Semantic full-PDF answer grouping, unanswered-slot inventory, and evidence-grounded report sections.",
+		Name:        "topper_copy_report",
+		Description: "Evidence-grounded copy-wide and answer-wise analysis for validated question groups.",
 		Strict:      true,
-		Schema: strictObjectSchema(
-			map[string]any{
-				"groups":    arraySchema(group, maxGroups),
-				"inventory": inventory,
-				"warnings":  arraySchema(stringSchema(), maxGroups),
-				"report":    report,
-			},
-			"groups",
-			"inventory",
-			"warnings",
-			"report",
-		),
+		Schema:      report,
 	}
 }
 

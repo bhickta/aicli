@@ -17,12 +17,13 @@ const (
 	OCRInputModeImages    = "images"
 	OCRInputModePDFDirect = "pdf_direct"
 
-	geminiLiteDirectPDFMaxTokens   = 24576
-	geminiDirectPDFReconcileTokens = 65536
-	directPDFChunkPages            = 4
-	directPDFChunkOverlapPages     = 2
-	directPDFFallbackChunkPages    = 2
-	directPDFFallbackOverlapPages  = 1
+	geminiLiteDirectPDFMaxTokens  = 24576
+	geminiDirectPDFBoundaryTokens = 24576
+	geminiDirectPDFReportTokens   = 16384
+	directPDFChunkPages           = 4
+	directPDFChunkOverlapPages    = 2
+	directPDFFallbackChunkPages   = 2
+	directPDFFallbackOverlapPages = 1
 )
 
 func (s *Service) shouldUseDirectPDF(req Request) bool {

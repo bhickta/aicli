@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"sort"
 	"strings"
@@ -28,7 +29,7 @@ type directPDFReconciliation struct {
 	Groups    []directPDFReconciliationGroup   `json:"groups"`
 	Inventory directPDFReconciliationInventory `json:"inventory"`
 	Warnings  []string                         `json:"warnings"`
-	Report    directPDFReconciliationReport    `json:"report"`
+	Report    directPDFReconciliationReport    `json:"-"`
 }
 
 type directPDFReconciliationGroup struct {
@@ -66,6 +67,16 @@ type directPDFReconciliationAnswerNote struct {
 	Analysis string `json:"analysis"`
 }
 
+type directPDFReportQuestionEvidence struct {
+	ID          string              `json:"id"`
+	Label       string              `json:"label"`
+	Title       string              `json:"title"`
+	Status      string              `json:"status"`
+	SourcePages []int               `json:"source_pages"`
+	Dimensions  *QuestionDimensions `json:"dimensions,omitempty"`
+	Metadata    *QuestionMetadata   `json:"metadata,omitempty"`
+}
+
 const (
 	directPDFQuestionAnswered   = "answered"
 	directPDFQuestionUnanswered = "unanswered"
@@ -84,14 +95,54 @@ func (s *Service) reconcileDirectPDFChunks(
 		return nil, "", nil, nil, 0, fmt.Errorf("OCR provider %q does not support direct PDF reconciliation", providerID(s.ocrProvider))
 	}
 	candidates := directPDFCandidates(results)
+	plan, questions, warnings, usage, calls, err := s.reconcileDirectPDFBoundaries(
+		ctx,
+		processor,
+		model,
+		pdfName,
+		sourceData,
+		pageCount,
+		candidates,
+	)
+	if err != nil {
+		return nil, "", nil, usage, calls, err
+	}
+	report, reportUsage, reportCalls, err := s.synthesizeDirectPDFReport(
+		ctx,
+		processor,
+		model,
+		pdfName,
+		sourceData,
+		questions,
+		plan,
+		warnings,
+	)
+	usage = addTokenUsage(usage, reportUsage)
+	calls += reportCalls
+	if err != nil {
+		return nil, "", nil, usage, calls, err
+	}
+	warnings = cleanStringList(append(warnings, plan.Warnings...))
+	return questions, report, warnings, usage, calls, nil
+}
+
+func (s *Service) reconcileDirectPDFBoundaries(
+	ctx context.Context,
+	processor provider.DocumentProcessor,
+	model string,
+	pdfName string,
+	sourceData []byte,
+	pageCount int,
+	candidates []directPDFCandidate,
+) (directPDFReconciliation, []Question, []string, *provider.TokenUsage, int, error) {
 	candidateJSON, err := json.Marshal(candidates)
 	if err != nil {
-		return nil, "", nil, nil, 0, err
+		return directPDFReconciliation{}, nil, nil, nil, 0, err
 	}
 	reconciliationSchema := directPDFReconciliationJSONSchema(pageCount, len(candidates))
 	schemaJSON, err := json.Marshal(reconciliationSchema.Schema)
 	if err != nil {
-		return nil, "", nil, nil, 0, err
+		return directPDFReconciliation{}, nil, nil, nil, 0, err
 	}
 	const maxReconciliationAttempts = 3
 	var usage *provider.TokenUsage
@@ -113,30 +164,21 @@ func (s *Service) reconcileDirectPDFChunks(
 			MIMEType:         "application/pdf",
 			ResponseMIMEType: "application/json",
 			Temperature:      0,
-			MaxTokens:        geminiDirectPDFReconcileTokens,
+			MaxTokens:        geminiDirectPDFBoundaryTokens,
 		})
 		usage = addTokenUsage(usage, res.Usage)
 		if err != nil {
-			return nil, "", nil, usage, attempt + 1, err
+			return directPDFReconciliation{}, nil, nil, usage, attempt + 1, err
 		}
 		if err := validateDirectPDFFinishReason(res.FinishReason); err != nil {
-			return nil, "", nil, usage, attempt + 1, err
+			return directPDFReconciliation{}, nil, nil, usage, attempt + 1, err
 		}
 		plan, err := parseDirectPDFReconciliation(res.Content)
 		if err == nil {
-			var questions []Question
-			var warnings []string
-			questions, warnings, err = applyDirectPDFReconciliation(candidates, plan, pageCount)
+			questions, warnings, applyErr := applyDirectPDFReconciliation(candidates, plan, pageCount)
+			err = applyErr
 			if err == nil {
-				var report string
-				report, err = buildDirectPDFReconciliationReport(questions, plan)
-				if err == nil {
-					warnings = cleanStringList(append(warnings, plan.Warnings...))
-					err = validateDirectPDFReportLanguage(report, warnings)
-					if err == nil {
-						return questions, report, warnings, usage, attempt + 1, nil
-					}
-				}
+				return plan, questions, warnings, usage, attempt + 1, nil
 			}
 		}
 		previousResponse = res.Content
@@ -146,7 +188,105 @@ func (s *Service) reconcileDirectPDFChunks(
 			continue
 		}
 	}
-	return nil, "", nil, usage, maxReconciliationAttempts, lastErr
+	return directPDFReconciliation{}, nil, nil, usage, maxReconciliationAttempts, lastErr
+}
+
+func (s *Service) synthesizeDirectPDFReport(
+	ctx context.Context,
+	processor provider.DocumentProcessor,
+	model string,
+	pdfName string,
+	sourceData []byte,
+	questions []Question,
+	plan directPDFReconciliation,
+	warnings []string,
+) (string, *provider.TokenUsage, int, error) {
+	evidenceJSON, err := json.Marshal(directPDFReportEvidence(questions))
+	if err != nil {
+		return "", nil, 0, err
+	}
+	reportSchema := directPDFReconciliationReportJSONSchema(len(questions))
+	schemaJSON, err := json.Marshal(reportSchema.Schema)
+	if err != nil {
+		return "", nil, 0, err
+	}
+	const maxReportAttempts = 3
+	var usage *provider.TokenUsage
+	var lastErr error
+	var previousResponse string
+	for attempt := 0; attempt < maxReportAttempts; attempt++ {
+		prompt := directPDFReportSynthesisPrompt(
+			pdfName,
+			string(evidenceJSON),
+			string(schemaJSON),
+			previousResponse,
+			lastErr,
+		)
+		res, err := s.runDirectPDFReconciliationDocument(ctx, processor, provider.DocumentRequest{
+			Model:            model,
+			Prompt:           prompt,
+			Data:             sourceData,
+			MIMEType:         "application/pdf",
+			ResponseMIMEType: "application/json",
+			Temperature:      0,
+			MaxTokens:        geminiDirectPDFReportTokens,
+		})
+		usage = addTokenUsage(usage, res.Usage)
+		if err != nil {
+			return "", usage, attempt + 1, err
+		}
+		if err := validateDirectPDFFinishReason(res.FinishReason); err != nil {
+			return "", usage, attempt + 1, err
+		}
+		reportPlan, err := parseDirectPDFReconciliationReport(res.Content)
+		if err == nil {
+			plan.Report = reportPlan
+			report, buildErr := buildDirectPDFReconciliationReport(questions, plan)
+			err = buildErr
+			if err == nil {
+				allWarnings := cleanStringList(append(append([]string(nil), warnings...), plan.Warnings...))
+				err = validateDirectPDFReportLanguage(report, allWarnings)
+				if err == nil {
+					return report, usage, attempt + 1, nil
+				}
+			}
+		}
+		previousResponse = res.Content
+		lastErr = err
+		if attempt+1 < maxReportAttempts {
+			s.logWarn("direct PDF report invalid; retrying from validated evidence", "attempt", attempt+1, "error", err)
+			continue
+		}
+	}
+	return "", usage, maxReportAttempts, lastErr
+}
+
+func directPDFReportEvidence(questions []Question) []directPDFReportQuestionEvidence {
+	evidence := make([]directPDFReportQuestionEvidence, 0, len(questions))
+	for _, question := range questions {
+		evidence = append(evidence, directPDFReportQuestionEvidence{
+			ID:          question.ID,
+			Label:       question.Label,
+			Title:       question.Title,
+			Status:      question.Status,
+			SourcePages: append([]int(nil), question.SourcePages...),
+			Dimensions:  question.Dimensions,
+			Metadata:    question.Metadata,
+		})
+	}
+	return evidence
+}
+
+func parseDirectPDFReconciliationReport(content string) (directPDFReconciliationReport, error) {
+	jsonText, err := extractQuestionSplitJSON(content)
+	if err != nil {
+		return directPDFReconciliationReport{}, err
+	}
+	var report directPDFReconciliationReport
+	if err := decodeDirectPDFStrictJSON(jsonText, &report); err != nil {
+		return directPDFReconciliationReport{}, err
+	}
+	return report, nil
 }
 
 func directPDFCandidates(results []directPDFChunkResult) []directPDFCandidate {
@@ -216,12 +356,10 @@ Rules:
 5. For answered groups, candidate_ids must be non-empty and canonical_candidate_id must name the most complete candidate in that group. Leave merged_answer_markdown empty when it covers every group page; otherwise reconstruct the complete visible answer from the PDF without summarizing or inventing content.
 6. For unanswered groups, canonical_candidate_id and merged_answer_markdown must be empty. Preserve the visible prompt and blank source pages; do not invent an answer or analysis.
 7. inventory counts must exactly match groups and their statuses. Check the arithmetic before returning JSON.
-8. report.answer_analyses must contain exactly one entry for every answered group id and none for unanswered groups. Base each analysis on visible evidence and cite source pages.
-9. The other report fields are qualitative section bodies only. Do not repeat question-slot, answered, or unanswered counts there; the application renders the validated inventory deterministically.
-10. Confidence is 0-1. Add a warning for uncertain grouping, unreadable boundaries, or potentially incomplete edge-spanning answers.
-11. Do not predict official UPSC marks or invent an official model answer.
-12. Chunks, overlap windows, candidate IDs, retries, and extraction boundaries are internal processing details—not visible-copy evidence. Never mention them in group reasons, warnings, answer analyses, or report text, and never claim they caused an answer to be incomplete or truncated. Describe only what the attached PDF visibly shows, such as an answer ending abruptly or the following answer area being blank, with exact page citations.
-13. Keep the complete JSON comfortably below 40,000 output tokens without omitting any group or required report field. Use at most 40 words for each group reason, 180 words for each answer analysis, 250 words for each other report section, and 30 words for each warning. Do not repeat or quote the full answer inside analysis/report prose. These limits do not apply to merged_answer_markdown: when a merge is required, preserve the complete visible answer once, compactly, without commentary or duplicated overlap text.
+8. Confidence is 0-1. Add a warning for uncertain grouping, unreadable boundaries, or potentially incomplete edge-spanning answers.
+9. Do not predict official UPSC marks or invent an official model answer.
+10. Chunks, overlap windows, candidate IDs, retries, and extraction boundaries are internal processing details—not visible-copy evidence. Never mention them in group reasons or warnings, and never claim they caused an answer to be incomplete or truncated. Describe only what the attached PDF visibly shows, such as an answer ending abruptly or the following answer area being blank, with exact page citations.
+11. This response is only the minimum boundary and inventory plan; do not generate copy-wide or answer-wise analysis. Keep the complete JSON comfortably below 16,000 output tokens. Use at most 40 words for each group reason and 30 words for each warning. These limits do not apply to merged_answer_markdown: when a merge is required, preserve the complete visible answer once, compactly, without commentary or duplicated overlap text.
 
 PDF name: %s
 
@@ -232,19 +370,87 @@ Candidates:
 %s`, pageCount, pageCount, pdfName, schemaJSON, candidateJSON)
 }
 
+func directPDFReportSynthesisPrompt(
+	pdfName string,
+	evidenceJSON string,
+	schemaJSON string,
+	previousResponse string,
+	previousErr error,
+) string {
+	prefix := ""
+	if previousErr != nil {
+		failure := "the response violated report coverage or evidence invariants"
+		if strings.TrimSpace(previousErr.Error()) != "" {
+			failure = strings.TrimSpace(previousErr.Error())
+		}
+		rejectedResponse := strings.TrimSpace(previousResponse)
+		if rejectedResponse == "" {
+			rejectedResponse = "(no response body was returned)"
+		}
+		prefix = fmt.Sprintf(`Your previous report was rejected.
+Validator violations:
+%s
+
+Rejected full response:
+<rejected_response>
+%s
+</rejected_response>
+
+Return a corrected full JSON object, not a patch. Preserve evidence-supported sections and correct every listed violation.
+
+`, failure, rejectedResponse)
+	}
+	return prefix + fmt.Sprintf(`Write the evidence-grounded analysis report for one UPSC/Mains topper answer-copy.
+The complete original PDF is attached. Question boundaries, statuses, source pages, and validated per-answer dimensions are supplied below. They are authoritative; do not regroup questions, change statuses, or alter page assignments.
+
+Return only one JSON object conforming to the supplied JSON Schema. Do not add prose or Markdown fences.
+
+Rules:
+1. report.answer_analyses must contain exactly one entry for every supplied answered question id and none for unanswered questions. Cite exact source pages and discuss visible answer evidence.
+2. All other fields are qualitative section bodies only. Do not repeat question-slot, answered, or unanswered counts; the application renders validated inventory deterministically.
+3. Do not predict official UPSC marks or invent an official model answer. Treat scorecards as diagnostic estimates already grounded in visible evidence.
+4. Chunks, overlap windows, candidate IDs, retries, extraction boundaries, and model processing are internal details. Never mention them or attribute visible answer quality to them.
+5. Keep each answer analysis within 120 words and each other report section within 180 words. Do not quote or regenerate full answers. Keep the complete JSON comfortably below 12,000 output tokens.
+6. Re-check the attached PDF wherever the supplied evidence is ambiguous. Describe only visible evidence and use page citations.
+
+PDF name: %s
+
+JSON Schema:
+%s
+
+Validated question evidence:
+%s`, pdfName, schemaJSON, evidenceJSON)
+}
+
 func parseDirectPDFReconciliation(content string) (directPDFReconciliation, error) {
 	jsonText, err := extractQuestionSplitJSON(content)
 	if err != nil {
 		return directPDFReconciliation{}, err
 	}
 	var plan directPDFReconciliation
-	if err := json.Unmarshal([]byte(jsonText), &plan); err != nil {
+	if err := decodeDirectPDFStrictJSON(jsonText, &plan); err != nil {
 		return directPDFReconciliation{}, err
 	}
 	if len(plan.Groups) == 0 {
 		return directPDFReconciliation{}, errors.New("direct PDF reconciliation returned no groups")
 	}
 	return plan, nil
+}
+
+func decodeDirectPDFStrictJSON(content string, target any) error {
+	decoder := json.NewDecoder(strings.NewReader(content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("direct PDF response contains multiple JSON values")
+		}
+		return err
+	}
+	return nil
 }
 
 func applyDirectPDFReconciliation(

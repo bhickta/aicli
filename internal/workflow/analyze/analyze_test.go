@@ -525,15 +525,92 @@ func TestDirectPDFPromptsKeepProcessingBoundariesOutOfVisibleEvidence(t *testing
 	reconciliationPrompt := directPDFReconciliationPrompt("copy.pdf", "[]", "{}", 56, "", nil)
 	for _, instruction := range []string{
 		"internal processing details—not visible-copy evidence",
-		"Never mention them in group reasons, warnings, answer analyses, or report text",
+		"Never mention them in group reasons or warnings",
 		"Describe only what the attached PDF visibly shows",
-		"comfortably below 40,000 output tokens",
-		"180 words for each answer analysis",
-		"Do not repeat or quote the full answer inside analysis/report prose",
+		"minimum boundary and inventory plan",
+		"comfortably below 16,000 output tokens",
 	} {
 		if !strings.Contains(reconciliationPrompt, instruction) {
 			t.Fatalf("reconciliation prompt missing semantic causality instruction %q", instruction)
 		}
+	}
+
+	reportPrompt := directPDFReportSynthesisPrompt("copy.pdf", "[]", "{}", "", nil)
+	for _, instruction := range []string{
+		"Question boundaries, statuses, source pages, and validated per-answer dimensions",
+		"exactly one entry for every supplied answered question id",
+		"Keep each answer analysis within 120 words",
+		"comfortably below 12,000 output tokens",
+	} {
+		if !strings.Contains(reportPrompt, instruction) {
+			t.Fatalf("report prompt missing bounded evidence instruction %q", instruction)
+		}
+	}
+}
+
+func TestDirectPDFReconciliationUsesSeparateBoundedSchemas(t *testing.T) {
+	t.Parallel()
+
+	boundaryJSON, err := json.Marshal(directPDFReconciliationJSONSchema(56, 40).Schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundarySchema := string(boundaryJSON)
+	if strings.Contains(boundarySchema, `"report"`) || strings.Contains(boundarySchema, `"answer_analyses"`) {
+		t.Fatalf("boundary schema includes report output: %s", boundarySchema)
+	}
+	for _, field := range []string{`"groups"`, `"inventory"`, `"warnings"`} {
+		if !strings.Contains(boundarySchema, field) {
+			t.Fatalf("boundary schema missing %s: %s", field, boundarySchema)
+		}
+	}
+
+	reportJSON, err := json.Marshal(directPDFReconciliationReportJSONSchema(20).Schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportSchema := string(reportJSON)
+	if strings.Contains(reportSchema, `"groups"`) || strings.Contains(reportSchema, `"merged_answer_markdown"`) {
+		t.Fatalf("report schema includes boundary or answer-copy output: %s", reportSchema)
+	}
+	if !strings.Contains(reportSchema, `"answer_analyses"`) {
+		t.Fatalf("report schema missing answer analyses: %s", reportSchema)
+	}
+}
+
+func TestDirectPDFReportEvidenceOmitsFullAnswerText(t *testing.T) {
+	t.Parallel()
+
+	evidenceJSON, err := json.Marshal(directPDFReportEvidence([]Question{{
+		ID:             "q1",
+		Label:          "Q.1",
+		AnswerMarkdown: "full handwritten answer must stay out of report input",
+		SourcePages:    []int{6, 7},
+		Status:         directPDFQuestionAnswered,
+		Dimensions:     &QuestionDimensions{Introduction: "direct introduction"},
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(evidenceJSON), "full handwritten answer") || strings.Contains(string(evidenceJSON), "answer_markdown") {
+		t.Fatalf("report evidence duplicated full answer text: %s", evidenceJSON)
+	}
+	if !strings.Contains(string(evidenceJSON), "direct introduction") {
+		t.Fatalf("report evidence omitted validated analysis: %s", evidenceJSON)
+	}
+}
+
+func TestDirectPDFBoundaryParserRejectsCombinedReportPayload(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseDirectPDFReconciliation(`{
+		"groups":[{"id":"q1"}],
+		"inventory":{"visible_question_slots":1,"answered":1,"unanswered":0},
+		"warnings":[],
+		"report":{}
+	}`)
+	if err == nil || !strings.Contains(err.Error(), "unknown field \"report\"") {
+		t.Fatalf("combined boundary/report payload error = %v, want strict unknown report field", err)
 	}
 }
 
@@ -748,8 +825,9 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 			{"id":"q3","status":"unanswered","candidate_ids":["chunk-001-question-002"],"canonical_candidate_id":"","label":"Q.3","title":"Third question","source_pages":[2],"merged_answer_markdown":"","confidence":0.97,"reason":"printed prompt with visibly blank answer area"}
 		],
 		"inventory":{"visible_question_slots":3,"answered":2,"unanswered":1},
-		"warnings":[],
-		"report":{
+		"warnings":[]
+	}`
+	report := `{
 			"copy_profile":"copy profile",
 			"scorecard_synthesis":"scorecard synthesis",
 			"answer_analyses":[{"group_id":"q1","analysis":"first analysis"},{"group_id":"q2","analysis":"second analysis"}],
@@ -758,7 +836,6 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 			"gap_map":"gap map",
 			"reusable_answer_writing_playbook":"playbook",
 			"deliberate_practice_plan":"practice plan"
-		}
 	}`
 	var invalidReconciliation directPDFReconciliation
 	if err := json.Unmarshal([]byte(reconciliation), &invalidReconciliation); err != nil {
@@ -772,7 +849,7 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	}
 	provider := &fakeProvider{
 		id:                "gemini",
-		documentResponses: []string{chunkOne, chunkTwo, string(invalidReconciliationJSON), reconciliation, reconciliation},
+		documentResponses: []string{chunkOne, chunkTwo, string(invalidReconciliationJSON), reconciliation, report, reconciliation, report},
 	}
 	runner := &fakeRunner{pageCount: 6}
 	service := New(
@@ -792,24 +869,26 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	if err != nil {
 		t.Fatalf("first Run() error = %v", err)
 	}
-	if provider.documentCalls != 4 || res.APICalls != 4 {
-		t.Fatalf("calls: provider=%d response=%d, want two chunks plus one rejected and one valid reconciliation", provider.documentCalls, res.APICalls)
+	if provider.documentCalls != 5 || res.APICalls != 5 {
+		t.Fatalf("calls: provider=%d response=%d, want two chunks, one rejected boundary, one valid boundary, and one report", provider.documentCalls, res.APICalls)
 	}
 	if !slices.Equal(provider.documentModels, []string{
 		"gemini-flash-lite-latest",
 		"gemini-flash-lite-latest",
 		"gemini-3.1-flash-lite",
 		"gemini-3.1-flash-lite",
+		"gemini-3.1-flash-lite",
 	}) {
-		t.Fatalf("document models = %#v, want chunk model followed by boundary model", provider.documentModels)
+		t.Fatalf("document models = %#v, want chunk model followed by bounded boundary and report calls", provider.documentModels)
 	}
 	if !slices.Equal(provider.documentMaxTokens, []int{
 		geminiLiteDirectPDFMaxTokens,
 		geminiLiteDirectPDFMaxTokens,
-		geminiDirectPDFReconcileTokens,
-		geminiDirectPDFReconcileTokens,
+		geminiDirectPDFBoundaryTokens,
+		geminiDirectPDFBoundaryTokens,
+		geminiDirectPDFReportTokens,
 	}) {
-		t.Fatalf("document token limits = %#v, want conservative chunks and full reconciliation envelope", provider.documentMaxTokens)
+		t.Fatalf("document token limits = %#v, want conservative chunks and bounded boundary/report envelopes", provider.documentMaxTokens)
 	}
 	if len(res.Pages) != 6 || len(res.Questions) != 3 || !strings.Contains(res.Report, "Visible question slots: 3") {
 		t.Fatalf("response = %#v, want six pages, three question slots, and deterministic inventory", res)
@@ -837,17 +916,17 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	if err != nil {
 		t.Fatalf("resumed Run() error = %v", err)
 	}
-	if provider.documentCalls != 5 {
-		t.Fatalf("provider calls after resume = %d, want only reconciliation rerun", provider.documentCalls)
+	if provider.documentCalls != 7 {
+		t.Fatalf("provider calls after resume = %d, want only boundary and report rerun", provider.documentCalls)
 	}
-	if provider.documentModels[4] != "gemini-3.1-flash-lite" {
-		t.Fatalf("resumed reconciliation model = %q, want boundary model", provider.documentModels[4])
+	if provider.documentModels[5] != "gemini-3.1-flash-lite" || provider.documentModels[6] != "gemini-3.1-flash-lite" {
+		t.Fatalf("resumed boundary/report models = %q/%q, want boundary model", provider.documentModels[5], provider.documentModels[6])
 	}
-	if resumed.APICalls != 3 || len(resumed.Questions) != 3 {
+	if resumed.APICalls != 4 || len(resumed.Questions) != 3 {
 		t.Fatalf("resumed response = %#v, want checkpoint call provenance and complete questions", resumed)
 	}
-	if provider.documentRequest.ResponseSchema != nil || !strings.Contains(provider.documentPrompt, `"inventory"`) {
-		t.Fatalf("reconciliation request should carry its schema in the prompt for provider-independent validation")
+	if provider.documentRequest.ResponseSchema != nil || !strings.Contains(provider.documentPrompts[5], `"inventory"`) || !strings.Contains(provider.documentPrompt, `"answer_analyses"`) {
+		t.Fatalf("boundary and report requests should carry separate schemas in their prompts")
 	}
 	if len(provider.documentPrompts) < 4 || !strings.Contains(provider.documentPrompts[3], "inventory mismatch") {
 		t.Fatalf("strict reconciliation retry should include the precise semantic validation failure")
