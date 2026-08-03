@@ -270,17 +270,26 @@ func splitDirectPDFChunkForFallback(chunk directPDFChunk) ([]directPDFChunk, boo
 	if pageCount <= 1 {
 		return nil, false
 	}
-	if pageCount == 2 {
+	if pageCount <= directPDFFallbackChunkPages {
 		return []directPDFChunk{
 			{Index: chunk.Index, FirstPage: chunk.FirstPage, LastPage: chunk.FirstPage},
 			{Index: chunk.Index, FirstPage: chunk.LastPage, LastPage: chunk.LastPage},
 		}, true
 	}
-	middle := chunk.FirstPage + pageCount/2
-	return []directPDFChunk{
-		{Index: chunk.Index, FirstPage: chunk.FirstPage, LastPage: middle},
-		{Index: chunk.Index, FirstPage: middle, LastPage: chunk.LastPage},
-	}, true
+	step := directPDFFallbackChunkPages - directPDFFallbackOverlapPages
+	subchunks := make([]directPDFChunk, 0, (pageCount+step-1)/step)
+	for first := chunk.FirstPage; first <= chunk.LastPage; first += step {
+		last := minIntValue(first+directPDFFallbackChunkPages-1, chunk.LastPage)
+		subchunks = append(subchunks, directPDFChunk{
+			Index:     chunk.Index,
+			FirstPage: first,
+			LastPage:  last,
+		})
+		if last == chunk.LastPage {
+			break
+		}
+	}
+	return subchunks, true
 }
 
 func mergeDirectPDFFallbackChunk(
@@ -473,12 +482,14 @@ func (s *Service) directPDFCheckpointDir(reviewID string, sourceSHA256 string, m
 		return ""
 	}
 	fingerprint := sha256.Sum256([]byte(fmt.Sprintf(
-		"v%d\x00%s\x00%s\x00%d\x00%d",
+		"v%d\x00%s\x00%s\x00%d\x00%d\x00%d\x00%d",
 		directPDFCheckpointVersion,
 		sourceSHA256,
 		model,
 		directPDFChunkPages,
 		directPDFChunkOverlapPages,
+		directPDFFallbackChunkPages,
+		directPDFFallbackOverlapPages,
 	)))
 	return filepath.Join(
 		s.artifactDir,

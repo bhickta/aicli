@@ -19,8 +19,10 @@ const (
 
 	geminiLiteDirectPDFMaxTokens   = 24576
 	geminiDirectPDFReconcileTokens = 65536
-	directPDFChunkPages            = 8
+	directPDFChunkPages            = 4
 	directPDFChunkOverlapPages     = 2
+	directPDFFallbackChunkPages    = 2
+	directPDFFallbackOverlapPages  = 1
 )
 
 func (s *Service) shouldUseDirectPDF(req Request) bool {

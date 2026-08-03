@@ -290,17 +290,18 @@ func TestRunAnalyzeDirectPDFUsesGeminiDocumentOnly(t *testing.T) {
 	}
 }
 
-func TestPlanDirectPDFChunksUsesEightPagesWithTwoPageOverlap(t *testing.T) {
+func TestPlanDirectPDFChunksUsesFourPagesWithTwoPageOverlap(t *testing.T) {
 	t.Parallel()
 
-	chunks, err := planDirectPDFChunks(20)
+	chunks, err := planDirectPDFChunks(10)
 	if err != nil {
 		t.Fatalf("planDirectPDFChunks() error = %v", err)
 	}
 	want := []directPDFChunk{
-		{Index: 0, FirstPage: 1, LastPage: 8},
-		{Index: 1, FirstPage: 7, LastPage: 14},
-		{Index: 2, FirstPage: 13, LastPage: 20},
+		{Index: 0, FirstPage: 1, LastPage: 4},
+		{Index: 1, FirstPage: 3, LastPage: 6},
+		{Index: 2, FirstPage: 5, LastPage: 8},
+		{Index: 3, FirstPage: 7, LastPage: 10},
 	}
 	if !slices.Equal(chunks, want) {
 		t.Fatalf("chunks = %#v, want %#v", chunks, want)
@@ -316,35 +317,36 @@ func TestDirectPDFChunkFallsBackToSmallerOverlappingRanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	invalid := `{"detected_questions":["Q.1"],"pages":[`
-	firstHalf := `{
+	firstRange := `{
 		"metadata":{"topper_name":"Sample Topper"},
 		"detected_questions":["Q.1"],
-		"pages":[
-			{"number":1,"kind":"cover"},{"number":2,"kind":"answer"},{"number":3,"kind":"answer"},
-			{"number":4,"kind":"answer"},{"number":5,"kind":"answer"}
-		],
+		"pages":[{"number":1,"kind":"cover"},{"number":2,"kind":"answer"}],
 		"questions":[{"id":"q1","label":"Q.1","source_pages":[2],"answer_markdown":"first answer"}],
-		"report":"first half"
+		"report":"first range"
 	}`
-	secondHalf := `{
+	middleRange := `{
+		"metadata":{"topper_name":"Sample Topper"},
+		"detected_questions":["Q.middle"],
+		"pages":[{"number":1,"kind":"answer"},{"number":2,"kind":"answer"}],
+		"questions":[{"id":"q-middle","label":"Q.middle","source_pages":[2],"answer_markdown":"middle answer"}],
+		"report":"middle range"
+	}`
+	lastRange := `{
 		"metadata":{"topper_name":"Sample Topper"},
 		"detected_questions":["Q.2"],
-		"pages":[
-			{"number":1,"kind":"answer"},{"number":2,"kind":"answer"},
-			{"number":3,"kind":"answer"},{"number":4,"kind":"answer"}
-		],
+		"pages":[{"number":1,"kind":"answer"},{"number":2,"kind":"answer"}],
 		"questions":[{"id":"q2","label":"Q.2","source_pages":[2],"answer_markdown":"second answer"}],
-		"report":"second half"
+		"report":"last range"
 	}`
 	processor := &fakeProvider{
-		documentResponses: []string{invalid, invalid, firstHalf, secondHalf},
+		documentResponses: []string{invalid, invalid, firstRange, middleRange, lastRange},
 	}
 	service := New(
 		config.ToolConfig{QPDF: "qpdf"},
 		&fakeRunner{},
 		processor,
 	)
-	chunk := directPDFChunk{Index: 0, FirstPage: 1, LastPage: 8}
+	chunk := directPDFChunk{Index: 0, FirstPage: 1, LastPage: 4}
 	result, err := service.extractDirectPDFChunkWithFallback(
 		context.Background(),
 		Request{Path: pdf, OCRModel: "gemini-flash-lite-latest"},
@@ -358,15 +360,16 @@ func TestDirectPDFChunkFallsBackToSmallerOverlappingRanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractDirectPDFChunkWithFallback() error = %v", err)
 	}
-	if processor.documentCalls != 4 || result.Response.APICalls != 4 {
-		t.Fatalf("calls: provider=%d response=%d, want two rejected parent calls plus two smaller ranges", processor.documentCalls, result.Response.APICalls)
+	if processor.documentCalls != 5 || result.Response.APICalls != 5 {
+		t.Fatalf("calls: provider=%d response=%d, want two rejected parent calls plus three two-page ranges", processor.documentCalls, result.Response.APICalls)
 	}
-	if len(result.Response.Pages) != 8 || len(result.Response.Questions) != 2 {
-		t.Fatalf("response has %d pages and %d questions, want 8 and 2", len(result.Response.Pages), len(result.Response.Questions))
+	if len(result.Response.Pages) != 4 || len(result.Response.Questions) != 3 {
+		t.Fatalf("response has %d pages and %d questions, want 4 and 3", len(result.Response.Pages), len(result.Response.Questions))
 	}
 	if !slices.Equal(result.Response.Questions[0].SourcePages, []int{2}) ||
-		!slices.Equal(result.Response.Questions[1].SourcePages, []int{6}) {
-		t.Fatalf("question source pages = %#v, want globally mapped pages 2 and 6", result.Response.Questions)
+		!slices.Equal(result.Response.Questions[1].SourcePages, []int{3}) ||
+		!slices.Equal(result.Response.Questions[2].SourcePages, []int{4}) {
+		t.Fatalf("question source pages = %#v, want globally mapped pages 2, 3, and 4", result.Response.Questions)
 	}
 }
 
@@ -379,39 +382,44 @@ func TestDirectPDFChunkFallbackRecursesUntilValid(t *testing.T) {
 		t.Fatal(err)
 	}
 	invalid := `{"detected_questions":["Q.1"],"pages":[`
-	firstHalf := `{
+	firstRange := `{
 		"metadata":{"topper_name":"Sample Topper"},
 		"detected_questions":["Q.1"],
-		"pages":[
-			{"number":1,"kind":"cover"},{"number":2,"kind":"answer"},{"number":3,"kind":"answer"},
-			{"number":4,"kind":"answer"},{"number":5,"kind":"answer"}
-		],
+		"pages":[{"number":1,"kind":"cover"},{"number":2,"kind":"answer"}],
 		"questions":[{"id":"q1","label":"Q.1","source_pages":[2],"answer_markdown":"first answer"}],
-		"report":"first half"
+		"report":"first range"
 	}`
 	nestedFirst := `{
 		"metadata":{"topper_name":"Sample Topper"},
 		"detected_questions":["Q.2"],
-		"pages":[{"number":1,"kind":"answer"},{"number":2,"kind":"answer"},{"number":3,"kind":"answer"}],
-		"questions":[{"id":"q2","label":"Q.2","source_pages":[2],"answer_markdown":"nested first"}],
+		"pages":[{"number":1,"kind":"answer"}],
+		"questions":[{"id":"q2","label":"Q.2","source_pages":[1],"answer_markdown":"nested first"}],
 		"report":"nested first"
 	}`
 	nestedSecond := `{
 		"metadata":{"topper_name":"Sample Topper"},
 		"detected_questions":["Q.3"],
-		"pages":[{"number":1,"kind":"answer"},{"number":2,"kind":"answer"}],
-		"questions":[{"id":"q3","label":"Q.3","source_pages":[2],"answer_markdown":"nested second"}],
+		"pages":[{"number":1,"kind":"answer"}],
+		"questions":[{"id":"q3","label":"Q.3","source_pages":[1],"answer_markdown":"nested second"}],
 		"report":"nested second"
+	}`
+	lastRange := `{
+		"metadata":{"topper_name":"Sample Topper"},
+		"detected_questions":["Q.4"],
+		"pages":[{"number":1,"kind":"answer"},{"number":2,"kind":"answer"}],
+		"questions":[{"id":"q4","label":"Q.4","source_pages":[2],"answer_markdown":"last range"}],
+		"report":"last range"
 	}`
 	processor := &fakeProvider{
 		documentResponses: []string{
 			invalid,
 			invalid,
-			firstHalf,
+			firstRange,
 			invalid,
 			invalid,
 			nestedFirst,
 			nestedSecond,
+			lastRange,
 		},
 	}
 	service := New(
@@ -419,7 +427,7 @@ func TestDirectPDFChunkFallbackRecursesUntilValid(t *testing.T) {
 		&fakeRunner{},
 		processor,
 	)
-	chunk := directPDFChunk{Index: 0, FirstPage: 1, LastPage: 8}
+	chunk := directPDFChunk{Index: 0, FirstPage: 1, LastPage: 4}
 	result, err := service.extractDirectPDFChunkWithFallback(
 		context.Background(),
 		Request{Path: pdf, OCRModel: "gemini-flash-lite-latest"},
@@ -433,16 +441,17 @@ func TestDirectPDFChunkFallbackRecursesUntilValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractDirectPDFChunkWithFallback() error = %v", err)
 	}
-	if processor.documentCalls != 7 || result.Response.APICalls != 7 {
-		t.Fatalf("calls: provider=%d response=%d, want rejected parent and child attempts plus three valid ranges", processor.documentCalls, result.Response.APICalls)
+	if processor.documentCalls != 8 || result.Response.APICalls != 8 {
+		t.Fatalf("calls: provider=%d response=%d, want rejected parent and child attempts plus four valid ranges", processor.documentCalls, result.Response.APICalls)
 	}
-	if len(result.Response.Pages) != 8 || len(result.Response.Questions) != 3 {
-		t.Fatalf("response has %d pages and %d questions, want 8 and 3", len(result.Response.Pages), len(result.Response.Questions))
+	if len(result.Response.Pages) != 4 || len(result.Response.Questions) != 4 {
+		t.Fatalf("response has %d pages and %d questions, want 4 and 4", len(result.Response.Pages), len(result.Response.Questions))
 	}
 	if !slices.Equal(result.Response.Questions[0].SourcePages, []int{2}) ||
-		!slices.Equal(result.Response.Questions[1].SourcePages, []int{6}) ||
-		!slices.Equal(result.Response.Questions[2].SourcePages, []int{8}) {
-		t.Fatalf("question source pages = %#v, want recursively mapped pages 2, 6, and 8", result.Response.Questions)
+		!slices.Equal(result.Response.Questions[1].SourcePages, []int{2}) ||
+		!slices.Equal(result.Response.Questions[2].SourcePages, []int{3}) ||
+		!slices.Equal(result.Response.Questions[3].SourcePages, []int{4}) {
+		t.Fatalf("question source pages = %#v, want recursively mapped pages 2, 2, 3, and 4", result.Response.Questions)
 	}
 }
 
@@ -475,6 +484,16 @@ func TestSplitDirectPDFChunkForFallbackReachesSinglePageFloor(t *testing.T) {
 			want: []directPDFChunk{
 				{Index: 2, FirstPage: 7, LastPage: 8},
 				{Index: 2, FirstPage: 8, LastPage: 9},
+			},
+			ok: true,
+		},
+		{
+			name:  "four pages retry as two-page overlapping ranges",
+			chunk: directPDFChunk{Index: 2, FirstPage: 7, LastPage: 10},
+			want: []directPDFChunk{
+				{Index: 2, FirstPage: 7, LastPage: 8},
+				{Index: 2, FirstPage: 8, LastPage: 9},
+				{Index: 2, FirstPage: 9, LastPage: 10},
 			},
 			ok: true,
 		},
@@ -694,20 +713,20 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 
 	dir := t.TempDir()
 	pdf := filepath.Join(dir, "answers.pdf")
-	if err := os.WriteFile(pdf, []byte("ten-page-pdf"), 0o600); err != nil {
+	if err := os.WriteFile(pdf, []byte("six-page-pdf"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	chunkOne := `{
 		"metadata":{"topper_name":"Sample Topper","paper":"GS2","notes":"chunk one only"},
 		"detected_questions":["Q.1","Q.2","Q.3"],
 		"pages":[
-			{"number":1,"kind":"cover"},{"number":2,"kind":"answer"},{"number":3,"kind":"answer"},{"number":4,"kind":"answer"},
-			{"number":5,"kind":"evaluation"},{"number":6,"kind":"evaluation"},{"number":7,"kind":"answer"},{"number":8,"kind":"answer"}
+			{"number":1,"kind":"answer"},{"number":2,"kind":"evaluation"},
+			{"number":3,"kind":"answer"},{"number":4,"kind":"answer"}
 		],
 		"questions":[
-			{"id":"q1","label":"Q.1","source_pages":[2,3,4],"answer_markdown":"complete first answer"},
-			{"id":"q2-part","label":"Q.2","source_pages":[7,8],"answer_markdown":"partial second answer"},
-			{"id":"q3-blank","label":"Q.3","title":"Third question","source_pages":[5],"answer_markdown":"Printed prompt; the visible answer area is blank."}
+			{"id":"q1","label":"Q.1","source_pages":[1],"answer_markdown":"complete first answer"},
+			{"id":"q2-part","label":"Q.2","source_pages":[3,4],"answer_markdown":"partial second answer"},
+			{"id":"q3-blank","label":"Q.3","title":"Third question","source_pages":[2],"answer_markdown":"Printed prompt; the visible answer area is blank."}
 		],
 		"report":"chunk one report"
 	}`
@@ -724,9 +743,9 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	}`
 	reconciliation := `{
 		"groups":[
-			{"id":"q1","status":"answered","candidate_ids":["chunk-001-question-001"],"canonical_candidate_id":"chunk-001-question-001","label":"Q.1","title":"First question","source_pages":[2,3,4],"merged_answer_markdown":"","confidence":0.99,"reason":"one complete internal answer"},
-			{"id":"q2","status":"answered","candidate_ids":["chunk-001-question-003","chunk-002-question-001"],"canonical_candidate_id":"chunk-002-question-001","label":"Q.2","title":"Second question","source_pages":[7,8,9,10],"merged_answer_markdown":"","confidence":0.98,"reason":"overlap duplicate; second candidate covers the full answer"},
-			{"id":"q3","status":"unanswered","candidate_ids":["chunk-001-question-002"],"canonical_candidate_id":"","label":"Q.3","title":"Third question","source_pages":[5],"merged_answer_markdown":"","confidence":0.97,"reason":"printed prompt with visibly blank answer area"}
+			{"id":"q1","status":"answered","candidate_ids":["chunk-001-question-001"],"canonical_candidate_id":"chunk-001-question-001","label":"Q.1","title":"First question","source_pages":[1],"merged_answer_markdown":"","confidence":0.99,"reason":"one complete internal answer"},
+			{"id":"q2","status":"answered","candidate_ids":["chunk-001-question-003","chunk-002-question-001"],"canonical_candidate_id":"chunk-002-question-001","label":"Q.2","title":"Second question","source_pages":[3,4,5,6],"merged_answer_markdown":"","confidence":0.98,"reason":"overlap duplicate; second candidate covers the full answer"},
+			{"id":"q3","status":"unanswered","candidate_ids":["chunk-001-question-002"],"canonical_candidate_id":"","label":"Q.3","title":"Third question","source_pages":[2],"merged_answer_markdown":"","confidence":0.97,"reason":"printed prompt with visibly blank answer area"}
 		],
 		"inventory":{"visible_question_slots":3,"answered":2,"unanswered":1},
 		"warnings":[],
@@ -755,7 +774,7 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 		id:                "gemini",
 		documentResponses: []string{chunkOne, chunkTwo, string(invalidReconciliationJSON), reconciliation, reconciliation},
 	}
-	runner := &fakeRunner{pageCount: 10}
+	runner := &fakeRunner{pageCount: 6}
 	service := New(
 		config.ToolConfig{PDFToPPM: "pdftoppm", QPDF: "qpdf"},
 		runner,
@@ -767,7 +786,7 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 		OCRModel:      "gemini-flash-lite-latest",
 		BoundaryModel: "gemini-3.1-flash-lite",
 		OCRInputMode:  OCRInputModePDFDirect,
-		ReviewID:      "copy-10-pages",
+		ReviewID:      "copy-6-pages",
 	}
 	res, err := service.Run(context.Background(), req)
 	if err != nil {
@@ -792,16 +811,16 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 	}) {
 		t.Fatalf("document token limits = %#v, want conservative chunks and full reconciliation envelope", provider.documentMaxTokens)
 	}
-	if len(res.Pages) != 10 || len(res.Questions) != 3 || !strings.Contains(res.Report, "Visible question slots: 3") {
-		t.Fatalf("response = %#v, want ten pages, three question slots, and deterministic inventory", res)
+	if len(res.Pages) != 6 || len(res.Questions) != 3 || !strings.Contains(res.Report, "Visible question slots: 3") {
+		t.Fatalf("response = %#v, want six pages, three question slots, and deterministic inventory", res)
 	}
 	questionsByID := make(map[string]Question, len(res.Questions))
 	for _, question := range res.Questions {
 		questionsByID[question.ID] = question
 	}
 	second := questionsByID["q2"]
-	if !slices.Equal(second.SourcePages, []int{7, 8, 9, 10}) || second.AnswerMarkdown != "complete second answer" {
-		t.Fatalf("second question = %#v, want complete canonical overlap candidate on global pages 7-10", second)
+	if !slices.Equal(second.SourcePages, []int{3, 4, 5, 6}) || second.AnswerMarkdown != "complete second answer" {
+		t.Fatalf("second question = %#v, want complete canonical overlap candidate on global pages 3-6", second)
 	}
 	if res.Metadata == nil || res.Metadata.TopperName != "Sample Topper" {
 		t.Fatalf("metadata = %#v, want merged chunk metadata", res.Metadata)
@@ -810,7 +829,7 @@ func TestRunAnalyzeChunkedDirectPDFReconcilesOverlapAndResumesChunks(t *testing.
 		t.Fatalf("metadata notes = %q, want chunk-local notes omitted", res.Metadata.Notes)
 	}
 	third := questionsByID["q3"]
-	if third.Status != directPDFQuestionUnanswered || third.AnswerMarkdown != "" || !slices.Equal(third.SourcePages, []int{5}) {
+	if third.Status != directPDFQuestionUnanswered || third.AnswerMarkdown != "" || !slices.Equal(third.SourcePages, []int{2}) {
 		t.Fatalf("third question = %#v, want explicit unanswered slot", third)
 	}
 
